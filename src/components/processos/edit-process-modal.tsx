@@ -2,12 +2,14 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Edit, X } from 'lucide-react'
+import { Edit, X, TrendingUp, Link2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { PROCESS_STATUS_LABELS, PROCESS_TYPE_CUSTOM_FIELDS } from '@/lib/utils'
+import { maskCurrency, parseCurrency } from '@/lib/masks'
+import { syncProcessFinancial } from '@/lib/sync-process-financial'
 import type { Process } from '@/types/database'
 
 const STATUS_OPTIONS = Object.entries(PROCESS_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))
@@ -29,8 +31,12 @@ export function EditProcessModal({ process }: { process: Process & { process_typ
     })
     return vals
   })
+  const initValue = process.financials?.service_value
+    ? (process.financials.service_value as number).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+    : ''
+
   const [financial, setFinancial] = useState({
-    service_value: process.financials?.service_value?.toString() ?? '',
+    service_value: initValue,   // formatado em BRL
     payment_method: process.financials?.payment_method ?? '',
     payment_status: process.financials?.payment_status ?? 'pending',
     expected_payment_date: process.financials?.expected_payment_date ?? '',
@@ -73,24 +79,39 @@ export function EditProcessModal({ process }: { process: Process & { process_typ
       }
     }
 
-    // Upsert financial
+    // Upsert financial + sync ao módulo financeiro
     if (financial.service_value || financial.payment_method || financial.financial_notes) {
+      const serviceValue = financial.service_value ? parseCurrency(financial.service_value) : null
+
+      const financeEntryId = await syncProcessFinancial(supabase, {
+        processId: process.id,
+        clientId: (process as any).clients?.id ?? process.client_id,
+        processTypeName: process.process_types?.name ?? 'Processo',
+        processTypeSlug: process.process_types?.slug ?? '',
+        serviceValue,
+        paymentStatus: financial.payment_status,
+        expectedPaymentDate: financial.expected_payment_date || null,
+        existingFinanceEntryId: process.financials?.finance_entry_id ?? null,
+      })
+
       if (process.financials?.id) {
         await supabase.from('process_financials').update({
-          service_value: financial.service_value ? parseFloat(financial.service_value) : null,
+          service_value: serviceValue,
           payment_method: financial.payment_method as any || null,
           payment_status: financial.payment_status as any,
           expected_payment_date: financial.expected_payment_date || null,
           financial_notes: financial.financial_notes || null,
+          finance_entry_id: financeEntryId,
         }).eq('id', process.financials.id)
       } else {
         await supabase.from('process_financials').insert({
           process_id: process.id,
-          service_value: financial.service_value ? parseFloat(financial.service_value) : null,
+          service_value: serviceValue,
           payment_method: financial.payment_method as any || null,
           payment_status: financial.payment_status as any,
           expected_payment_date: financial.expected_payment_date || null,
           financial_notes: financial.financial_notes || null,
+          finance_entry_id: financeEntryId,
         })
       }
     }
@@ -109,6 +130,38 @@ export function EditProcessModal({ process }: { process: Process & { process_typ
         action_type: 'updated',
         note: 'Processo atualizado',
       })
+    }
+
+    // Auto-renovação: quando o processo é concluído, criar evento de renovação
+    if (oldStatus !== 'concluido' && form.status === 'concluido') {
+      const renewalMonths = process.process_types?.renewal_period_months
+      if (renewalMonths) {
+        const completedAt = new Date()
+        const renewalDate = new Date(completedAt)
+        renewalDate.setMonth(renewalDate.getMonth() + renewalMonths)
+        const renewalIso = renewalDate.toISOString().split('T')[0]
+
+        const eventTitle = `Renovar ${process.process_types?.name ?? 'Processo'} — ${((process as any).clients as any)?.name ?? ''}`
+
+        const { data: calEvent } = await supabase.from('calendar_events').insert({
+          title: eventTitle,
+          description: process.process_types?.renewal_notes ?? null,
+          event_date: renewalIso,
+          event_type: 'renewal',
+          color: process.process_types?.color ?? null,
+          client_id: ((process as any).clients as any)?.id ?? null,
+          process_id: process.id,
+          visibility: 'admin_only',
+          status: 'pending',
+        }).select('id').single()
+
+        if (calEvent?.id) {
+          await supabase.from('processes').update({
+            renewal_date: renewalIso,
+            renewal_calendar_event_id: calEvent.id,
+          }).eq('id', process.id)
+        }
+      }
     }
 
     setOpen(false)
@@ -169,11 +222,55 @@ export function EditProcessModal({ process }: { process: Process & { process_typ
                 </div>
               )}
 
-              <div>
-                <h3 className="font-medium text-slate-700 mb-3 text-sm">Financeiro</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <Input label="Valor" type="number" step="0.01" value={financial.service_value} onChange={e => setFinancial(p => ({ ...p, service_value: e.target.value }))} />
-                  <Select label="Status Pag." options={[{value:'pending',label:'Pendente'},{value:'partially_paid',label:'Parcial'},{value:'paid',label:'Pago'},{value:'overdue',label:'Atraso'}]} value={financial.payment_status} onChange={e => setFinancial(p => ({ ...p, payment_status: e.target.value }))} />
+              <div className="border border-slate-100 rounded-xl overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100">
+                  <h3 className="text-sm font-semibold text-slate-700">Financeiro</h3>
+                  <div className="flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                    <TrendingUp className="w-2.5 h-2.5" /> Módulo Financeiro
+                  </div>
+                </div>
+                <div className="p-4 space-y-3">
+                  <div className="space-y-1">
+                    <label className="block text-sm font-medium text-slate-700">Valor do serviço</label>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={financial.service_value}
+                      onChange={e => setFinancial(p => ({ ...p, service_value: maskCurrency(e.target.value) }))}
+                      placeholder="R$ 0,00"
+                      className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { value: 'pending',        label: 'Pendente',  color: 'text-slate-600  bg-slate-50  border-slate-300' },
+                      { value: 'partially_paid', label: 'Parcial',   color: 'text-yellow-700 bg-yellow-50 border-yellow-300' },
+                      { value: 'paid',           label: 'Pago',      color: 'text-green-700  bg-green-50  border-green-300' },
+                      { value: 'overdue',        label: 'Em atraso', color: 'text-red-700    bg-red-50    border-red-300' },
+                    ].map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setFinancial(p => ({ ...p, payment_status: opt.value }))}
+                        className={`px-3 py-2 rounded-lg border text-xs font-semibold transition-all ${
+                          financial.payment_status === opt.value
+                            ? opt.color + ' ring-2 ring-offset-1 ring-blue-400'
+                            : 'text-slate-400 bg-white border-slate-200 hover:border-slate-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                  {financial.service_value && parseCurrency(financial.service_value) > 0 && (
+                    <div className="flex items-center gap-1.5 text-xs text-blue-700 bg-blue-50 rounded-lg px-3 py-2">
+                      <Link2 className="w-3 h-3 shrink-0" />
+                      <span>
+                        <b>{financial.service_value}</b> → receita{' '}
+                        {financial.payment_status === 'paid' ? 'confirmada' : 'prevista'} no Financeiro
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
 

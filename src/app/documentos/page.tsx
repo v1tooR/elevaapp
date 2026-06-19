@@ -2,16 +2,29 @@ import { createClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/card'
 import { DocumentStatusBadge } from '@/components/shared/status-badge'
 import { formatDate } from '@/lib/utils'
-import { FileText } from 'lucide-react'
+import { Link2, FileText } from 'lucide-react'
 import Link from 'next/link'
 import { DocumentActions } from '@/components/documentos/document-actions'
+
+const DOC_TYPE_LABELS: Record<string, string> = {
+  laudo: 'Laudo Médico',
+  rg: 'RG / CNH',
+  cpf: 'CPF',
+  residencia: 'Comprovante Residência',
+  nota_fiscal: 'Nota Fiscal',
+  contrato: 'Contrato',
+  procuracao: 'Procuração',
+  certidao: 'Certidão',
+  protocolo: 'Protocolo',
+  formulario: 'Formulário',
+  outros: 'Outros',
+}
 
 interface SearchParams { status?: string; client_id?: string }
 
 export default async function DocumentosPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams
   const statusFilter = params.status ?? ''
-  const clientFilter = params.client_id ?? ''
 
   const supabase = await createClient()
 
@@ -21,28 +34,24 @@ export default async function DocumentosPage({ searchParams }: { searchParams: P
     .order('created_at', { ascending: false })
 
   if (statusFilter) query = query.eq('status', statusFilter)
-  if (clientFilter) query = query.eq('client_id', clientFilter)
 
   const { data: documents } = await query
 
   const statuses = [
     { value: '', label: 'Todos' },
-    { value: 'pending', label: 'Pendente' },
     { value: 'received', label: 'Recebido' },
     { value: 'under_review', label: 'Em Revisão' },
     { value: 'approved', label: 'Aprovado' },
     { value: 'rejected', label: 'Reprovado' },
-    { value: 'resend_required', label: 'Reenvio Necessário' },
   ]
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900">Documentos</h1>
-        <p className="text-slate-500 text-sm mt-1">{documents?.length ?? 0} documento(s)</p>
+        <p className="text-slate-500 text-sm mt-1">{documents?.length ?? 0} link(s) cadastrado(s)</p>
       </div>
 
-      {/* Filter tabs */}
       <div className="flex flex-wrap gap-2">
         {statuses.map(s => (
           <Link
@@ -62,15 +71,17 @@ export default async function DocumentosPage({ searchParams }: { searchParams: P
       <Card padding="none">
         {!documents || documents.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16">
-            <FileText className="w-12 h-12 text-slate-300 mb-3" />
-            <p className="text-slate-500">Nenhum documento encontrado</p>
+            <Link2 className="w-12 h-12 text-slate-300 mb-3" />
+            <p className="text-slate-500">Nenhum documento cadastrado</p>
+            <p className="text-xs text-slate-400 mt-1">Acesse um processo e adicione links do Drive</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
-                  <th className="text-left px-5 py-3 font-medium text-slate-600">Arquivo</th>
+                  <th className="text-left px-5 py-3 font-medium text-slate-600">Documento</th>
+                  <th className="text-left px-5 py-3 font-medium text-slate-600 hidden md:table-cell">Tipo</th>
                   <th className="text-left px-5 py-3 font-medium text-slate-600 hidden md:table-cell">Cliente</th>
                   <th className="text-left px-5 py-3 font-medium text-slate-600 hidden lg:table-cell">Processo</th>
                   <th className="text-left px-5 py-3 font-medium text-slate-600">Status</th>
@@ -82,21 +93,36 @@ export default async function DocumentosPage({ searchParams }: { searchParams: P
                 {documents.map((doc: any) => (
                   <tr key={doc.id} className="hover:bg-slate-50">
                     <td className="px-5 py-3.5">
-                      <div className="flex items-center gap-2">
-                        <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
-                        <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline truncate max-w-[180px]">
-                          {doc.file_name}
-                        </a>
-                      </div>
+                      <a
+                        href={doc.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 hover:underline max-w-50 truncate"
+                        title={doc.file_name}
+                      >
+                        <Link2 className="w-4 h-4 shrink-0 text-blue-400" />
+                        <span className="truncate">{doc.file_name}</span>
+                      </a>
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell">
+                      {doc.document_type ? (DOC_TYPE_LABELS[doc.document_type] ?? doc.document_type) : (
+                        <span className="text-slate-300">—</span>
+                      )}
                     </td>
                     <td className="px-5 py-3.5 text-slate-600 hidden md:table-cell">
-                      <Link href={`/clientes/${doc.clients?.id}`} className="hover:underline">{doc.clients?.name}</Link>
+                      <Link href={`/clientes/${doc.clients?.id}`} className="hover:underline">
+                        {doc.clients?.name}
+                      </Link>
                     </td>
                     <td className="px-5 py-3.5 text-slate-500 hidden lg:table-cell">
-                      {doc.processes?.process_types?.name ?? '-'}
+                      {doc.processes?.process_types?.name ?? <span className="text-slate-300">—</span>}
                     </td>
-                    <td className="px-5 py-3.5"><DocumentStatusBadge status={doc.status} /></td>
-                    <td className="px-5 py-3.5 text-slate-400 hidden lg:table-cell">{formatDate(doc.created_at)}</td>
+                    <td className="px-5 py-3.5">
+                      <DocumentStatusBadge status={doc.status} />
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-400 hidden lg:table-cell">
+                      {formatDate(doc.created_at)}
+                    </td>
                     <td className="px-5 py-3.5 text-right">
                       <DocumentActions document={doc} />
                     </td>

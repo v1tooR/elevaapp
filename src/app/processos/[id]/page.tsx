@@ -1,7 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, FileText, Clock } from 'lucide-react'
+import { ArrowLeft, FileText, Clock, RefreshCw, Link2 } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { ProcessStatusBadge, PaymentStatusBadge } from '@/components/shared/status-badge'
 import { formatDate, formatDateTime, formatCurrency, HISTORY_ACTION_LABELS } from '@/lib/utils'
@@ -13,7 +13,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
   const supabase = await createClient()
 
   const [
-    { data: process },
+    { data: process, error: processError },
     { data: history },
     { data: documents },
     { data: events },
@@ -21,7 +21,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
     supabase.from('processes').select(`
       *,
       clients(id, name, cpf, phone, email),
-      process_types(id, name, slug, color),
+      process_types(*),
       responsible_user:profiles!processes_responsible_user_id_fkey(id, name),
       custom_fields:process_custom_fields(*),
       financials:process_financials(*)
@@ -34,7 +34,8 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
     supabase.from('calendar_events').select('*').eq('process_id', id).order('event_date', { ascending: true }).limit(5),
   ])
 
-  if (!process) notFound()
+  if (processError?.code === 'PGRST116' || !process) notFound()
+  if (processError) throw new Error(processError.message)
 
   const financials = Array.isArray(process.financials) ? process.financials[0] : process.financials
   const customFields = Array.isArray(process.custom_fields) ? process.custom_fields : []
@@ -97,6 +98,14 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                 <div className="flex justify-between">
                   <span className="text-slate-500">Conclusão:</span>
                   <span className="text-slate-900">{formatDate(process.completed_at)}</span>
+                </div>
+              )}
+              {(process as any).renewal_date && (
+                <div className="flex justify-between items-center pt-2 border-t border-slate-100 mt-2">
+                  <span className="text-slate-500 flex items-center gap-1">
+                    <RefreshCw className="w-3 h-3" /> Renovação:
+                  </span>
+                  <span className="font-semibold text-amber-700">{formatDate((process as any).renewal_date)}</span>
                 </div>
               )}
             </div>
@@ -180,14 +189,18 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
               <div className="divide-y divide-slate-50">
                 {documents.map((doc: any) => (
                   <div key={doc.id} className="flex items-center gap-3 p-4">
-                    <FileText className="w-4 h-4 text-slate-400 flex-shrink-0" />
+                    <Link2 className="w-4 h-4 text-blue-400 shrink-0" />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-slate-900 truncate">{doc.file_name}</p>
+                      <a
+                        href={doc.file_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-sm font-medium text-blue-600 hover:underline truncate block"
+                      >
+                        {doc.file_name}
+                      </a>
                       <p className="text-xs text-slate-400">{formatDate(doc.created_at)}</p>
                     </div>
-                    <a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline">
-                      Ver
-                    </a>
                   </div>
                 ))}
               </div>

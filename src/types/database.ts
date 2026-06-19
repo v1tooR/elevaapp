@@ -78,6 +78,8 @@ export interface ProcessType {
   icon?: string
   color: string
   is_active: boolean
+  renewal_period_months?: number | null
+  renewal_notes?: string | null
   created_at: string
   updated_at: string
 }
@@ -93,6 +95,8 @@ export interface Process {
   started_at?: string
   completed_at?: string
   observations?: string
+  renewal_date?: string | null
+  renewal_calendar_event_id?: string | null
   created_at: string
   updated_at: string
   client?: Client
@@ -162,12 +166,16 @@ export interface Notification {
   process?: Process
 }
 
+export type EventType = 'normal' | 'renewal' | 'deadline' | 'reminder'
+
 export interface CalendarEvent {
   id: string
   title: string
   description?: string
   event_date: string
   event_time?: string
+  event_type: EventType
+  color?: string | null
   client_id?: string
   process_id?: string
   responsible_user_id?: string

@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Edit, X } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { MaskedInput } from '@/components/ui/masked-input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import type { Client } from '@/types/database'
@@ -80,10 +81,10 @@ export function EditClientModal({ client }: { client: Client }) {
                 <div className="sm:col-span-2">
                   <Input label="Nome completo *" value={form.name} onChange={e => update('name', e.target.value)} required />
                 </div>
-                <Input label="CPF" value={form.cpf} onChange={e => update('cpf', e.target.value)} />
-                <Input label="RG" value={form.rg} onChange={e => update('rg', e.target.value)} />
+                <MaskedInput mask="cpf" label="CPF" value={form.cpf} onChange={v => update('cpf', v)} placeholder="000.000.000-00" />
+                <MaskedInput mask="rg" label="RG" value={form.rg} onChange={v => update('rg', v)} placeholder="00.000.000-0" />
                 <Input label="Nascimento" type="date" value={form.birth_date} onChange={e => update('birth_date', e.target.value)} />
-                <Input label="Telefone" value={form.phone} onChange={e => update('phone', e.target.value)} />
+                <MaskedInput mask="phone" label="Telefone" value={form.phone} onChange={v => update('phone', v)} placeholder="(00) 00000-0000" />
                 <div className="sm:col-span-2">
                   <Input label="E-mail" type="email" value={form.email} onChange={e => update('email', e.target.value)} />
                 </div>

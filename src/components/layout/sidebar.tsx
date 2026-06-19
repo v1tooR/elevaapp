@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Users, FolderOpen, FileText,
   Calendar, Bell, Settings, LogOut, ChevronRight,
-  Building2, X
+  Building2, X, Banknote
 } from 'lucide-react'
 import type { UserRole } from '@/types/database'
 
@@ -22,6 +22,7 @@ const adminNav = [
   { href: '/documentos', label: 'Documentos', icon: FileText },
   { href: '/calendario', label: 'Calendário', icon: Calendar },
   { href: '/notificacoes', label: 'Notificações', icon: Bell },
+  { href: '/financeiro', label: 'Financeiro', icon: Banknote },
 ]
 
 const superAdminNav = [
