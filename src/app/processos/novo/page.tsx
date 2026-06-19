@@ -1,44 +1,58 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
-import { Card } from '@/components/ui/card'
 import { PROCESS_TYPE_CUSTOM_FIELDS, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { syncProcessFinancial } from '@/lib/sync-process-financial'
 import Link from 'next/link'
-import { ArrowLeft, Sparkles, TrendingUp, Link2 } from 'lucide-react'
-import type { ProcessType, Client, Profile } from '@/types/database'
-import { Suspense } from 'react'
+import {
+  ArrowLeft, Sparkles, TrendingUp, Link2, Check,
+  Layers, Settings, DollarSign, AlertCircle, ChevronRight,
+} from 'lucide-react'
 
 const STATUS_OPTIONS = Object.entries(PROCESS_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))
+
+const PAYMENT_OPTIONS = [
+  { value: 'pix', label: 'PIX' },
+  { value: 'cartao', label: 'Cartão' },
+  { value: 'boleto', label: 'Boleto' },
+  { value: 'dinheiro', label: 'Dinheiro' },
+  { value: 'transferencia', label: 'Transferência' },
+]
+
+const sectionCard = { background: '#fff', border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' } as const
 
 function NovoProcessoForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const preClientId = searchParams.get('client_id') ?? ''
+  const preTypeId   = searchParams.get('type_id')   ?? ''
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [dataLoaded, setDataLoaded] = useState(false)
   const [processTypes, setProcessTypes] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
   const [profiles, setProfiles] = useState<any[]>([])
   const [selectedTypeSlug, setSelectedTypeSlug] = useState('')
+  const [selectedTypeName, setSelectedTypeName] = useState('')
+  const [selectedTypeColor, setSelectedTypeColor] = useState('')
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({})
   const [clientGovPassword, setClientGovPassword] = useState('')
 
   const [form, setForm] = useState({
     client_id: preClientId,
-    process_type_id: '',
+    process_type_id: preTypeId,
     protocol: '',
     status: 'aberto',
     responsible_user_id: '',
     observations: '',
-    service_value: '',        // valor formatado em BRL (ex: "R$ 1.200,00")
+    service_value: '',
     payment_method: '',
     payment_status: 'pending',
     expected_payment_date: '',
@@ -55,10 +69,22 @@ function NovoProcessoForm() {
       setProcessTypes(pt ?? [])
       setClients(cl ?? [])
       setProfiles(pf ?? [])
-      // Se já tem cliente pré-selecionado, carrega a senha dele
+      setDataLoaded(true)
+
+      // Pre-select client
       if (preClientId && cl) {
         const found = cl.find((c: any) => c.id === preClientId)
         if (found?.gov_password_reference) setClientGovPassword(found.gov_password_reference)
+      }
+
+      // Pre-select type from URL param
+      if (preTypeId && pt) {
+        const found = pt.find((t: any) => t.id === preTypeId)
+        if (found) {
+          setSelectedTypeSlug(found.slug)
+          setSelectedTypeName(found.name)
+          setSelectedTypeColor(found.color ?? '#3B82F6')
+        }
       }
     })
   }, [])
@@ -68,21 +94,32 @@ function NovoProcessoForm() {
     const found = clients.find((c: any) => c.id === clientId)
     const govPass = found?.gov_password_reference ?? ''
     setClientGovPassword(govPass)
-    // Atualiza senha_gov nos campos customizados se já estiver visível
-    if (govPass) {
-      setCustomFieldValues(prev => ({ ...prev, senha_gov: govPass }))
+    if (govPass && selectedTypeSlug) {
+      const fields = PROCESS_TYPE_CUSTOM_FIELDS[selectedTypeSlug] ?? []
+      if (fields.some(f => f.field_name === 'senha_gov')) {
+        setCustomFieldValues(prev => ({ ...prev, senha_gov: govPass }))
+      }
     }
   }
 
-  const handleTypeChange = (typeId: string) => {
+  const handleTypeSelect = (typeId: string) => {
+    const type = processTypes.find(t => t.id === typeId)
+    if (!type) return
     setForm(prev => ({ ...prev, process_type_id: typeId }))
-    const selectedType = processTypes.find(t => t.id === typeId)
-    const slug = selectedType?.slug ?? ''
-    setSelectedTypeSlug(slug)
-    // Pré-preenche senha_gov se o tipo tiver esse campo e o cliente já estiver selecionado
-    const fields = PROCESS_TYPE_CUSTOM_FIELDS[slug] ?? []
+    setSelectedTypeSlug(type.slug)
+    setSelectedTypeName(type.name)
+    setSelectedTypeColor(type.color ?? '#3B82F6')
+    const fields = PROCESS_TYPE_CUSTOM_FIELDS[type.slug] ?? []
     const hasSenhaGov = fields.some(f => f.field_name === 'senha_gov')
     setCustomFieldValues(hasSenhaGov && clientGovPassword ? { senha_gov: clientGovPassword } : {})
+  }
+
+  const clearType = () => {
+    setForm(prev => ({ ...prev, process_type_id: '' }))
+    setSelectedTypeSlug('')
+    setSelectedTypeName('')
+    setSelectedTypeColor('')
+    setCustomFieldValues({})
   }
 
   const customFields = PROCESS_TYPE_CUSTOM_FIELDS[selectedTypeSlug] ?? []
@@ -97,8 +134,6 @@ function NovoProcessoForm() {
     setError('')
 
     const supabase = createClient()
-
-    // Identifica o tipo de processo selecionado
     const selectedProcessType = processTypes.find(t => t.id === form.process_type_id)
 
     const { data: process, error: procErr } = await supabase.from('processes').insert({
@@ -116,7 +151,6 @@ function NovoProcessoForm() {
       return
     }
 
-    // Insert custom fields
     const customFieldInserts = customFields
       .filter(f => customFieldValues[f.field_name])
       .map((f, idx) => ({
@@ -132,11 +166,8 @@ function NovoProcessoForm() {
       await supabase.from('process_custom_fields').insert(customFieldInserts)
     }
 
-    // Insert financial data + sync to finance_entries
     if (form.service_value || form.payment_method || form.financial_notes) {
       const serviceValue = form.service_value ? parseCurrency(form.service_value) : null
-
-      // Sincroniza com o módulo financeiro (cria lançamento de receita)
       const financeEntryId = serviceValue ? await syncProcessFinancial(supabase, {
         processId: process.id,
         clientId: form.client_id,
@@ -158,7 +189,6 @@ function NovoProcessoForm() {
       })
     }
 
-    // Insert history
     await supabase.from('process_history').insert({
       process_id: process.id,
       action_type: 'created',
@@ -169,250 +199,366 @@ function NovoProcessoForm() {
     router.push(`/processos/${process.id}`)
   }
 
-  const typeOptions = processTypes.map(t => ({ value: t.id, label: t.name }))
   const clientOptions = clients.map(c => ({ value: c.id, label: c.name }))
   const profileOptions = profiles.map(p => ({ value: p.id, label: p.name }))
 
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div className="flex items-center gap-3">
-        <Link href="/processos" className="p-2 rounded-lg hover:bg-slate-100 text-slate-500">
-          <ArrowLeft className="w-4 h-4" />
-        </Link>
-        <div>
-          <h1 className="text-2xl font-bold text-slate-900">Novo Processo</h1>
-          <p className="text-slate-500 text-sm mt-0.5">Preencha as informações do processo</p>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+        .dash { font-family: 'Outfit', sans-serif; }
+        @keyframes slideUp {
+          from { opacity: 0; transform: translateY(14px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .anim   { animation: slideUp 0.4s ease-out both; }
+        .anim-1 { animation-delay: 0.05s; }
+        .anim-2 { animation-delay: 0.10s; }
+        .anim-3 { animation-delay: 0.15s; }
+        .anim-4 { animation-delay: 0.20s; }
+        .anim-5 { animation-delay: 0.25s; }
+        .type-card { transition: all 0.15s; }
+        .type-card:hover { border-color: #93C5FD; background: #EFF6FF; transform: translateY(-1px); }
+        .type-card-selected { border-color: #3B82F6 !important; background: #EFF6FF !important; }
+      `}</style>
+
+      <div className="max-w-2xl space-y-5">
+
+        {/* ── Banner ─────────────────────────────────────────────── */}
+        <div
+          className="anim relative overflow-hidden rounded-2xl"
+          style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1A3055 55%, #1E40AF 100%)' }}
+        >
+          <div className="pointer-events-none absolute -top-16 -right-16 w-56 h-56 rounded-full opacity-[0.07]"
+            style={{ background: 'radial-gradient(circle, #60A5FA, transparent 70%)' }} />
+          <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
+            style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+          <div className="relative p-6">
+            <Link href="/processos" className="inline-flex items-center gap-1.5 text-blue-300/80 hover:text-white text-xs font-medium mb-4">
+              <ArrowLeft className="w-3.5 h-3.5" /> Voltar a Processos
+            </Link>
+            <h1 className="dash text-white text-2xl font-bold">Novo Processo</h1>
+            <p className="dash text-blue-300/70 text-sm mt-1">
+              {selectedTypeName
+                ? <>Criando: <span className="text-white font-semibold">{selectedTypeName}</span></>
+                : 'Selecione o tipo de processo para começar'
+              }
+            </p>
+          </div>
         </div>
-      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-5">
-        <Card>
-          <h2 className="font-semibold text-slate-800 mb-4">Informações Principais</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div className="sm:col-span-2">
-              <Select
-                label="Cliente *"
-                options={clientOptions}
-                placeholder="Selecione o cliente"
-                value={form.client_id}
-                onChange={e => handleClientChange(e.target.value)}
-                required
-              />
+        <form onSubmit={handleSubmit} className="space-y-4">
+
+          {/* ── Tipo de Processo ─────────────────────────────────── */}
+          <div className="anim anim-1 rounded-2xl p-5" style={sectionCard}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                <Layers className="w-4 h-4 text-indigo-500" />
+              </div>
+              <div className="flex-1">
+                <h2 className="dash font-bold text-slate-900 text-sm">Tipo de Processo</h2>
+                <p className="text-[11px] text-slate-400 dash">
+                  {selectedTypeName ? 'Tipo selecionado — clique em alterar para mudar' : 'Selecione o tipo para continuar *'}
+                </p>
+              </div>
+              {selectedTypeName && (
+                <button
+                  type="button"
+                  onClick={clearType}
+                  className="text-xs font-semibold text-blue-600 hover:text-blue-700 dash px-3 py-1.5 bg-blue-50 rounded-lg"
+                >
+                  Alterar
+                </button>
+              )}
             </div>
-            <div className="sm:col-span-2">
-              <Select
-                label="Tipo de Processo *"
-                options={typeOptions}
-                placeholder="Selecione o tipo"
-                value={form.process_type_id}
-                onChange={e => handleTypeChange(e.target.value)}
-                required
-              />
-            </div>
-            <Select
-              label="Status"
-              options={STATUS_OPTIONS}
-              value={form.status}
-              onChange={e => setForm(prev => ({ ...prev, status: e.target.value }))}
-            />
-            <Input
-              label="Protocolo"
-              value={form.protocol}
-              onChange={e => setForm(prev => ({ ...prev, protocol: e.target.value }))}
-              placeholder="Número do protocolo"
-            />
-            <div className="sm:col-span-2">
-              <Select
-                label="Responsável"
-                options={profileOptions}
-                placeholder="Selecione o responsável"
-                value={form.responsible_user_id}
-                onChange={e => setForm(prev => ({ ...prev, responsible_user_id: e.target.value }))}
-              />
-            </div>
-            <div className="sm:col-span-2">
-              <Textarea
-                label="Observações"
-                value={form.observations}
-                onChange={e => setForm(prev => ({ ...prev, observations: e.target.value }))}
-                placeholder="Observações sobre o processo..."
-              />
-            </div>
+
+            {/* Type selected: show confirmation card */}
+            {selectedTypeName ? (
+              <div
+                className="flex items-center gap-3 p-4 rounded-xl border-2"
+                style={{ borderColor: selectedTypeColor, background: `${selectedTypeColor}0D` }}
+              >
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${selectedTypeColor}20` }}>
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedTypeColor }} />
+                </div>
+                <div className="flex-1">
+                  <p className="dash font-bold text-slate-900">{selectedTypeName}</p>
+                  {customFields.length > 0 && (
+                    <p className="text-[11px] text-slate-500 dash mt-0.5">{customFields.length} campo{customFields.length !== 1 ? 's' : ''} específico{customFields.length !== 1 ? 's' : ''}</p>
+                  )}
+                </div>
+                <Check className="w-5 h-5 shrink-0" style={{ color: selectedTypeColor }} />
+              </div>
+            ) : (
+              /* Type not selected: show card grid */
+              dataLoaded ? (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {processTypes.map(type => (
+                    <button
+                      key={type.id}
+                      type="button"
+                      onClick={() => handleTypeSelect(type.id)}
+                      className="type-card flex items-center gap-2.5 px-3 py-3 bg-slate-50 border border-slate-200 rounded-xl text-left cursor-pointer"
+                    >
+                      <div
+                        className="w-2.5 h-2.5 rounded-full shrink-0"
+                        style={{ backgroundColor: type.color ?? '#3B82F6' }}
+                      />
+                      <span className="dash text-xs font-semibold text-slate-700 truncate">{type.name}</span>
+                      <ChevronRight className="w-3 h-3 text-slate-300 shrink-0 ml-auto" />
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {[...Array(6)].map((_, i) => (
+                    <div key={i} className="h-11 bg-slate-100 rounded-xl animate-pulse" />
+                  ))}
+                </div>
+              )
+            )}
           </div>
-        </Card>
 
-        {/* Custom fields */}
-        {customFields.length > 0 && (
-          <Card>
-            <h2 className="font-semibold text-slate-800 mb-4">Campos Específicos</h2>
+          {/* ── Informações Principais ───────────────────────────── */}
+          <div className="anim anim-2 rounded-2xl p-5" style={sectionCard}>
+            <div className="flex items-center gap-2.5 mb-4">
+              <div className="w-8 h-8 rounded-xl bg-blue-50 flex items-center justify-center shrink-0">
+                <Settings className="w-4 h-4 text-blue-500" />
+              </div>
+              <div>
+                <h2 className="dash font-bold text-slate-900 text-sm">Informações do Processo</h2>
+                <p className="text-[11px] text-slate-400 dash">Cliente, status e responsável</p>
+              </div>
+            </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {customFields.map(field => {
-                const isAutoFilled = field.field_name === 'senha_gov' && !!clientGovPassword && customFieldValues['senha_gov'] === clientGovPassword
-                return (
-                  <div key={field.field_name}>
-                    {field.field_type === 'boolean' ? (
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={customFieldValues[field.field_name] === 'true'}
-                          onChange={e => setCustomFieldValues(prev => ({ ...prev, [field.field_name]: e.target.checked ? 'true' : 'false' }))}
-                          className="w-4 h-4 rounded text-blue-600"
-                        />
-                        <span className="text-sm font-medium text-slate-700">{field.field_label}</span>
-                      </label>
-                    ) : (
-                      <div className="space-y-1">
-                        <div className="flex items-center justify-between">
-                          <label className="block text-sm font-medium text-slate-700">{field.field_label}</label>
-                          {isAutoFilled && (
-                            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full">
-                              <Sparkles className="w-2.5 h-2.5" /> Preenchido do cadastro
-                            </span>
-                          )}
-                        </div>
-                        <input
-                          type={field.field_type === 'date' ? 'date' : field.field_type === 'number' || field.field_type === 'currency' ? 'number' : 'text'}
-                          value={customFieldValues[field.field_name] ?? ''}
-                          onChange={e => setCustomFieldValues(prev => ({ ...prev, [field.field_name]: e.target.value }))}
-                          placeholder={field.field_type === 'currency' ? '0,00' : ''}
-                          step={field.field_type === 'currency' ? '0.01' : undefined}
-                          className="block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                        />
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </Card>
-        )}
-
-        {/* Financial */}
-        <Card padding="none">
-          {/* Header com badge de integração */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-            <div>
-              <h2 className="font-semibold text-slate-800">Financeiro</h2>
-              <p className="text-xs text-slate-400 mt-0.5">Opcional — preencha se houver cobrança de serviço</p>
-            </div>
-            <div className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-700 text-xs font-medium px-2.5 py-1.5 rounded-lg">
-              <TrendingUp className="w-3.5 h-3.5" />
-              Integrado ao Módulo Financeiro
+              <div className="sm:col-span-2">
+                <Select
+                  label="Cliente *"
+                  options={clientOptions}
+                  placeholder={dataLoaded ? 'Selecione o cliente' : 'Carregando...'}
+                  value={form.client_id}
+                  onChange={e => handleClientChange(e.target.value)}
+                  required
+                />
+              </div>
+              <Select
+                label="Status"
+                options={STATUS_OPTIONS}
+                value={form.status}
+                onChange={e => setForm(prev => ({ ...prev, status: e.target.value }))}
+              />
+              <Input
+                label="Protocolo"
+                value={form.protocol}
+                onChange={e => setForm(prev => ({ ...prev, protocol: e.target.value }))}
+                placeholder="Número do protocolo"
+              />
+              <div className="sm:col-span-2">
+                <Select
+                  label="Responsável"
+                  options={profileOptions}
+                  placeholder="Selecione o responsável"
+                  value={form.responsible_user_id}
+                  onChange={e => setForm(prev => ({ ...prev, responsible_user_id: e.target.value }))}
+                />
+              </div>
+              <div className="sm:col-span-2">
+                <Textarea
+                  label="Observações"
+                  value={form.observations}
+                  onChange={e => setForm(prev => ({ ...prev, observations: e.target.value }))}
+                  placeholder="Observações sobre o processo..."
+                  rows={2}
+                />
+              </div>
             </div>
           </div>
 
-          <div className="p-5 space-y-4">
-            {/* Valor em destaque */}
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-slate-700">Valor do serviço</label>
-              <div className="relative">
+          {/* ── Campos Específicos ───────────────────────────────── */}
+          {customFields.length > 0 && (
+            <div className="anim anim-3 rounded-2xl p-5" style={sectionCard}>
+              <div className="flex items-center gap-2.5 mb-4">
+                <div
+                  className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                  style={{ backgroundColor: `${selectedTypeColor}18` }}
+                >
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: selectedTypeColor }} />
+                </div>
+                <div>
+                  <h2 className="dash font-bold text-slate-900 text-sm">Campos Específicos</h2>
+                  <p className="text-[11px] text-slate-400 dash">{selectedTypeName}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {customFields.map(field => {
+                  const isAutoFilled = field.field_name === 'senha_gov' && !!clientGovPassword && customFieldValues['senha_gov'] === clientGovPassword
+                  return (
+                    <div key={field.field_name}>
+                      {field.field_type === 'boolean' ? (
+                        <label className="flex items-center gap-2 cursor-pointer p-3 bg-slate-50 rounded-xl border border-slate-200">
+                          <input
+                            type="checkbox"
+                            checked={customFieldValues[field.field_name] === 'true'}
+                            onChange={e => setCustomFieldValues(prev => ({ ...prev, [field.field_name]: e.target.checked ? 'true' : 'false' }))}
+                            className="w-4 h-4 rounded text-blue-600"
+                          />
+                          <span className="text-sm font-medium text-slate-700 dash">{field.field_label}</span>
+                        </label>
+                      ) : (
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-sm font-medium text-slate-700 dash">{field.field_label}</label>
+                            {isAutoFilled && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full dash">
+                                <Sparkles className="w-2.5 h-2.5" /> Do cadastro
+                              </span>
+                            )}
+                          </div>
+                          <input
+                            type={field.field_type === 'date' ? 'date' : field.field_type === 'number' || field.field_type === 'currency' ? 'number' : 'text'}
+                            value={customFieldValues[field.field_name] ?? ''}
+                            onChange={e => setCustomFieldValues(prev => ({ ...prev, [field.field_name]: e.target.value }))}
+                            placeholder={field.field_type === 'currency' ? '0,00' : ''}
+                            step={field.field_type === 'currency' ? '0.01' : undefined}
+                            className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-all dash"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ── Financeiro ───────────────────────────────────────── */}
+          <div className="anim anim-4 rounded-2xl overflow-hidden" style={sectionCard}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
+                  <DollarSign className="w-4 h-4 text-emerald-500" />
+                </div>
+                <div>
+                  <h2 className="dash font-bold text-slate-900 text-sm">Financeiro</h2>
+                  <p className="text-[11px] text-slate-400 dash">Opcional — preencha se houver cobrança</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 text-green-700 text-xs font-semibold bg-green-50 border border-green-200 px-2.5 py-1.5 rounded-lg dash">
+                <TrendingUp className="w-3 h-3" /> Módulo Financeiro
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700 dash">Valor do serviço</label>
                 <input
                   type="text"
                   inputMode="numeric"
                   value={form.service_value}
-                  onChange={e => {
-                    const masked = maskCurrency(e.target.value)
-                    setForm(prev => ({ ...prev, service_value: masked }))
-                  }}
+                  onChange={e => setForm(prev => ({ ...prev, service_value: maskCurrency(e.target.value) }))}
                   placeholder="R$ 0,00"
-                  className="block w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm placeholder:text-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium text-slate-900"
+                  className="block w-full rounded-xl border border-slate-200 px-4 py-3 text-base font-bold text-slate-900 placeholder:text-slate-300 placeholder:font-normal bg-slate-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-all dash"
                 />
               </div>
-            </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Select
-                label="Forma de pagamento"
-                options={[
-                  { value: 'pix', label: 'PIX' },
-                  { value: 'cartao', label: 'Cartão' },
-                  { value: 'boleto', label: 'Boleto' },
-                  { value: 'dinheiro', label: 'Dinheiro' },
-                  { value: 'transferencia', label: 'Transferência' },
-                ]}
-                placeholder="Selecione"
-                value={form.payment_method}
-                onChange={e => setForm(prev => ({ ...prev, payment_method: e.target.value }))}
-              />
-              <Input
-                label="Data prevista de pagamento"
-                type="date"
-                value={form.expected_payment_date}
-                onChange={e => setForm(prev => ({ ...prev, expected_payment_date: e.target.value }))}
-              />
-            </div>
-
-            {/* Status com mapeamento visual para o financeiro */}
-            <div className="space-y-1">
-              <label className="block text-sm font-medium text-slate-700">Status do pagamento</label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  { value: 'pending',        label: 'Pendente',     finance: 'Previsto',    color: 'text-slate-600  bg-slate-50  border-slate-200' },
-                  { value: 'partially_paid', label: 'Parcial',      finance: 'Previsto',    color: 'text-yellow-700 bg-yellow-50 border-yellow-200' },
-                  { value: 'paid',           label: 'Pago',         finance: 'Confirmado',  color: 'text-green-700  bg-green-50  border-green-200' },
-                  { value: 'overdue',        label: 'Em atraso',    finance: 'Em atraso',   color: 'text-red-700    bg-red-50    border-red-200' },
-                ].map(opt => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    onClick={() => setForm(prev => ({ ...prev, payment_status: opt.value }))}
-                    className={`flex flex-col items-center gap-0.5 px-2 py-2.5 rounded-lg border text-xs font-medium transition-all ${
-                      form.payment_status === opt.value
-                        ? opt.color + ' ring-2 ring-offset-1 ring-blue-400 shadow-sm'
-                        : 'text-slate-400 bg-white border-slate-200 hover:border-slate-300'
-                    }`}
-                  >
-                    <span className="font-semibold">{opt.label}</span>
-                    {form.payment_status === opt.value && (
-                      <span className="flex items-center gap-0.5 opacity-80">
-                        <Link2 className="w-2.5 h-2.5" />{opt.finance}
-                      </span>
-                    )}
-                  </button>
-                ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <Select
+                  label="Forma de pagamento"
+                  options={PAYMENT_OPTIONS}
+                  placeholder="Selecione"
+                  value={form.payment_method}
+                  onChange={e => setForm(prev => ({ ...prev, payment_method: e.target.value }))}
+                />
+                <Input
+                  label="Data prevista de pagamento"
+                  type="date"
+                  value={form.expected_payment_date}
+                  onChange={e => setForm(prev => ({ ...prev, expected_payment_date: e.target.value }))}
+                />
               </div>
-            </div>
 
-            <Textarea
-              label="Notas financeiras"
-              value={form.financial_notes}
-              onChange={e => setForm(prev => ({ ...prev, financial_notes: e.target.value }))}
-              rows={2}
-              placeholder="Observações sobre pagamento, parcelamento, etc."
-            />
-
-            {/* Aviso de integração quando há valor */}
-            {form.service_value && parseCurrency(form.service_value) > 0 && (
-              <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2.5">
-                <TrendingUp className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
-                <p className="text-xs text-blue-700">
-                  <span className="font-semibold">{form.service_value}</span> será registrado como{' '}
-                  <span className="font-semibold">receita</span> no Módulo Financeiro
-                  {form.payment_status === 'paid' ? ' com status Confirmado' : ' com status Previsto'}.
-                </p>
+              <div className="space-y-1.5">
+                <label className="block text-sm font-medium text-slate-700 dash">Status do pagamento</label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { value: 'pending',        label: 'Pendente',  finance: 'Previsto',   bg: '#F8FAFC', border: '#CBD5E1', active: '#1E293B', color: '#475569' },
+                    { value: 'partially_paid', label: 'Parcial',   finance: 'Previsto',   bg: '#FFFBEB', border: '#FDE68A', active: '#B45309', color: '#B45309' },
+                    { value: 'paid',           label: 'Pago',      finance: 'Confirmado', bg: '#ECFDF5', border: '#A7F3D0', active: '#065F46', color: '#065F46' },
+                    { value: 'overdue',        label: 'Em atraso', finance: 'Em atraso',  bg: '#FEF2F2', border: '#FECACA', active: '#991B1B', color: '#991B1B' },
+                  ].map(opt => {
+                    const isActive = form.payment_status === opt.value
+                    return (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => setForm(prev => ({ ...prev, payment_status: opt.value }))}
+                        className="flex flex-col items-center gap-0.5 px-2 py-2.5 rounded-xl border text-xs font-semibold transition-all dash"
+                        style={isActive
+                          ? { background: opt.bg, borderColor: opt.active, color: opt.active, boxShadow: `0 0 0 2px ${opt.active}30` }
+                          : { background: '#fff', borderColor: '#E2E8F0', color: '#94A3B8' }
+                        }
+                      >
+                        <span className="font-bold">{opt.label}</span>
+                        {isActive && (
+                          <span className="flex items-center gap-0.5 text-[10px] opacity-70">
+                            <Link2 className="w-2.5 h-2.5" />{opt.finance}
+                          </span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            )}
-          </div>
-        </Card>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
-            <p className="text-sm text-red-700">{error}</p>
-          </div>
-        )}
+              <Textarea
+                label="Notas financeiras"
+                value={form.financial_notes}
+                onChange={e => setForm(prev => ({ ...prev, financial_notes: e.target.value }))}
+                rows={2}
+                placeholder="Observações sobre pagamento, parcelamento..."
+              />
 
-        <div className="flex gap-3">
-          <Button type="submit" loading={loading}>Criar Processo</Button>
-          <Link href="/processos"><Button variant="outline" type="button">Cancelar</Button></Link>
-        </div>
-      </form>
-    </div>
+              {form.service_value && parseCurrency(form.service_value) > 0 && (
+                <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-100 rounded-xl px-4 py-3">
+                  <TrendingUp className="w-4 h-4 text-blue-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-blue-700 dash">
+                    <span className="font-bold">{form.service_value}</span> será registrado como{' '}
+                    <span className="font-bold">receita</span> no Módulo Financeiro
+                    {form.payment_status === 'paid' ? ' com status Confirmado' : ' com status Previsto'}.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── Erro ─────────────────────────────────────────────── */}
+          {error && (
+            <div className="anim flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+              <p className="text-sm text-red-700 dash">{error}</p>
+            </div>
+          )}
+
+          {/* ── Actions ──────────────────────────────────────────── */}
+          <div className="anim anim-5 flex gap-3 pb-2">
+            <Button type="submit" loading={loading} size="md">Criar Processo</Button>
+            <Link href="/processos"><Button variant="outline" type="button" size="md">Cancelar</Button></Link>
+          </div>
+        </form>
+      </div>
+    </>
   )
 }
 
 export default function NovoProcessoPage() {
   return (
-    <Suspense fallback={<div className="p-8 text-center text-slate-500">Carregando...</div>}>
+    <Suspense fallback={
+      <div className="max-w-2xl space-y-4 p-6">
+        {[...Array(3)].map((_, i) => (
+          <div key={i} className="h-32 bg-slate-100 rounded-2xl animate-pulse" />
+        ))}
+      </div>
+    }>
       <NovoProcessoForm />
     </Suspense>
   )
