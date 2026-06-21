@@ -1,4 +1,5 @@
 'use client'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -11,7 +12,11 @@ export function MarkAllReadButton({ profileId }: { profileId: string }) {
   const handleClick = async () => {
     setLoading(true)
     const supabase = createClient()
-    await supabase.from('notifications').update({ is_read: true }).eq('user_id', profileId).eq('is_read', false)
+    await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('user_id', profileId)
+      .eq('is_read', false)
     setLoading(false)
     router.refresh()
   }
@@ -20,10 +25,15 @@ export function MarkAllReadButton({ profileId }: { profileId: string }) {
     <button
       onClick={handleClick}
       disabled={loading}
-      className="inline-flex items-center gap-2 text-sm text-blue-600 hover:underline disabled:opacity-50"
+      className="dash shrink-0 inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-semibold transition-all disabled:opacity-60 cursor-pointer"
+      style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.85)' }}
     >
-      <CheckCheck className="w-4 h-4" />
-      Marcar todas como lidas
+      {loading ? (
+        <span className="w-4 h-4 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+      ) : (
+        <CheckCheck className="w-4 h-4" />
+      )}
+      {loading ? 'Marcando...' : 'Marcar todas como lidas'}
     </button>
   )
 }

@@ -25,7 +25,7 @@ export function AdminLayout({ children, profile }: AdminLayoutProps) {
 
       {/* Desktop sidebar */}
       <div className="hidden lg:flex lg:flex-shrink-0">
-        <Sidebar role={profile?.role ?? 'analista'} />
+        <Sidebar profile={profile} />
       </div>
 
       {/* Mobile sidebar */}
@@ -34,7 +34,7 @@ export function AdminLayout({ children, profile }: AdminLayoutProps) {
         sidebarOpen ? 'translate-x-0' : '-translate-x-full'
       )}>
         <Sidebar
-          role={profile?.role ?? 'analista'}
+          profile={profile}
           isMobile
           onClose={() => setSidebarOpen(false)}
         />

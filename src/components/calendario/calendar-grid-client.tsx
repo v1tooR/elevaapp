@@ -3,12 +3,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { ChevronLeft, ChevronRight, Plus, X, RefreshCw, Clock, User, FileText } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, X, RefreshCw, Clock, User, FileText, Calendar } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { Input } from '@/components/ui/input'
-import { Button } from '@/components/ui/button'
-import { Textarea } from '@/components/ui/textarea'
-import { Select } from '@/components/ui/select'
 
 type CalEvent = {
   id: string
@@ -25,21 +21,44 @@ type CalEvent = {
 }
 
 const EVENT_TYPE_CFG = {
-  normal:   { label: 'Evento',      bg: 'bg-blue-500',   text: 'text-blue-700',   light: 'bg-blue-50' },
-  renewal:  { label: 'Renovação',   bg: 'bg-amber-500',  text: 'text-amber-700',  light: 'bg-amber-50' },
-  deadline: { label: 'Prazo',       bg: 'bg-red-500',    text: 'text-red-700',    light: 'bg-red-50' },
-  reminder: { label: 'Lembrete',    bg: 'bg-purple-500', text: 'text-purple-700', light: 'bg-purple-50' },
+  normal:   {
+    label: 'Evento',
+    pill: 'bg-blue-500',
+    dot: '#3b82f6',
+    gradient: 'linear-gradient(135deg, #0c1a2e 0%, #1e40af 100%)',
+  },
+  renewal:  {
+    label: 'Renovação',
+    pill: 'bg-amber-500',
+    dot: '#f59e0b',
+    gradient: 'linear-gradient(135deg, #1c0a00 0%, #b45309 100%)',
+  },
+  deadline: {
+    label: 'Prazo',
+    pill: 'bg-red-500',
+    dot: '#ef4444',
+    gradient: 'linear-gradient(135deg, #450a0a 0%, #dc2626 100%)',
+  },
+  reminder: {
+    label: 'Lembrete',
+    pill: 'bg-purple-500',
+    dot: '#a855f7',
+    gradient: 'linear-gradient(135deg, #1e0845 0%, #7c3aed 100%)',
+  },
 }
 
 const STATUS_CFG = {
-  pending:     { label: 'Pendente',      cls: 'bg-slate-100 text-slate-600' },
-  in_progress: { label: 'Em andamento',  cls: 'bg-blue-100 text-blue-700' },
-  completed:   { label: 'Concluído',     cls: 'bg-green-100 text-green-700' },
-  canceled:    { label: 'Cancelado',     cls: 'bg-red-100 text-red-700' },
+  pending:     { label: 'Pendente',     cls: 'bg-slate-100 text-slate-600' },
+  in_progress: { label: 'Em andamento', cls: 'bg-blue-100 text-blue-700' },
+  completed:   { label: 'Concluído',    cls: 'bg-emerald-100 text-emerald-700' },
+  canceled:    { label: 'Cancelado',    cls: 'bg-red-100 text-red-700' },
 }
 
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
+
+const inputCls = "block w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-slate-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-all dash"
+const labelCls = "block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 dash"
 
 function isoDate(y: number, m: number, d: number) {
   return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`
@@ -79,7 +98,6 @@ export function CalendarGridClient({ clients, profileId }: Props) {
 
   useEffect(() => { fetchEvents() }, [fetchEvents])
 
-  // Build calendar grid
   const firstDow = new Date(year, month - 1, 1).getDay()
   const daysInMonth = new Date(year, month, 0).getDate()
   const todayIso = isoDate(today.getFullYear(), today.getMonth() + 1, today.getDate())
@@ -88,7 +106,6 @@ export function CalendarGridClient({ clients, profileId }: Props) {
     ...Array(firstDow).fill(null),
     ...Array.from({ length: daysInMonth }, (_, i) => i + 1),
   ]
-  // Pad to full weeks
   while (cells.length % 7 !== 0) cells.push(null)
 
   const eventsByDay: Record<string, CalEvent[]> = {}
@@ -100,214 +117,238 @@ export function CalendarGridClient({ clients, profileId }: Props) {
   const selectedDayEvents = selectedDay ? (eventsByDay[selectedDay] ?? []) : []
 
   return (
-    <div className="flex gap-0 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-      {/* Calendar grid */}
-      <div className="flex-1 min-w-0">
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setView(v => addMonths(v, -1))}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <h2 className="text-base font-semibold text-slate-900 w-40 text-center">
-              {MONTHS_PT[month - 1]} {year}
-            </h2>
-            <button
-              onClick={() => setView(v => addMonths(v, 1))}
-              className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => setView(new Date(today.getFullYear(), today.getMonth(), 1))}
-              className="ml-2 px-3 py-1 text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md transition-colors"
-            >
-              Hoje
-            </button>
-          </div>
-          <div className="flex items-center gap-2">
-            {loading && <RefreshCw className="w-4 h-4 text-slate-400 animate-spin" />}
+    <>
+      <style>{`
+        @keyframes modalIn { from { opacity:0; transform:scale(0.96) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }
+      `}</style>
+
+      <div className="flex bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+        {/* ── Calendar grid ── */}
+        <div className="flex-1 min-w-0">
+
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setView(v => addMonths(v, -1))}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-500 transition-colors cursor-pointer"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <h2 className="dash text-base font-bold text-slate-900 w-44 text-center">
+                {MONTHS_PT[month - 1]} {year}
+              </h2>
+              <button
+                onClick={() => setView(v => addMonths(v, 1))}
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-500 transition-colors cursor-pointer"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setView(new Date(today.getFullYear(), today.getMonth(), 1))}
+                className="dash ml-1 px-3 py-1 text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg transition-colors cursor-pointer"
+              >
+                Hoje
+              </button>
+              {loading && <RefreshCw className="w-3.5 h-3.5 text-slate-300 animate-spin" />}
+            </div>
             <button
               onClick={() => { setSelectedDay(todayIso); setCreateOpen(true) }}
-              className="inline-flex items-center gap-2 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm font-medium hover:bg-blue-700 transition-colors"
+              className="dash inline-flex items-center gap-1.5 bg-blue-600 text-white px-3.5 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors cursor-pointer shadow-sm"
             >
               <Plus className="w-4 h-4" /> Novo Evento
             </button>
           </div>
-        </div>
 
-        {/* Weekday headers */}
-        <div className="grid grid-cols-7 border-b border-slate-100">
-          {WEEKDAYS.map(d => (
-            <div key={d} className="py-2 text-center text-xs font-semibold text-slate-400 uppercase tracking-wide">
-              {d}
-            </div>
-          ))}
-        </div>
-
-        {/* Day cells */}
-        <div className="grid grid-cols-7">
-          {cells.map((day, i) => {
-            const iso = day ? isoDate(year, month, day) : null
-            const dayEvs = iso ? (eventsByDay[iso] ?? []) : []
-            const isToday = iso === todayIso
-            const isSelected = iso === selectedDay
-
-            return (
-              <div
-                key={i}
-                onClick={() => iso && setSelectedDay(prev => prev === iso ? null : iso)}
-                className={cn(
-                  'min-h-22 p-1.5 border-b border-r border-slate-100 transition-colors',
-                  day ? 'cursor-pointer hover:bg-slate-50' : 'bg-slate-50/50',
-                  isSelected && 'bg-blue-50 hover:bg-blue-50',
-                  i % 7 === 0 && 'border-l-0',
-                )}
-              >
-                {day && (
-                  <>
-                    <span className={cn(
-                      'inline-flex items-center justify-center w-6 h-6 text-sm font-medium rounded-full mb-1',
-                      isToday ? 'bg-blue-600 text-white' : 'text-slate-700',
-                      isSelected && !isToday && 'bg-blue-200 text-blue-800',
-                    )}>
-                      {day}
-                    </span>
-                    <div className="space-y-0.5">
-                      {dayEvs.slice(0, 3).map(ev => {
-                        const cfg = EVENT_TYPE_CFG[ev.event_type ?? 'normal']
-                        return (
-                          <div
-                            key={ev.id}
-                            onClick={e => { e.stopPropagation(); setDetailEvent(ev) }}
-                            className={cn(
-                              'truncate text-[10px] font-medium px-1 py-0.5 rounded cursor-pointer hover:opacity-80',
-                              cfg.bg, 'text-white'
-                            )}
-                            title={ev.title}
-                          >
-                            {ev.title}
-                          </div>
-                        )
-                      })}
-                      {dayEvs.length > 3 && (
-                        <div className="text-[10px] text-slate-400 px-1">+{dayEvs.length - 3} mais</div>
-                      )}
-                    </div>
-                  </>
-                )}
+          {/* Weekday headers */}
+          <div className="grid grid-cols-7 bg-slate-50/60 border-b border-slate-100">
+            {WEEKDAYS.map((d, i) => (
+              <div key={d} className="py-2.5 text-center">
+                <span className={cn(
+                  'dash text-[11px] font-bold uppercase tracking-widest',
+                  (i === 0 || i === 6) ? 'text-slate-300' : 'text-slate-400'
+                )}>{d}</span>
               </div>
-            )
-          })}
-        </div>
-
-        {/* Legend */}
-        <div className="flex items-center gap-4 px-5 py-3 border-t border-slate-100 bg-slate-50/50">
-          {Object.entries(EVENT_TYPE_CFG).map(([type, cfg]) => (
-            <div key={type} className="flex items-center gap-1.5">
-              <div className={cn('w-2.5 h-2.5 rounded-full', cfg.bg)} />
-              <span className="text-xs text-slate-500">{cfg.label}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Side panel — selected day */}
-      {selectedDay && (
-        <div className="w-72 border-l border-slate-100 flex flex-col">
-          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
-            <div>
-              <p className="text-sm font-semibold text-slate-900">
-                {new Date(selectedDay + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
-              </p>
-              <p className="text-xs text-slate-400">{selectedDayEvents.length} evento(s)</p>
-            </div>
-            <button
-              onClick={() => setSelectedDay(null)}
-              className="p-1 rounded-md hover:bg-slate-100 text-slate-400"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            ))}
           </div>
 
-          <div className="flex-1 overflow-y-auto">
-            {selectedDayEvents.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-                <p className="text-sm text-slate-400">Nenhum evento neste dia</p>
-                <button
-                  onClick={() => setCreateOpen(true)}
-                  className="mt-3 text-xs text-blue-600 hover:underline"
+          {/* Day cells */}
+          <div className="grid grid-cols-7">
+            {cells.map((day, i) => {
+              const iso = day ? isoDate(year, month, day) : null
+              const dayEvs = iso ? (eventsByDay[iso] ?? []) : []
+              const isToday = iso === todayIso
+              const isSelected = iso === selectedDay
+              const isWeekend = i % 7 === 0 || i % 7 === 6
+
+              return (
+                <div
+                  key={i}
+                  onClick={() => iso && setSelectedDay(prev => prev === iso ? null : iso)}
+                  className={cn(
+                    'min-h-24 p-1.5 border-b border-r border-slate-100 transition-colors',
+                    day ? 'cursor-pointer' : '',
+                    day && !isSelected && 'hover:bg-slate-50/80',
+                    !day && 'bg-slate-50/30',
+                    isSelected && 'bg-blue-50',
+                    isWeekend && day && !isSelected && 'bg-slate-50/40',
+                  )}
                 >
-                  + Criar evento
+                  {day && (
+                    <>
+                      <div className="mb-1">
+                        <span className={cn(
+                          'dash inline-flex items-center justify-center w-6 h-6 text-xs font-bold rounded-full transition-all',
+                          isToday
+                            ? 'bg-blue-600 text-white shadow-sm'
+                            : isSelected
+                            ? 'bg-blue-200 text-blue-800'
+                            : 'text-slate-500 hover:text-slate-800',
+                        )}>
+                          {day}
+                        </span>
+                      </div>
+                      <div className="space-y-0.5">
+                        {dayEvs.slice(0, 3).map(ev => {
+                          const cfg = EVENT_TYPE_CFG[ev.event_type ?? 'normal']
+                          return (
+                            <div
+                              key={ev.id}
+                              onClick={e => { e.stopPropagation(); setDetailEvent(ev) }}
+                              className={cn(
+                                'dash truncate text-[10px] font-semibold px-1.5 py-0.5 rounded-md cursor-pointer hover:opacity-80 transition-opacity text-white',
+                                cfg.pill
+                              )}
+                              title={ev.title}
+                            >
+                              {ev.title}
+                            </div>
+                          )
+                        })}
+                        {dayEvs.length > 3 && (
+                          <div className="dash text-[10px] text-slate-400 font-semibold px-1.5">+{dayEvs.length - 3}</div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Legend */}
+          <div className="flex items-center gap-5 px-5 py-3.5 border-t border-slate-100 bg-slate-50/40">
+            {Object.entries(EVENT_TYPE_CFG).map(([type, cfg]) => (
+              <div key={type} className="flex items-center gap-1.5">
+                <div className={cn('w-2 h-2 rounded-full', cfg.pill)} />
+                <span className="dash text-xs text-slate-500">{cfg.label}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Side panel — selected day ── */}
+        {selectedDay && (
+          <div className="w-72 border-l border-slate-100 flex flex-col">
+            <div className="px-4 py-3.5 border-b border-slate-100" style={{ background: 'linear-gradient(to bottom, #f8fafc, #ffffff)' }}>
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="dash text-sm font-bold text-slate-900 capitalize leading-snug">
+                    {new Date(selectedDay + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+                  </p>
+                  <p className="dash text-xs text-slate-400 mt-0.5">
+                    {selectedDayEvents.length === 0 ? 'Sem eventos' : `${selectedDayEvents.length} evento(s)`}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setSelectedDay(null)}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-100 text-slate-400 transition-colors cursor-pointer shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
-            ) : (
-              <div className="divide-y divide-slate-50">
-                {selectedDayEvents.map(ev => {
-                  const cfg = EVENT_TYPE_CFG[ev.event_type ?? 'normal']
-                  const stCfg = STATUS_CFG[ev.status]
-                  return (
-                    <div
-                      key={ev.id}
-                      onClick={() => setDetailEvent(ev)}
-                      className="p-4 hover:bg-slate-50 cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className={cn('w-2 h-2 rounded-full mt-1.5 shrink-0', cfg.bg)} />
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-900 leading-snug">{ev.title}</p>
-                          {ev.event_time && (
-                            <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                              <Clock className="w-3 h-3" />
-                              {ev.event_time.slice(0, 5)}
-                            </p>
-                          )}
-                          {ev.clients?.name && (
-                            <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                              <User className="w-3 h-3" />
-                              {ev.clients.name}
-                            </p>
-                          )}
-                          {(ev.processes as any)?.process_types?.name && (
-                            <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">
-                              <FileText className="w-3 h-3" />
-                              {(ev.processes as any).process_types.name}
-                            </p>
-                          )}
-                          <div className="flex items-center gap-2 mt-1.5">
-                            <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded-full', cfg.light, cfg.text)}>
-                              {cfg.label}
-                            </span>
-                            <span className={cn('text-[10px] font-medium px-1.5 py-0.5 rounded-full', stCfg.cls)}>
-                              {stCfg.label}
-                            </span>
+            </div>
+
+            <div className="flex-1 overflow-y-auto">
+              {selectedDayEvents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 px-4 text-center">
+                  <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mb-3">
+                    <Calendar className="w-5 h-5 text-slate-300" />
+                  </div>
+                  <p className="dash text-sm font-semibold text-slate-500">Nenhum evento</p>
+                  <p className="dash text-xs text-slate-400 mt-0.5">Que tal criar um?</p>
+                  <button
+                    onClick={() => setCreateOpen(true)}
+                    className="dash mt-3 text-xs font-bold text-blue-600 hover:text-blue-700 cursor-pointer transition-colors"
+                  >
+                    + Criar evento
+                  </button>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-50">
+                  {selectedDayEvents.map(ev => {
+                    const cfg = EVENT_TYPE_CFG[ev.event_type ?? 'normal']
+                    const stCfg = STATUS_CFG[ev.status]
+                    return (
+                      <div
+                        key={ev.id}
+                        onClick={() => setDetailEvent(ev)}
+                        className="p-4 hover:bg-slate-50 cursor-pointer transition-colors group"
+                      >
+                        <div className="flex items-start gap-2.5">
+                          <div className="w-2 h-2 rounded-full mt-1.5 shrink-0" style={{ background: cfg.dot }} />
+                          <div className="flex-1 min-w-0">
+                            <p className="dash text-sm font-semibold text-slate-800 leading-snug group-hover:text-slate-900">{ev.title}</p>
+                            {ev.event_time && (
+                              <p className="dash text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                                <Clock className="w-3 h-3" />
+                                {ev.event_time.slice(0, 5)}
+                              </p>
+                            )}
+                            {ev.clients?.name && (
+                              <p className="dash text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                                <User className="w-3 h-3" />
+                                {ev.clients.name}
+                              </p>
+                            )}
+                            {(ev.processes as any)?.process_types?.name && (
+                              <p className="dash text-xs text-slate-500 flex items-center gap-1 mt-0.5">
+                                <FileText className="w-3 h-3" />
+                                {(ev.processes as any).process_types.name}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-1.5 mt-2">
+                              <span className="dash text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: cfg.dot + '18', color: cfg.dot }}>
+                                {cfg.label}
+                              </span>
+                              <span className={cn('dash text-[10px] font-semibold px-2 py-0.5 rounded-full', stCfg.cls)}>
+                                {stCfg.label}
+                              </span>
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
 
-          <div className="p-3 border-t border-slate-100">
-            <button
-              onClick={() => setCreateOpen(true)}
-              className="w-full flex items-center justify-center gap-2 py-2 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-            >
-              <Plus className="w-4 h-4" /> Novo evento neste dia
-            </button>
+            <div className="p-3 border-t border-slate-100">
+              <button
+                onClick={() => setCreateOpen(true)}
+                className="dash w-full flex items-center justify-center gap-2 py-2.5 text-sm font-semibold text-blue-600 hover:bg-blue-50 rounded-xl transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> Novo evento neste dia
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* Create event modal */}
       {createOpen && (
-        <CreateEventInline
+        <CreateEventModal
           clients={clients}
           profileId={profileId}
           defaultDate={selectedDay ?? todayIso}
@@ -328,14 +369,14 @@ export function CalendarGridClient({ clients, profileId }: Props) {
           }}
         />
       )}
-    </div>
+    </>
   )
 }
 
 // ─── Create Event Modal ──────────────────────────────────────────────────────
 
-function CreateEventInline({
-  clients, profileId, defaultDate, onClose, onCreated
+function CreateEventModal({
+  clients, profileId, defaultDate, onClose, onCreated,
 }: {
   clients: { id: string; name: string }[]
   profileId: string
@@ -344,12 +385,14 @@ function CreateEventInline({
   onCreated: () => void
 }) {
   const [loading, setLoading] = useState(false)
-  const [processes, setProcesses] = useState<{ id: string; process_types?: { name: string } | { name: string }[] | null }[]>([])
+  const [processes, setProcesses] = useState<{ id: string; process_types?: { name: string } | null }[]>([])
   const [form, setForm] = useState({
     title: '', description: '', event_date: defaultDate, event_time: '',
     event_type: 'normal', client_id: '', process_id: '',
     visibility: 'admin_only', status: 'pending',
   })
+
+  const cfg = EVENT_TYPE_CFG[form.event_type as keyof typeof EVENT_TYPE_CFG] ?? EVENT_TYPE_CFG.normal
 
   useEffect(() => {
     if (!form.client_id) { setProcesses([]); return }
@@ -377,55 +420,148 @@ function CreateEventInline({
     onCreated()
   }
 
-  const clientOptions = clients.map(c => ({ value: c.id, label: c.name }))
-  const processOptions = processes.map(p => ({ value: p.id, label: (p.process_types as any)?.name ?? p.id }))
-
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-5 border-b border-slate-100">
-          <h2 className="text-base font-semibold">Novo Evento</h2>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100 text-slate-400">
-            <X className="w-5 h-5" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden"
+        style={{ animation: 'modalIn 0.18s ease-out both' }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-5 py-4 shrink-0"
+          style={{ background: cfg.gradient, borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <div>
+            <p className="dash text-xs font-bold uppercase tracking-widest text-white/50 mb-0.5">{cfg.label}</p>
+            <h2 className="dash text-base font-bold text-white">Novo Evento</h2>
+          </div>
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all cursor-pointer"
+          >
+            <X className="w-4 h-4" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
-          <Input label="Título *" value={form.title} onChange={e => set('title', e.target.value)} required autoFocus />
-          <Textarea label="Descrição" value={form.description} onChange={e => set('description', e.target.value)} rows={2} />
-          <div className="grid grid-cols-2 gap-3">
-            <Input label="Data *" type="date" value={form.event_date} onChange={e => set('event_date', e.target.value)} required />
-            <Input label="Horário" type="time" value={form.event_time} onChange={e => set('event_time', e.target.value)} />
+
+        {/* Body */}
+        <form onSubmit={handleSubmit} className="overflow-y-auto flex-1 flex flex-col">
+          <div className="p-5 space-y-4 flex-1">
+
+            {/* Type selector */}
+            <div>
+              <label className={labelCls}>Tipo de Evento</label>
+              <div className="grid grid-cols-4 gap-2">
+                {(Object.entries(EVENT_TYPE_CFG) as [string, typeof EVENT_TYPE_CFG[keyof typeof EVENT_TYPE_CFG]][]).map(([type, c]) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => set('event_type', type)}
+                    className="dash py-2 px-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex flex-col items-center gap-1.5"
+                    style={form.event_type === type ? {
+                      background: c.dot + '18',
+                      border: `2px solid ${c.dot}`,
+                      color: c.dot,
+                    } : {
+                      background: '#f8fafc',
+                      border: '2px solid #e2e8f0',
+                      color: '#64748b',
+                    }}
+                  >
+                    <div className="w-2 h-2 rounded-full" style={{ background: c.dot }} />
+                    {c.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <label className={labelCls}>Título *</label>
+              <input
+                type="text"
+                value={form.title}
+                onChange={e => set('title', e.target.value)}
+                required
+                autoFocus
+                className={inputCls}
+                placeholder="Ex: Renovação do processo de isenção"
+              />
+            </div>
+
+            <div>
+              <label className={labelCls}>Descrição</label>
+              <textarea
+                value={form.description}
+                onChange={e => set('description', e.target.value)}
+                rows={2}
+                className={inputCls + ' resize-none'}
+                placeholder="Detalhes adicionais (opcional)..."
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Data *</label>
+                <input type="date" value={form.event_date} onChange={e => set('event_date', e.target.value)} required className={inputCls} />
+              </div>
+              <div>
+                <label className={labelCls}>Horário</label>
+                <input type="time" value={form.event_time} onChange={e => set('event_time', e.target.value)} className={inputCls} />
+              </div>
+            </div>
+
+            <div>
+              <label className={labelCls}>Cliente</label>
+              <select value={form.client_id} onChange={e => set('client_id', e.target.value)} className={inputCls}>
+                <option value="">Selecione (opcional)</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+
+            {processes.length > 0 && (
+              <div>
+                <label className={labelCls}>Processo</label>
+                <select value={form.process_id} onChange={e => set('process_id', e.target.value)} className={inputCls}>
+                  <option value="">Selecione</option>
+                  {processes.map(p => <option key={p.id} value={p.id}>{(p.process_types as any)?.name ?? p.id}</option>)}
+                </select>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className={labelCls}>Visibilidade</label>
+                <select value={form.visibility} onChange={e => set('visibility', e.target.value)} className={inputCls}>
+                  <option value="admin_only">Somente equipe</option>
+                  <option value="client_visible">Visível ao cliente</option>
+                </select>
+              </div>
+              <div>
+                <label className={labelCls}>Status inicial</label>
+                <select value={form.status} onChange={e => set('status', e.target.value)} className={inputCls}>
+                  <option value="pending">Pendente</option>
+                  <option value="in_progress">Em Andamento</option>
+                  <option value="completed">Concluído</option>
+                </select>
+              </div>
+            </div>
           </div>
-          <Select
-            label="Tipo"
-            options={[
-              { value: 'normal', label: 'Evento' },
-              { value: 'renewal', label: 'Renovação' },
-              { value: 'deadline', label: 'Prazo' },
-              { value: 'reminder', label: 'Lembrete' },
-            ]}
-            value={form.event_type}
-            onChange={e => set('event_type', e.target.value)}
-          />
-          <Select label="Cliente" options={clientOptions} placeholder="Selecione (opcional)" value={form.client_id} onChange={e => set('client_id', e.target.value)} />
-          {processOptions.length > 0 && (
-            <Select label="Processo" options={processOptions} placeholder="Selecione" value={form.process_id} onChange={e => set('process_id', e.target.value)} />
-          )}
-          <div className="grid grid-cols-2 gap-3">
-            <Select
-              label="Visibilidade"
-              options={[{ value: 'admin_only', label: 'Somente equipe' }, { value: 'client_visible', label: 'Visível para cliente' }]}
-              value={form.visibility} onChange={e => set('visibility', e.target.value)}
-            />
-            <Select
-              label="Status"
-              options={[{ value: 'pending', label: 'Pendente' }, { value: 'in_progress', label: 'Em Andamento' }, { value: 'completed', label: 'Concluído' }]}
-              value={form.status} onChange={e => set('status', e.target.value)}
-            />
-          </div>
-          <div className="flex gap-3 pt-1">
-            <Button type="submit" loading={loading}>Criar Evento</Button>
-            <Button type="button" variant="outline" onClick={onClose}>Cancelar</Button>
+
+          <div className="px-5 pb-5 flex gap-3 shrink-0">
+            <button
+              type="submit"
+              disabled={loading}
+              className="dash flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60 cursor-pointer"
+              style={{ background: cfg.gradient }}
+            >
+              {loading ? 'Criando...' : 'Criar Evento'}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="dash px-4 py-2.5 rounded-xl text-sm font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              Cancelar
+            </button>
           </div>
         </form>
       </div>
@@ -436,7 +572,7 @@ function CreateEventInline({
 // ─── Event Detail Modal ──────────────────────────────────────────────────────
 
 function EventDetailModal({
-  event, onClose, onDeleted, onStatusChanged
+  event, onClose, onDeleted, onStatusChanged,
 }: {
   event: CalEvent
   onClose: () => void
@@ -444,7 +580,9 @@ function EventDetailModal({
   onStatusChanged: (id: string, status: CalEvent['status']) => void
 }) {
   const [deleting, setDeleting] = useState(false)
+  const [statusLoading, setStatusLoading] = useState<string | null>(null)
   const cfg = EVENT_TYPE_CFG[event.event_type ?? 'normal']
+  const evDate = new Date(event.event_date + 'T00:00:00')
 
   const handleDelete = async () => {
     if (!confirm('Excluir este evento?')) return
@@ -456,48 +594,70 @@ function EventDetailModal({
   }
 
   const handleStatus = async (status: CalEvent['status']) => {
+    setStatusLoading(status)
     const supabase = createClient()
     await supabase.from('calendar_events').update({ status }).eq('id', event.id)
+    setStatusLoading(null)
     onStatusChanged(event.id, status)
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-md">
-        {/* Colored header */}
-        <div className={cn('flex items-start justify-between p-5 rounded-t-xl', cfg.light)}>
-          <div>
-            <div className={cn('text-xs font-semibold uppercase tracking-wide mb-1', cfg.text)}>
-              {cfg.label}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden"
+        style={{ animation: 'modalIn 0.18s ease-out both' }}
+      >
+        {/* Header */}
+        <div className="px-5 py-5" style={{ background: cfg.gradient, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <span className="dash text-xs font-bold uppercase tracking-widest text-white/50">{cfg.label}</span>
+              <h2 className="dash text-lg font-bold text-white leading-snug mt-0.5">{event.title}</h2>
+              <div className="dash flex items-center gap-2 text-sm text-white/60 mt-1.5 flex-wrap">
+                <span>
+                  {evDate.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' })}
+                </span>
+                {event.event_time && (
+                  <>
+                    <span className="text-white/30">·</span>
+                    <span className="flex items-center gap-1">
+                      <Clock className="w-3 h-3" />
+                      {event.event_time.slice(0, 5)}
+                    </span>
+                  </>
+                )}
+              </div>
             </div>
-            <h2 className="text-lg font-bold text-slate-900 leading-snug">{event.title}</h2>
-            <p className={cn('text-sm mt-1', cfg.text)}>
-              {new Date(event.event_date + 'T00:00:00').toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-              {event.event_time && ` · ${event.event_time.slice(0, 5)}`}
-            </p>
+            <button
+              onClick={onClose}
+              className="w-8 h-8 rounded-lg flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all cursor-pointer shrink-0"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-white/50 text-slate-500 ml-3">
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
         <div className="p-5 space-y-4">
           {event.description && (
-            <p className="text-sm text-slate-600">{event.description}</p>
+            <p className="dash text-sm text-slate-600 leading-relaxed">{event.description}</p>
           )}
 
           {(event.clients?.name || (event.processes as any)?.process_types?.name) && (
-            <div className="space-y-2">
+            <div className="space-y-2 py-3 border-y border-slate-100">
               {event.clients?.name && (
-                <div className="flex items-center gap-2 text-sm text-slate-600">
-                  <User className="w-4 h-4 text-slate-400" />
-                  {event.clients.name}
+                <div className="dash flex items-center gap-2.5 text-sm text-slate-700">
+                  <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                    <User className="w-3.5 h-3.5 text-blue-500" />
+                  </div>
+                  <span className="font-semibold">{event.clients.name}</span>
                 </div>
               )}
               {(event.processes as any)?.process_types?.name && (
-                <div className="flex items-center gap-2 text-sm text-slate-600">
-                  <FileText className="w-4 h-4 text-slate-400" />
-                  {(event.processes as any).process_types.name}
+                <div className="dash flex items-center gap-2.5 text-sm text-slate-700">
+                  <div className="w-7 h-7 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
+                    <FileText className="w-3.5 h-3.5 text-slate-400" />
+                  </div>
+                  <span className="font-semibold">{(event.processes as any).process_types.name}</span>
                 </div>
               )}
             </div>
@@ -505,18 +665,26 @@ function EventDetailModal({
 
           {/* Status switcher */}
           <div>
-            <p className="text-xs font-semibold text-slate-400 uppercase mb-2">Status</p>
-            <div className="flex gap-2 flex-wrap">
+            <p className="dash text-xs font-bold text-slate-400 uppercase tracking-widest mb-2.5">Status do Evento</p>
+            <div className="grid grid-cols-2 gap-2">
               {(Object.entries(STATUS_CFG) as [CalEvent['status'], typeof STATUS_CFG[keyof typeof STATUS_CFG]][]).map(([s, c]) => (
                 <button
                   key={s}
                   onClick={() => handleStatus(s)}
+                  disabled={statusLoading !== null}
                   className={cn(
-                    'text-xs font-medium px-3 py-1 rounded-full transition-colors',
-                    event.status === s ? c.cls + ' ring-2 ring-offset-1 ring-blue-400' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    'dash text-xs font-semibold px-3 py-2.5 rounded-xl transition-all cursor-pointer text-left',
+                    event.status === s
+                      ? c.cls + ' ring-2 ring-offset-1 ring-blue-300'
+                      : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200'
                   )}
                 >
-                  {c.label}
+                  {statusLoading === s ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-3 rounded-full border-2 border-current border-t-transparent animate-spin inline-block" />
+                      {c.label}
+                    </span>
+                  ) : c.label}
                 </button>
               ))}
             </div>
@@ -526,11 +694,16 @@ function EventDetailModal({
             <button
               onClick={handleDelete}
               disabled={deleting}
-              className="text-sm text-red-500 hover:text-red-700 font-medium disabled:opacity-50"
+              className="dash text-sm text-red-500 hover:text-red-700 font-semibold disabled:opacity-50 cursor-pointer transition-colors"
             >
               {deleting ? 'Excluindo...' : 'Excluir evento'}
             </button>
-            <Button variant="outline" onClick={onClose}>Fechar</Button>
+            <button
+              onClick={onClose}
+              className="dash px-4 py-2 rounded-xl text-sm font-semibold text-slate-600 border border-slate-200 hover:bg-slate-50 transition-colors cursor-pointer"
+            >
+              Fechar
+            </button>
           </div>
         </div>
       </div>
