@@ -8,6 +8,7 @@ import {
 import { ProcessStatusBadge } from '@/components/shared/status-badge'
 import { formatCPF, formatPhone, formatDate, formatDateTime } from '@/lib/utils'
 import { EditClientModal } from '@/components/clientes/edit-client-modal'
+import { PortalAccessCard } from '@/components/clientes/portal-access-card'
 
 function avatarGradient(name: string) {
   const g = [
@@ -30,8 +31,15 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
   const { id } = await params
   const supabase = await createClient()
 
-  const [{ data: client }, { data: processes }, { data: documents }] = await Promise.all([
-    supabase.from('clients').select('*').eq('id', id).single(),
+  const { data: client } = await supabase.from('clients').select('*').eq('id', id).single()
+  if (!client) notFound()
+
+  const { data: { user } } = await supabase.auth.getUser()
+  const { data: callerProfile } = user
+    ? await supabase.from('profiles').select('role').eq('auth_user_id', user.id).single()
+    : { data: null }
+
+  const [{ data: processes }, { data: documents }, { data: linkedProfile }] = await Promise.all([
     supabase.from('processes')
       .select('*, process_types(name, color, slug)')
       .eq('client_id', id)
@@ -41,9 +49,10 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
       .eq('client_id', id)
       .order('created_at', { ascending: false })
       .limit(5),
+    client.profile_id
+      ? supabase.from('profiles').select('email').eq('id', client.profile_id).single()
+      : Promise.resolve({ data: null }),
   ])
-
-  if (!client) notFound()
 
   return (
     <>
@@ -279,6 +288,14 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                 </div>
               </div>
             </div>
+
+            {/* Portal access */}
+            <PortalAccessCard
+              client={client}
+              hasAccess={!!client.profile_id}
+              profileEmail={linkedProfile?.email ?? undefined}
+              callerRole={callerProfile?.role ?? undefined}
+            />
           </div>
 
           {/* Right column */}

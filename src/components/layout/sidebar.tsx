@@ -74,11 +74,11 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
   return (
     <aside
       className="flex flex-col h-full w-64 shrink-0"
-      style={{ background: '#0C1A2E', borderRight: '1px solid rgba(255,255,255,0.06)' }}
+      style={{ background: '#1E1A17', borderRight: '1px solid rgba(255,255,255,0.06)' }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .sb { font-family: 'Outfit', sans-serif; }
+        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;700;800&display=swap');
+        .sb { font-family: 'Raleway', sans-serif; }
       `}</style>
 
       {/* ── Brand header ── */}
@@ -133,7 +133,7 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
                   'sb group flex items-center gap-3 py-2.5 pl-2.5 pr-3 rounded-xl text-sm',
                   'border-l-2 transition-all duration-200 cursor-pointer',
                   isActive
-                    ? 'bg-indigo-500/15 border-indigo-500 font-semibold'
+                    ? 'bg-[#A14F2A]/15 border-[#A14F2A] font-semibold'
                     : 'border-transparent font-medium hover:bg-white/6 hover:border-white/20'
                 )}
               >
@@ -142,9 +142,10 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
                   className={cn(
                     'w-4 h-4 shrink-0 transition-colors duration-200',
                     isActive
-                      ? 'text-indigo-400'
-                      : 'text-white/35 group-hover:text-indigo-300'
+                      ? ''
+                      : 'text-white/35 group-hover:text-[#C97A52]'
                   )}
+                  style={isActive ? { color: '#C97A52' } : {}}
                 />
 
                 {/* Label */}
@@ -171,9 +172,10 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
                   className={cn(
                     'w-3 h-3 shrink-0 transition-all duration-200',
                     isActive
-                      ? 'text-indigo-400/50 opacity-100 translate-x-0'
+                      ? 'opacity-100 translate-x-0'
                       : 'text-white/30 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0'
                   )}
+                  style={isActive ? { color: 'rgba(201,122,82,0.5)' } : {}}
                 />
               </Link>
             </div>
@@ -190,7 +192,7 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
         >
           <div
             className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 text-xs font-bold sb"
-            style={{ background: 'rgba(99,102,241,0.2)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.3)' }}
+            style={{ background: 'rgba(161,79,42,0.15)', color: '#C97A52', border: '1px solid rgba(161,79,42,0.25)' }}
           >
             {initials}
           </div>

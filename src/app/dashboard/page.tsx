@@ -55,27 +55,27 @@ export default async function DashboardPage() {
   })
 
   const pipeline = [
-    { key: 'aberto',                  label: 'Abertos',       color: '#3B82F6' },
+    { key: 'aberto',                  label: 'Abertos',       color: '#A14F2A' },
     { key: 'em_andamento',            label: 'Em Andamento',  color: '#F59E0B' },
     { key: 'aguardando_documentos',   label: 'Aguard. Doc.',  color: '#F97316' },
-    { key: 'aguardando_orgao',        label: 'Aguard. Órgão', color: '#A855F7' },
+    { key: 'aguardando_orgao',        label: 'Aguard. Órgão', color: '#6B3019' },
     { key: 'concluido',               label: 'Concluídos',    color: '#10B981' },
   ]
   const totalWithStatus = pipeline.reduce((s, p) => s + (stats.statusCounts[p.key] ?? 0), 0)
 
   const statusCards = [
-    { key: 'aberto',                label: 'Abertos',       icon: FolderOpen,    color: '#3B82F6', bg: '#EFF6FF', border: '#BFDBFE' },
-    { key: 'em_andamento',          label: 'Em Andamento',  icon: Clock,         color: '#F59E0B', bg: '#FFFBEB', border: '#FDE68A' },
-    { key: 'aguardando_documentos', label: 'Aguard. Doc.',  icon: AlertCircle,   color: '#F97316', bg: '#FFF7ED', border: '#FDBA74' },
-    { key: 'concluido',             label: 'Concluídos',    icon: CheckCircle2,  color: '#10B981', bg: '#ECFDF5', border: '#A7F3D0' },
+    { key: 'aberto',                label: 'Abertos',       icon: FolderOpen,    color: '#A14F2A', bg: '#FDF0E8', border: 'rgba(161,79,42,0.32)', track: 'rgba(161,79,42,0.12)' },
+    { key: 'em_andamento',          label: 'Em Andamento',  icon: Clock,         color: '#F59E0B', bg: '#FFFBEB', border: '#FDE68A',              track: '#FEF3C7' },
+    { key: 'aguardando_documentos', label: 'Aguard. Doc.',  icon: AlertCircle,   color: '#F97316', bg: '#FFF7ED', border: '#FDBA74',              track: '#FFEDD5' },
+    { key: 'concluido',             label: 'Concluídos',    icon: CheckCircle2,  color: '#10B981', bg: '#ECFDF5', border: '#A7F3D0',              track: '#D1FAE5' },
   ]
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;700;800&display=swap');
 
-        .dash { font-family: 'Outfit', sans-serif; }
+        .dash { font-family: 'Raleway', sans-serif; }
 
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(20px); }
@@ -95,8 +95,8 @@ export default async function DashboardPage() {
         }
 
         .process-row { transition: background 0.15s; }
-        .process-row:hover { background: #F8FAFC; }
-        .process-row:hover .row-name { color: #2563EB; }
+        .process-row:hover { background: #FBF8F6; }
+        .process-row:hover .row-name { color: #A14F2A; }
 
         .link-arrow { transition: transform 0.15s; }
         .view-all:hover .link-arrow { transform: translate(2px, -2px); }
@@ -107,20 +107,20 @@ export default async function DashboardPage() {
         {/* ── Welcome Banner ───────────────────────────────────────── */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1A3055 55%, #1E40AF 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
         >
           {/* decorative glows */}
           <div className="pointer-events-none absolute -top-24 -right-24 w-80 h-80 rounded-full opacity-[0.07]"
-            style={{ background: 'radial-gradient(circle, #60A5FA, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
           <div className="pointer-events-none absolute -bottom-12 left-1/3 w-96 h-40 opacity-[0.05]"
-            style={{ background: 'radial-gradient(ellipse, #93C5FD, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(ellipse, #A14F2A, transparent 70%)' }} />
           {/* dot grid */}
           <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
           <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-5 p-6 lg:p-8">
             <div>
-              <p className="dash text-blue-300/80 text-xs font-medium uppercase tracking-widest mb-2">
+              <p className="dash text-xs font-medium uppercase tracking-widest mb-2" style={{ color: 'rgba(201,122,82,0.75)' }}>
                 {todayLabel}
               </p>
               <h1 className="dash text-white text-3xl lg:text-4xl font-bold leading-tight">
@@ -147,12 +147,22 @@ export default async function DashboardPage() {
               { value: stats.pendingDocs,                     label: 'Docs Pendentes',   Icon: FileText },
               { value: stats.statusCounts['concluido'] ?? 0,  label: 'Concluídos',       Icon: TrendingUp },
             ].map(({ value, label, Icon }, i) => (
-              <div key={i} className="bg-white/10 backdrop-blur-sm border border-white/10 rounded-xl px-4 py-3">
-                <div className="flex items-center justify-between mb-1">
-                  <Icon className="w-3.5 h-3.5 text-blue-300/70" />
+              <div
+                key={i}
+                className="rounded-xl px-4 py-3"
+                style={{
+                  background: 'rgba(0,0,0,0.28)',
+                  border: '1px solid rgba(255,255,255,0.18)',
+                  backdropFilter: 'blur(8px)',
+                }}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <div className="w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.12)' }}>
+                    <Icon className="w-3.5 h-3.5 text-white/70" />
+                  </div>
                 </div>
                 <p className="dash text-2xl font-bold text-white">{value}</p>
-                <p className="text-[11px] text-blue-200/70 mt-0.5 dash">{label}</p>
+                <p className="text-[11px] mt-0.5 dash text-white/55">{label}</p>
               </div>
             ))}
           </div>
@@ -186,7 +196,7 @@ export default async function DashboardPage() {
                 </div>
                 <p className="dash text-3xl font-bold text-slate-900">{count}</p>
                 <p className="text-xs text-slate-500 mt-0.5 dash">{s.label}</p>
-                <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: `${s.border}80` }}>
+                <div className="mt-3 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: s.track }}>
                   <div
                     className="bar-fill h-full rounded-full"
                     style={{ width: `${pct}%`, backgroundColor: s.color }}
@@ -262,7 +272,7 @@ export default async function DashboardPage() {
                 <h2 className="dash font-bold text-slate-900">Processos Recentes</h2>
                 <p className="text-xs text-slate-400 mt-0.5 dash">Últimas entradas</p>
               </div>
-              <Link href="/processos" className="view-all flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold dash transition-colors">
+              <Link href="/processos" className="view-all flex items-center gap-1 text-xs font-semibold dash transition-colors hover:opacity-75" style={{ color: '#A14F2A' }}>
                 Ver todos <ArrowUpRight className="link-arrow w-3.5 h-3.5" />
               </Link>
             </div>
@@ -286,7 +296,7 @@ export default async function DashboardPage() {
                     >
                       <div
                         className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-white text-xs font-bold dash"
-                        style={{ backgroundColor: p.process_types?.color ?? '#3B82F6' }}
+                        style={{ backgroundColor: p.process_types?.color ?? '#A14F2A' }}
                       >
                         {initials}
                       </div>
@@ -314,7 +324,7 @@ export default async function DashboardPage() {
                 <h2 className="dash font-bold text-slate-900">Próximos Eventos</h2>
                 <p className="text-xs text-slate-400 mt-0.5 dash">Agenda do sistema</p>
               </div>
-              <Link href="/calendario" className="view-all flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 font-semibold dash transition-colors">
+              <Link href="/calendario" className="view-all flex items-center gap-1 text-xs font-semibold dash transition-colors hover:opacity-75" style={{ color: '#A14F2A' }}>
                 Ver todos <ArrowUpRight className="link-arrow w-3.5 h-3.5" />
               </Link>
             </div>
@@ -339,12 +349,12 @@ export default async function DashboardPage() {
                     <div key={ev.id} className="flex items-start gap-4 px-6 py-4 border-b border-slate-50 last:border-0">
                       <div
                         className="w-11 h-11 rounded-xl flex flex-col items-center justify-center flex-shrink-0"
-                        style={{ background: isToday ? 'linear-gradient(135deg, #1E3A5F, #1E40AF)' : '#EFF6FF' }}
+                        style={{ background: isToday ? 'linear-gradient(135deg, #6B3019, #A14F2A)' : 'rgba(161,79,42,0.07)' }}
                       >
-                        <span className="text-[9px] font-bold uppercase leading-none" style={{ color: isToday ? '#93C5FD' : '#3B82F6' }}>
+                        <span className="text-[9px] font-bold uppercase leading-none" style={{ color: isToday ? 'rgba(201,122,82,0.8)' : '#A14F2A' }}>
                           {month}
                         </span>
-                        <span className="text-sm font-bold leading-tight mt-0.5" style={{ color: isToday ? '#fff' : '#1D4ED8' }}>
+                        <span className="text-sm font-bold leading-tight mt-0.5" style={{ color: isToday ? '#fff' : '#6B3019' }}>
                           {day}
                         </span>
                       </div>
@@ -352,7 +362,7 @@ export default async function DashboardPage() {
                         <div className="flex items-center gap-2">
                           <p className="text-sm font-semibold text-slate-900 truncate dash">{ev.title}</p>
                           {isToday && (
-                            <span className="flex-shrink-0 text-[10px] font-bold text-blue-600 bg-blue-50 rounded-full px-2 py-0.5 dash">
+                            <span className="flex-shrink-0 text-[10px] font-bold rounded-full px-2 py-0.5 dash" style={{ color: '#A14F2A', background: 'rgba(161,79,42,0.08)' }}>
                               Hoje
                             </span>
                           )}

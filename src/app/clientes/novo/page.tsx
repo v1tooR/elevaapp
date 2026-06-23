@@ -7,7 +7,10 @@ import { MaskedInput } from '@/components/ui/masked-input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import Link from 'next/link'
-import { ArrowLeft, User, MapPin, Lock, AlertCircle } from 'lucide-react'
+import { ArrowLeft, User, MapPin, Lock, AlertCircle, KeyRound, Eye, EyeOff, RefreshCw } from 'lucide-react'
+import { cn } from '@/lib/utils'
+
+const CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!'
 
 const BRAZIL_STATES = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
@@ -28,6 +31,15 @@ export default function NovoClientePage() {
     name: '', cpf: '', rg: '', birth_date: '', phone: '', email: '',
     address: '', city: '', state: '', gov_password_reference: '', internal_notes: ''
   })
+  const [criarAcesso, setCriarAcesso] = useState(false)
+  const [portalEmail, setPortalEmail] = useState('')
+  const [portalPassword, setPortalPassword] = useState('')
+  const [showPw, setShowPw] = useState(false)
+
+  const generatePassword = () => {
+    setPortalPassword(Array.from({ length: 12 }, () => CHARS[Math.floor(Math.random() * CHARS.length)]).join(''))
+    setShowPw(true)
+  }
 
   const update = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
 
@@ -55,6 +67,21 @@ export default function NovoClientePage() {
       setError('Erro ao cadastrar cliente: ' + err.message)
       setLoading(false)
       return
+    }
+
+    if (criarAcesso && portalEmail && portalPassword) {
+      const res = await fetch(`/api/clientes/${data.id}/portal-access`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: portalEmail, password: portalPassword }),
+      })
+      if (!res.ok) {
+        const json = await res.json()
+        setError(`Cliente cadastrado, mas erro ao criar acesso: ${json.error ?? 'Erro desconhecido'}`)
+        setLoading(false)
+        router.push(`/clientes/${data.id}`)
+        return
+      }
     }
 
     router.push(`/clientes/${data.id}`)
@@ -188,6 +215,83 @@ export default function NovoClientePage() {
             </div>
           </div>
 
+          {/* ── Acesso ao Portal ───────────────────────────────────── */}
+          <div className="anim anim-4 rounded-2xl p-6" style={sectionCard}>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-indigo-50 flex items-center justify-center shrink-0">
+                  <KeyRound className="w-4 h-4 text-indigo-500" />
+                </div>
+                <div>
+                  <h2 className="dash font-bold text-slate-900 text-sm">Acesso ao Portal</h2>
+                  <p className="text-[11px] text-slate-400 dash">Criar login para o cliente acompanhar processos</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setCriarAcesso(v => !v)
+                  if (!criarAcesso && !portalEmail) setPortalEmail(form.email)
+                }}
+                className={cn(
+                  'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 cursor-pointer',
+                  criarAcesso ? 'bg-indigo-600' : 'bg-slate-200'
+                )}
+              >
+                <span className={cn(
+                  'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200',
+                  criarAcesso ? 'translate-x-4' : 'translate-x-0'
+                )} />
+              </button>
+            </div>
+
+            {criarAcesso && (
+              <div className="mt-4 pt-4 border-t border-slate-100 space-y-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-700 dash mb-1">E-mail de acesso</label>
+                  <input
+                    type="email"
+                    value={portalEmail}
+                    onChange={e => setPortalEmail(e.target.value)}
+                    placeholder="email@exemplo.com"
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none dash transition-all"
+                  />
+                </div>
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-sm font-medium text-slate-700 dash">Senha temporária</label>
+                    <button
+                      type="button"
+                      onClick={generatePassword}
+                      className="flex items-center gap-1 text-[11px] text-indigo-500 hover:text-indigo-700 dash cursor-pointer"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Gerar senha
+                    </button>
+                  </div>
+                  <div className="relative">
+                    <input
+                      type={showPw ? 'text' : 'password'}
+                      value={portalPassword}
+                      onChange={e => setPortalPassword(e.target.value)}
+                      placeholder="Mínimo 6 caracteres"
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 pr-10 text-sm text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none dash transition-all"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPw(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                    >
+                      {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                    </button>
+                  </div>
+                  {portalPassword && showPw && (
+                    <p className="mt-1.5 text-[11px] text-amber-600 dash">Anote esta senha para compartilhar com o cliente.</p>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* ── Error ──────────────────────────────────────────────── */}
           {error && (
             <div className="anim flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
@@ -197,7 +301,7 @@ export default function NovoClientePage() {
           )}
 
           {/* ── Actions ────────────────────────────────────────────── */}
-          <div className="anim anim-4 flex gap-3 pb-2">
+          <div className="flex gap-3 pb-2">
             <Button type="submit" loading={loading} size="md">
               Cadastrar Cliente
             </Button>

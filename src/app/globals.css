@@ -1,8 +1,14 @@
+@import url('https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,400;0,600;0,700;0,800;1,300&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap');
+
 @import "tailwindcss";
 
 :root {
   --background: #f8fafc;
-  --foreground: #0f172a;
+  --foreground: #1E1A17;
+  --c-terra: #A14F2A;
+  --c-mogno: #6B3019;
+  --c-cobre: #C97A52;
+  --c-verde: #425438;
 }
 
 * {
@@ -13,11 +19,14 @@ body {
   background-color: var(--background);
   color: var(--foreground);
   -webkit-font-smoothing: antialiased;
+  font-family: 'DM Sans', sans-serif;
 }
+
+::selection { background: rgba(161,79,42,0.18); color: #1E1A17; }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+::-webkit-scrollbar-thumb:hover { background: #A14F2A; }
 
-*:focus-visible { outline: 2px solid #3b82f6; outline-offset: 2px; }
+*:focus-visible { outline: 2px solid #A14F2A; outline-offset: 2px; }
