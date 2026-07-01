@@ -398,7 +398,12 @@ function CreateEventModal({
     if (!form.client_id) { setProcesses([]); return }
     const supabase = createClient()
     supabase.from('processes').select('id, process_types(name)').eq('client_id', form.client_id)
-      .then(({ data }) => setProcesses(data ?? []))
+      .then(({ data }) => setProcesses(
+        (data ?? []).map(p => ({
+          id: String(p.id),
+          process_types: Array.isArray(p.process_types) ? (p.process_types[0] ?? null) : p.process_types,
+        }))
+      ))
   }, [form.client_id])
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }))
