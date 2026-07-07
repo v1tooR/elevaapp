@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Eye, EyeOff, Loader2, Mail, Lock, ShieldCheck, Clock, Users } from 'lucide-react'
@@ -10,7 +11,13 @@ export default function LoginPage() {
   const [password, setPassword]   = useState('')
   const [showPassword, setShowPw] = useState(false)
   const [loading, setLoading]     = useState(false)
-  const [error, setError]         = useState('')
+  const [error, setError]         = useState(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('error') === 'link_invalido') return 'Link inválido ou expirado. Solicite um novo link de redefinição.'
+    }
+    return ''
+  })
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -270,12 +277,21 @@ export default function LoginPage() {
                   </div>
                 )}
 
-                <div className="anim-5 pt-1">
+                <div className="anim-5 pt-1 space-y-3">
                   <button type="submit" disabled={loading} className="submit-btn">
                     {loading
                       ? <><Loader2 className="w-4 h-4 animate-spin" /> Entrando...</>
                       : 'Entrar'}
                   </button>
+                  <div className="text-center">
+                    <Link
+                      href="/forgot-password"
+                      className="text-sm transition-colors cursor-pointer"
+                      style={{ color: 'rgba(201,122,82,0.5)' }}
+                    >
+                      Esqueceu a senha?
+                    </Link>
+                  </div>
                 </div>
               </form>
             </div>
