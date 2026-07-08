@@ -9,10 +9,11 @@ import { Select } from '@/components/ui/select'
 import { PROCESS_TYPE_CUSTOM_FIELDS, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { syncProcessFinancial } from '@/lib/sync-process-financial'
+import { createCnhProcessStages } from '@/lib/cnh-stages'
 import Link from 'next/link'
 import {
   ArrowLeft, Sparkles, TrendingUp, Link2, Check,
-  Layers, Settings, DollarSign, AlertCircle, ChevronRight,
+  Layers, Settings, DollarSign, AlertCircle, ChevronRight, CheckCircle2,
 } from 'lucide-react'
 
 const STATUS_OPTIONS = Object.entries(PROCESS_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))
@@ -30,8 +31,9 @@ const sectionCard = { background: '#fff', border: '1px solid #E2E8F0', boxShadow
 function NovoProcessoForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const preClientId = searchParams.get('client_id') ?? ''
-  const preTypeId   = searchParams.get('type_id')   ?? ''
+  const preClientId  = searchParams.get('client_id') ?? ''
+  const preTypeId    = searchParams.get('type_id')   ?? ''
+  const preTypeSlug  = searchParams.get('type')      ?? ''
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -39,6 +41,8 @@ function NovoProcessoForm() {
   const [processTypes, setProcessTypes] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
   const [profiles, setProfiles] = useState<any[]>([])
+  const [clientDisability, setClientDisability] = useState('')
+  const [clientType, setClientType] = useState('')
   const [selectedTypeSlug, setSelectedTypeSlug] = useState('')
   const [selectedTypeName, setSelectedTypeName] = useState('')
   const [selectedTypeColor, setSelectedTypeColor] = useState('')
@@ -63,7 +67,7 @@ function NovoProcessoForm() {
     const supabase = createClient()
     Promise.all([
       supabase.from('process_types').select('*').eq('is_active', true).order('name'),
-      supabase.from('clients').select('id, name, gov_password_reference').eq('is_active', true).order('name'),
+      supabase.from('clients').select('id, name, gov_password_reference, disability_type, client_type').eq('is_active', true).order('name'),
       supabase.from('profiles').select('id, name').in('role', ['admin', 'analista', 'super_admin']).order('name'),
     ]).then(([{ data: pt }, { data: cl }, { data: pf }]) => {
       setProcessTypes(pt ?? [])
@@ -75,16 +79,25 @@ function NovoProcessoForm() {
       if (preClientId && cl) {
         const found = cl.find((c: any) => c.id === preClientId)
         if (found?.gov_password_reference) setClientGovPassword(found.gov_password_reference)
+        if (found?.disability_type) setClientDisability(found.disability_type)
+        if (found?.client_type)     setClientType(found.client_type)
       }
 
-      // Pre-select type from URL param
-      if (preTypeId && pt) {
-        const found = pt.find((t: any) => t.id === preTypeId)
-        if (found) {
-          setSelectedTypeSlug(found.slug)
-          setSelectedTypeName(found.name)
-          setSelectedTypeColor(found.color ?? '#3B82F6')
-        }
+      // Pre-select type from URL param (type_id=UUID or type=slug)
+      const typeToFind = preTypeId
+        ? (pt ?? []).find((t: any) => t.id === preTypeId)
+        : preTypeSlug
+        ? (pt ?? []).find((t: any) => t.slug === preTypeSlug)
+        : null
+      if (typeToFind) {
+        setForm(prev => ({ ...prev, process_type_id: typeToFind.id }))
+        setSelectedTypeSlug(typeToFind.slug)
+        setSelectedTypeName(typeToFind.name)
+        setSelectedTypeColor(typeToFind.color ?? '#3B82F6')
+        const fields = PROCESS_TYPE_CUSTOM_FIELDS[typeToFind.slug] ?? []
+        const govPass = (cl ?? []).find((c: any) => c.id === preClientId)?.gov_password_reference ?? ''
+        const hasSenha = fields.some((f: any) => f.field_name === 'senha_gov')
+        if (hasSenha && govPass) setCustomFieldValues({ senha_gov: govPass })
       }
     })
   }, [])
@@ -94,6 +107,8 @@ function NovoProcessoForm() {
     const found = clients.find((c: any) => c.id === clientId)
     const govPass = found?.gov_password_reference ?? ''
     setClientGovPassword(govPass)
+    setClientDisability(found?.disability_type ?? '')
+    setClientType(found?.client_type ?? '')
     if (govPass && selectedTypeSlug) {
       const fields = PROCESS_TYPE_CUSTOM_FIELDS[selectedTypeSlug] ?? []
       if (fields.some(f => f.field_name === 'senha_gov')) {
@@ -124,12 +139,43 @@ function NovoProcessoForm() {
 
   const customFields = PROCESS_TYPE_CUSTOM_FIELDS[selectedTypeSlug] ?? []
 
+  // CNH Especial eligibility warning — shown inline before submit
+  const cnhClient = selectedTypeSlug === 'cnh_especial' && form.client_id
+    ? clients.find((c: any) => c.id === form.client_id)
+    : null
+  const cnhWarning = cnhClient
+    ? cnhClient.client_type !== 'condutor'
+      ? { type: 'error' as const, msg: 'Perfil "Condutor" não definido no cadastro do cliente. CNH Especial não disponível.' }
+      : !cnhClient.disability_type
+      ? { type: 'warning' as const, msg: 'Tipo de deficiência não cadastrado. Atualize o cliente antes de criar este processo.' }
+      : (cnhClient.disability_type === 'visual' || cnhClient.disability_type === 'mental')
+      ? { type: 'error' as const, msg: 'Deficiência visual ou mental não permite CNH Especial.' }
+      : { type: 'success' as const, msg: 'Cliente elegível — as etapas do processo CNH Especial serão criadas automaticamente.' }
+    : null
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.client_id || !form.process_type_id) {
       setError('Selecione o cliente e o tipo de processo.')
       return
     }
+
+    // Block CNH Especial if client is not eligible
+    if (selectedTypeSlug === 'cnh_especial') {
+      if (clientType !== 'condutor') {
+        setError('CNH Especial disponível apenas para clientes com perfil "Condutor". Atualize o cadastro do cliente.')
+        return
+      }
+      if (!clientDisability) {
+        setError('O cliente não tem tipo de deficiência cadastrado. Atualize o cadastro antes de criar este processo.')
+        return
+      }
+      if (clientDisability === 'visual' || clientDisability === 'mental') {
+        setError('Deficiência visual ou mental não permite CNH Especial.')
+        return
+      }
+    }
+
     setLoading(true)
     setError('')
 
@@ -195,6 +241,19 @@ function NovoProcessoForm() {
       new_value: form.status,
       note: 'Processo criado',
     })
+
+    // CNH Especial: populate process stages based on client's disability
+    if (selectedTypeSlug === 'cnh_especial' && clientDisability) {
+      try {
+        await createCnhProcessStages(supabase, process.id, clientDisability as any)
+      } catch (stageErr: any) {
+        // Process created; stages failed — still redirect but warn
+        console.error('cnh-stages error:', stageErr)
+        setError('Processo criado, mas houve um erro ao criar as etapas: ' + stageErr.message)
+        setLoading(false)
+        return
+      }
+    }
 
     router.push(`/processos/${process.id}`)
   }
@@ -331,7 +390,7 @@ function NovoProcessoForm() {
               </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="sm:col-span-2">
+              <div className="sm:col-span-2 space-y-2">
                 <Select
                   label="Cliente *"
                   options={clientOptions}
@@ -340,6 +399,23 @@ function NovoProcessoForm() {
                   onChange={e => handleClientChange(e.target.value)}
                   required
                 />
+                {cnhWarning && (
+                  <div
+                    className="flex items-start gap-2.5 rounded-xl px-3.5 py-3"
+                    style={{
+                      background: cnhWarning.type === 'error' ? '#FEF2F2' : cnhWarning.type === 'warning' ? '#FFFBEB' : '#F0FDF4',
+                      border:     `1px solid ${cnhWarning.type === 'error' ? '#FECACA' : cnhWarning.type === 'warning' ? '#FDE68A' : '#BBF7D0'}`,
+                    }}
+                  >
+                    {cnhWarning.type === 'success'
+                      ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                      : <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${cnhWarning.type === 'error' ? 'text-red-500' : 'text-amber-500'}`} />
+                    }
+                    <p className={`text-xs dash ${cnhWarning.type === 'error' ? 'text-red-700' : cnhWarning.type === 'warning' ? 'text-amber-700' : 'text-emerald-700'}`}>
+                      {cnhWarning.msg}
+                    </p>
+                  </div>
+                )}
               </div>
               <Select
                 label="Status"

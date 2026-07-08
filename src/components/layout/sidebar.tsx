@@ -4,7 +4,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
-  LayoutDashboard, Users, FolderOpen, FileText,
+  LayoutDashboard, Users, Target, FolderOpen, FileText,
   Calendar, Bell, Settings, LogOut, Banknote, X, ChevronRight
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -20,6 +20,7 @@ interface SidebarProps {
 const adminNav = [
   { href: '/dashboard',    label: 'Dashboard',    icon: LayoutDashboard, group: 'main'    },
   { href: '/clientes',     label: 'Clientes',     icon: Users,           group: 'main'    },
+  { href: '/leads',        label: 'Leads',        icon: Target,          group: 'main'    },
   { href: '/processos',    label: 'Processos',    icon: FolderOpen,      group: 'main'    },
   { href: '/documentos',   label: 'Documentos',   icon: FileText,        group: 'main'    },
   { href: '/calendario',   label: 'Calendário',   icon: Calendar,        group: 'comms'   },

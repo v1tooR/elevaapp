@@ -30,6 +30,26 @@ export default async function ClienteProcessosPage({
 
   const processes = allProcesses ?? []
 
+  // Fetch stages for CNH processes (single query, grouped in JS)
+  const cnhIds = processes.filter((p: any) => p.process_types?.slug === 'cnh_especial').map((p: any) => p.id)
+  const { data: cnhStagesRaw } = cnhIds.length > 0
+    ? await supabase.from('process_stages').select('process_id, stage_key, label, sort_order, status').in('process_id', cnhIds).order('sort_order')
+    : { data: [] }
+
+  const stagesByProcess: Record<string, { sort_order: number; label: string; status: string }[]> = {}
+  for (const s of cnhStagesRaw ?? []) {
+    if (!stagesByProcess[s.process_id]) stagesByProcess[s.process_id] = []
+    stagesByProcess[s.process_id].push(s)
+  }
+
+  function getCnhProgress(processId: string): { step: number; total: number; label: string } | null {
+    const stages = stagesByProcess[processId]
+    if (!stages?.length) return null
+    const done = stages.filter(s => ['concluido', 'aprovado', 'nao_aplicavel'].includes(s.status)).length
+    const current = stages.find(s => s.status === 'em_andamento') ?? stages.find(s => s.status === 'pendente')
+    return { step: Math.min(done + 1, stages.length), total: stages.length, label: current?.label ?? 'Concluído' }
+  }
+
   const counts = {
     todos:      processes.length,
     ativos:     processes.filter((p: any) => ACTIVE_STATUSES.includes(p.status)).length,
@@ -176,10 +196,17 @@ export default async function ClienteProcessosPage({
                     />
                     <div className="min-w-0">
                       <p className="text-sm font-semibold text-slate-900 truncate leading-tight">{p.process_types?.name ?? 'Processo'}</p>
-                      {p.protocol
-                        ? <p className="text-[11px] text-slate-400 mt-0.5 truncate"><span className="font-medium text-slate-500">#{p.protocol}</span></p>
-                        : <p className="text-[11px] text-slate-300 mt-0.5">Sem protocolo</p>
-                      }
+                      {(() => {
+                        const prog = p.process_types?.slug === 'cnh_especial' ? getCnhProgress(p.id) : null
+                        if (prog) return (
+                          <p className="text-[11px] mt-0.5 truncate font-medium" style={{ color: '#A14F2A' }}>
+                            Etapa {prog.step} de {prog.total} — {prog.label}
+                          </p>
+                        )
+                        return p.protocol
+                          ? <p className="text-[11px] text-slate-400 mt-0.5 truncate"><span className="font-medium text-slate-500">#{p.protocol}</span></p>
+                          : <p className="text-[11px] text-slate-300 mt-0.5">Sem protocolo</p>
+                      })()}
                     </div>
                   </div>
 

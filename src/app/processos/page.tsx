@@ -1,49 +1,111 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { Plus, FolderOpen, ArrowUpRight, ChevronLeft, ChevronRight, Zap } from 'lucide-react'
-import { ProcessStatusBadge } from '@/components/shared/status-badge'
-import { TypeFilterSelect } from '@/components/processos/type-filter-select'
-import { formatDate, PROCESS_STATUS_LABELS } from '@/lib/utils'
+import { Plus, FolderOpen, TrendingUp, Clock, CheckCircle2, AlertTriangle, ArrowUpRight } from 'lucide-react'
+import { ProcessesStatusChart } from '@/components/processos/processes-status-chart'
 
-interface SearchParams { status?: string; type_id?: string; page?: string }
+const ACTIVE_STATUSES = ['aberto', 'em_andamento', 'em_analise']
+const WAITING_STATUSES = ['aguardando_documentos', 'aguardando_orgao']
 
-const STATUS_COLORS: Record<string, { dot: string; pill: string; active: string }> = {
-  aberto:                  { dot: '#3B82F6', pill: 'bg-blue-50 text-blue-700 border-blue-200',   active: 'bg-blue-600 text-white border-blue-600' },
-  em_andamento:            { dot: '#F59E0B', pill: 'bg-amber-50 text-amber-700 border-amber-200', active: 'bg-amber-500 text-white border-amber-500' },
-  aguardando_documentos:   { dot: '#F97316', pill: 'bg-orange-50 text-orange-700 border-orange-200', active: 'bg-orange-500 text-white border-orange-500' },
-  em_analise:              { dot: '#8B5CF6', pill: 'bg-purple-50 text-purple-700 border-purple-200', active: 'bg-purple-600 text-white border-purple-600' },
-  aguardando_orgao:        { dot: '#6366F1', pill: 'bg-indigo-50 text-indigo-700 border-indigo-200', active: 'bg-indigo-600 text-white border-indigo-600' },
-  concluido:               { dot: '#10B981', pill: 'bg-emerald-50 text-emerald-700 border-emerald-200', active: 'bg-emerald-600 text-white border-emerald-600' },
-  arquivado:               { dot: '#94A3B8', pill: 'bg-slate-50 text-slate-600 border-slate-200',  active: 'bg-slate-500 text-white border-slate-500' },
-  cancelado:               { dot: '#EF4444', pill: 'bg-red-50 text-red-700 border-red-200',       active: 'bg-red-600 text-white border-red-600' },
+const STATUS_CHART_CONFIG: Record<string, { label: string; color: string }> = {
+  aberto:                { label: 'Aberto',       color: '#3B82F6' },
+  em_andamento:          { label: 'Em andamento', color: '#F59E0B' },
+  aguardando_documentos: { label: 'Ag. documentos',color: '#F97316' },
+  em_analise:            { label: 'Em análise',   color: '#8B5CF6' },
+  aguardando_orgao:      { label: 'Ag. órgão',    color: '#6366F1' },
+  concluido:             { label: 'Concluído',    color: '#10B981' },
+  arquivado:             { label: 'Arquivado',    color: '#94A3B8' },
+  cancelado:             { label: 'Cancelado',    color: '#EF4444' },
 }
 
-export default async function ProcessosPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
-  const params = await searchParams
-  const statusFilter = params.status ?? ''
-  const typeFilter = params.type_id ?? ''
-  const page = parseInt(params.page ?? '1')
-  const perPage = 20
+const KPI_ORDER = [
+  'aberto', 'em_andamento', 'aguardando_documentos', 'em_analise',
+  'aguardando_orgao', 'concluido', 'arquivado', 'cancelado',
+]
 
+export default async function ProcessosHubPage() {
   const supabase = await createClient()
 
-  const [{ data: processTypes }] = await Promise.all([
+  const now = new Date()
+  const thirtyDays = new Date(now)
+  thirtyDays.setDate(thirtyDays.getDate() + 30)
+  const today = now.toISOString().split('T')[0]
+  const deadlineLimit = thirtyDays.toISOString().split('T')[0]
+
+  const [
+    { data: processTypes },
+    { data: allProcs },
+    { count: deadlineCount },
+  ] = await Promise.all([
     supabase.from('process_types').select('id, name, slug, color').eq('is_active', true).order('name'),
+    supabase.from('processes').select('process_type_id, status'),
+    supabase.from('calendar_events').select('*', { count: 'exact', head: true })
+      .eq('event_type', 'deadline')
+      .eq('status', 'pending')
+      .gte('event_date', today)
+      .lte('event_date', deadlineLimit),
   ])
 
-  let query = supabase
-    .from('processes')
-    .select('*, clients(id, name), process_types(id, name, color)', { count: 'exact' })
-    .order('created_at', { ascending: false })
-    .range((page - 1) * perPage, page * perPage - 1)
+  // Aggregate counts
+  const procs = allProcs ?? []
+  const activeCount = procs.filter(p => [...ACTIVE_STATUSES, ...WAITING_STATUSES].includes(p.status)).length
+  const waitingCount = procs.filter(p => WAITING_STATUSES.includes(p.status)).length
+  const concludedCount = procs.filter(p => p.status === 'concluido').length
 
-  if (statusFilter) query = query.eq('status', statusFilter)
-  if (typeFilter) query = query.eq('process_type_id', typeFilter)
+  // Per-type counts (non-archived/cancelled)
+  const typeCountMap: Record<string, number> = {}
+  for (const p of procs) {
+    if (!['arquivado', 'cancelado'].includes(p.status)) {
+      typeCountMap[p.process_type_id] = (typeCountMap[p.process_type_id] ?? 0) + 1
+    }
+  }
 
-  const { data: processes, count } = await query
-  const totalPages = Math.ceil((count ?? 0) / perPage)
+  // Chart data by status
+  const statusCountMap: Record<string, number> = {}
+  for (const p of procs) {
+    statusCountMap[p.status] = (statusCountMap[p.status] ?? 0) + 1
+  }
+  const chartData = KPI_ORDER
+    .filter(s => (statusCountMap[s] ?? 0) > 0)
+    .map(s => ({
+      label: STATUS_CHART_CONFIG[s]?.label ?? s,
+      count: statusCountMap[s] ?? 0,
+      color: STATUS_CHART_CONFIG[s]?.color ?? '#94A3B8',
+    }))
 
-  const quickStatuses = ['aberto', 'em_andamento', 'aguardando_documentos', 'aguardando_orgao', 'concluido']
+  const kpiCards = [
+    {
+      label: 'Em andamento',
+      value: activeCount,
+      icon: TrendingUp,
+      color: '#F59E0B',
+      bg: '#FFFBEB',
+      hint: 'processos ativos',
+    },
+    {
+      label: 'Aguardando',
+      value: waitingCount,
+      icon: Clock,
+      color: '#F97316',
+      bg: '#FFF7ED',
+      hint: 'docs / órgão',
+    },
+    {
+      label: 'Concluídos',
+      value: concludedCount,
+      icon: CheckCircle2,
+      color: '#10B981',
+      bg: '#ECFDF5',
+      hint: 'processos finalizados',
+    },
+    {
+      label: 'Prazos (30 dias)',
+      value: deadlineCount ?? 0,
+      icon: AlertTriangle,
+      color: (deadlineCount ?? 0) > 0 ? '#EF4444' : '#94A3B8',
+      bg: (deadlineCount ?? 0) > 0 ? '#FEF2F2' : '#F8FAFC',
+      hint: 'deadlines próximos',
+    },
+  ]
 
   return (
     <>
@@ -58,13 +120,11 @@ export default async function ProcessosPage({ searchParams }: { searchParams: Pr
         .anim-1 { animation-delay: 0.05s; }
         .anim-2 { animation-delay: 0.10s; }
         .anim-3 { animation-delay: 0.15s; }
-        .proc-row { transition: background 0.12s; }
-        .proc-row:hover { background: #F8FAFC; }
-        .proc-row:hover .proc-type { color: #2563EB; }
-        .shortcut-card { transition: all 0.15s; }
-        .shortcut-card:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        .status-pill { transition: all 0.15s; }
-        .shortcut-scroll::-webkit-scrollbar { display: none; }
+        .anim-4 { animation-delay: 0.20s; }
+        .type-card { transition: all 0.15s; }
+        .type-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.09); }
+        .novo-btn { transition: all 0.12s; }
+        .novo-btn:hover { filter: brightness(1.08); }
       `}</style>
 
       <div className="space-y-5">
@@ -87,7 +147,8 @@ export default async function ProcessosPage({ searchParams }: { searchParams: Pr
               <div>
                 <h1 className="dash text-white text-2xl lg:text-3xl font-bold leading-tight">Processos</h1>
                 <p className="dash text-blue-300/70 text-sm mt-0.5">
-                  {count ?? 0} processo{count !== 1 ? 's' : ''} {statusFilter ? `· ${PROCESS_STATUS_LABELS[statusFilter as keyof typeof PROCESS_STATUS_LABELS] ?? statusFilter}` : 'no total'}
+                  {procs.length} processo{procs.length !== 1 ? 's' : ''} no total
+                  {processTypes ? ` · ${processTypes.length} tipo${processTypes.length !== 1 ? 's' : ''} ativo${processTypes.length !== 1 ? 's' : ''}` : ''}
                 </p>
               </div>
             </div>
@@ -101,217 +162,132 @@ export default async function ProcessosPage({ searchParams }: { searchParams: Pr
           </div>
         </div>
 
-        {/* ── Atalhos Rápidos ────────────────────────────────────── */}
-        {processTypes && processTypes.length > 0 && (
-          <div
-            className="anim anim-1 bg-white rounded-2xl p-5"
-            style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-          >
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
-                  <Zap className="w-3.5 h-3.5 text-blue-500" />
-                </div>
-                <div>
-                  <h2 className="dash font-bold text-slate-900 text-sm">Criar Processo Rápido</h2>
-                  <p className="text-[11px] text-slate-400 dash">Clique no tipo para ir direto ao formulário</p>
+        {/* ── KPI Strip ──────────────────────────────────────────── */}
+        <div className="anim anim-1 grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {kpiCards.map(({ label, value, icon: Icon, color, bg, hint }) => (
+            <div
+              key={label}
+              className="bg-white rounded-2xl p-4 flex flex-col gap-2"
+              style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+            >
+              <div className="flex items-center justify-between">
+                <span className="dash text-xs font-semibold text-slate-500">{label}</span>
+                <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: bg }}>
+                  <Icon className="w-3.5 h-3.5" style={{ color }} />
                 </div>
               </div>
-              <Link
-                href="/processos/novo"
-                className="text-xs font-semibold text-blue-600 hover:text-blue-700 dash flex items-center gap-1"
-              >
-                Todos os tipos <ArrowUpRight className="w-3 h-3" />
-              </Link>
+              <div>
+                <span className="dash text-3xl font-bold" style={{ color }}>{value}</span>
+                <p className="dash text-[11px] text-slate-400 mt-0.5">{hint}</p>
+              </div>
             </div>
+          ))}
+        </div>
 
-            <div className="shortcut-scroll flex gap-2.5 overflow-x-auto pb-1">
-              {(processTypes as any[]).map((type) => (
-                <Link
-                  key={type.id}
-                  href={`/processos/novo?type_id=${type.id}`}
-                  className="shortcut-card shrink-0 flex items-center gap-2.5 px-4 py-3 bg-slate-50 hover:bg-white border border-slate-100 rounded-xl cursor-pointer"
-                  style={{ minWidth: '140px' }}
-                >
-                  <div
-                    className="w-2.5 h-2.5 rounded-full shrink-0"
-                    style={{ backgroundColor: type.color ?? '#3B82F6' }}
-                  />
-                  <span className="dash text-xs font-semibold text-slate-700 truncate">{type.name}</span>
-                  <Plus className="w-3 h-3 text-slate-400 shrink-0 ml-auto" />
-                </Link>
-              ))}
+        {/* ── Mini chart ─────────────────────────────────────────── */}
+        {chartData.length > 0 && (
+          <div
+            className="anim anim-2 bg-white rounded-2xl p-5"
+            style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-7 h-7 rounded-lg bg-slate-50 flex items-center justify-center">
+                <TrendingUp className="w-3.5 h-3.5 text-slate-400" />
+              </div>
+              <h2 className="dash font-bold text-slate-900 text-sm">Distribuição por status</h2>
+              <span className="dash text-xs text-slate-400 ml-auto">{procs.length} total</span>
+            </div>
+            <div style={{ height: Math.max(chartData.length * 32, 80) }}>
+              <ProcessesStatusChart data={chartData} />
             </div>
           </div>
         )}
 
-        {/* ── Filtros ────────────────────────────────────────────── */}
-        <div
-          className="anim anim-2 bg-white rounded-2xl p-4"
-          style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-        >
-          <div>
-            {/* Status pills */}
-            <div className="flex flex-wrap gap-2 mb-3">
-              <Link
-                href={`/processos?type_id=${typeFilter}`}
-                className={`status-pill dash text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${!statusFilter ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'}`}
-              >
-                Todos
-              </Link>
-              {quickStatuses.map(s => {
-                const c = STATUS_COLORS[s]
+        {/* ── Type cards grid ────────────────────────────────────── */}
+        {processTypes && processTypes.length > 0 && (
+          <div className="anim anim-3">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="dash font-bold text-slate-800 text-base">Tipos de Processo</h2>
+              <span className="dash text-xs text-slate-400">{processTypes.length} ativo{processTypes.length !== 1 ? 's' : ''}</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+              {(processTypes as any[]).map((type) => {
+                const count = typeCountMap[type.id] ?? 0
+                const color = type.color ?? '#3B82F6'
                 return (
-                  <Link
-                    key={s}
-                    href={`/processos?status=${s}&type_id=${typeFilter}`}
-                    className={`status-pill dash text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${statusFilter === s ? c.active : c.pill}`}
+                  <div
+                    key={type.id}
+                    className="type-card bg-white rounded-2xl overflow-hidden flex flex-col"
+                    style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
                   >
-                    <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusFilter === s ? 'currentColor' : c.dot, opacity: statusFilter === s ? 0.8 : 1 }} />
-                    {PROCESS_STATUS_LABELS[s as keyof typeof PROCESS_STATUS_LABELS]}
-                  </Link>
+                    {/* Thin color accent top */}
+                    <div className="h-1 w-full" style={{ backgroundColor: color }} />
+
+                    {/* Main clickable area */}
+                    <Link
+                      href={`/processos/tipo/${type.slug}`}
+                      className="flex-1 p-5 flex flex-col gap-3 hover:bg-slate-50 transition-colors"
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+                          style={{ backgroundColor: `${color}18` }}
+                        >
+                          <div className="w-4 h-4 rounded-full" style={{ backgroundColor: color }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="dash font-bold text-slate-900 text-sm leading-tight">{type.name}</p>
+                          <p className="dash text-[11px] text-slate-400 mt-0.5 truncate">
+                            {count > 0 ? `${count} processo${count !== 1 ? 's' : ''} ativo${count !== 1 ? 's' : ''}` : 'Nenhum processo ainda'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="dash text-4xl font-bold leading-none" style={{ color }}>{count}</span>
+                      </div>
+                    </Link>
+
+                    {/* Footer actions */}
+                    <div
+                      className="flex items-center justify-between px-5 py-3"
+                      style={{ borderTop: '1px solid #F1F5F9' }}
+                    >
+                      <Link
+                        href={`/processos/tipo/${type.slug}`}
+                        className="dash text-xs text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1 font-medium"
+                      >
+                        Ver todos <ArrowUpRight className="w-3 h-3" />
+                      </Link>
+                      <Link
+                        href={`/processos/novo?type_id=${type.id}`}
+                        className="novo-btn flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition-colors dash"
+                        style={{ backgroundColor: color }}
+                      >
+                        <Plus className="w-3 h-3" /> Novo
+                      </Link>
+                    </div>
+                  </div>
                 )
               })}
             </div>
-
-            {/* Type + clear row */}
-            <div className="flex gap-3 flex-wrap">
-              <TypeFilterSelect
-                processTypes={(processTypes ?? []) as { id: string; name: string }[]}
-                typeFilter={typeFilter}
-                statusFilter={statusFilter}
-              />
-              {(statusFilter || typeFilter) && (
-                <Link
-                  href="/processos"
-                  className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors dash"
-                >
-                  Limpar filtros
-                </Link>
-              )}
-            </div>
           </div>
-        </div>
+        )}
 
-        {/* ── Tabela ─────────────────────────────────────────────── */}
-        <div
-          className="anim anim-3 bg-white rounded-2xl overflow-hidden"
-          style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-        >
-          {!processes || processes.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4">
-              <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center">
-                <FolderOpen className="w-7 h-7 text-slate-300" />
-              </div>
-              <div className="text-center">
-                <p className="dash font-semibold text-slate-700">Nenhum processo encontrado</p>
-                <p className="text-sm text-slate-400 mt-1 dash">
-                  {statusFilter || typeFilter ? 'Tente ajustar os filtros' : 'Crie o primeiro processo usando os atalhos acima'}
-                </p>
-              </div>
-              <Link
-                href="/processos/novo"
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors dash"
-              >
-                <Plus className="w-4 h-4" /> Criar processo
-              </Link>
+        {/* Estado vazio */}
+        {(!processTypes || processTypes.length === 0) && (
+          <div
+            className="anim anim-2 bg-white rounded-2xl flex flex-col items-center justify-center py-20 gap-4"
+            style={{ border: '1px solid #E2E8F0' }}
+          >
+            <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center">
+              <FolderOpen className="w-7 h-7 text-slate-300" />
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #F1F5F9', background: '#FAFBFC' }}>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider">Tipo de Processo</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider">Cliente</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Protocolo</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden lg:table-cell">Data</th>
-                    <th className="px-5 py-3.5" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {(processes as any[]).map((p) => (
-                    <tr key={p.id} className="proc-row border-b border-slate-50 last:border-0">
-                      <td className="px-5 py-4">
-                        <div className="flex items-center gap-2.5">
-                          <div
-                            className="w-8 h-8 rounded-lg shrink-0 flex items-center justify-center"
-                            style={{ backgroundColor: `${p.process_types?.color ?? '#3B82F6'}18` }}
-                          >
-                            <div
-                              className="w-2.5 h-2.5 rounded-full"
-                              style={{ backgroundColor: p.process_types?.color ?? '#3B82F6' }}
-                            />
-                          </div>
-                          <span className="proc-type dash font-semibold text-slate-900 transition-colors">{p.process_types?.name}</span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <Link
-                          href={`/clientes/${p.clients?.id}`}
-                          className="dash text-slate-700 font-medium hover:text-blue-600 transition-colors"
-                        >
-                          {p.clients?.name}
-                        </Link>
-                      </td>
-                      <td className="px-5 py-4 text-slate-400 hidden md:table-cell dash">
-                        {p.protocol ? (
-                          <span className="font-mono text-xs bg-slate-50 px-2 py-1 rounded-lg">{p.protocol}</span>
-                        ) : (
-                          <span className="text-slate-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-5 py-4"><ProcessStatusBadge status={p.status} /></td>
-                      <td className="px-5 py-4 text-slate-400 hidden lg:table-cell dash text-xs">{formatDate(p.created_at)}</td>
-                      <td className="px-5 py-4">
-                        <Link
-                          href={`/processos/${p.id}`}
-                          className="flex items-center justify-end gap-1 text-blue-600 text-xs font-semibold dash hover:text-blue-700"
-                        >
-                          <span className="hidden sm:inline">Ver</span>
-                          <ArrowUpRight className="w-3.5 h-3.5" />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="text-center">
+              <p className="dash font-semibold text-slate-700">Nenhum tipo de processo ativo</p>
+              <p className="text-sm text-slate-400 mt-1 dash">Configure tipos de processo nas configurações</p>
             </div>
-          )}
-        </div>
-
-        {/* ── Paginação ──────────────────────────────────────────── */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2">
-            {page > 1 ? (
-              <Link
-                href={`/processos?status=${statusFilter}&type_id=${typeFilter}&page=${page - 1}`}
-                className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors dash"
-              >
-                <ChevronLeft className="w-4 h-4" /> Anterior
-              </Link>
-            ) : (
-              <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm font-medium text-slate-300 dash cursor-not-allowed">
-                <ChevronLeft className="w-4 h-4" /> Anterior
-              </div>
-            )}
-            <div className="px-4 py-2 bg-white border border-slate-200 rounded-xl">
-              <span className="text-sm text-slate-500 dash">
-                <span className="font-bold text-slate-900">{page}</span> de <span className="font-bold text-slate-900">{totalPages}</span>
-              </span>
-            </div>
-            {page < totalPages ? (
-              <Link
-                href={`/processos?status=${statusFilter}&type_id=${typeFilter}&page=${page + 1}`}
-                className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors dash"
-              >
-                Próxima <ChevronRight className="w-4 h-4" />
-              </Link>
-            ) : (
-              <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm font-medium text-slate-300 dash cursor-not-allowed">
-                Próxima <ChevronRight className="w-4 h-4" />
-              </div>
-            )}
           </div>
         )}
       </div>

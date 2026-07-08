@@ -38,6 +38,23 @@ export type HistoryActionType =
   | 'cancelled'
   | 'updated'
 
+// --- Leads ---
+export type LeadStatus = 'novo' | 'em_atendimento' | 'convertido' | 'perdido'
+export type LeadSource = 'instagram' | 'google' | 'indicacao' | 'vendedor' | 'outros'
+
+// --- Shared enums ---
+export type DisabilityType = 'fisica' | 'auditiva' | 'visual' | 'monocular' | 'autismo' | 'mental'
+export type ClientType = 'condutor' | 'nao_condutor'
+
+// --- Process Stages ---
+export type StageStatus =
+  | 'pendente'
+  | 'em_andamento'
+  | 'concluido'
+  | 'aprovado'
+  | 'reprovado'
+  | 'nao_aplicavel'
+
 export interface Profile {
   id: string
   auth_user_id: string
@@ -65,9 +82,36 @@ export interface Client {
   gov_password_reference?: string
   internal_notes?: string
   is_active: boolean
+  // eligibility fields (migration 007)
+  client_type?: ClientType
+  disability_type?: DisabilityType
+  has_cnh_especial?: boolean
+  receives_loas_bpc?: boolean
+  has_medical_report?: boolean
+  report_valid_until?: string
   created_at: string
   updated_at: string
   profile?: Profile
+}
+
+export interface Lead {
+  id: string
+  name: string
+  phone?: string
+  is_driver?: boolean
+  has_cnh_especial?: boolean
+  disability_type?: DisabilityType
+  has_medical_report?: boolean
+  report_valid?: boolean
+  lead_source?: LeadSource
+  assigned_to?: string
+  status: LeadStatus
+  converted_client_id?: string
+  notes?: string
+  created_at: string
+  updated_at: string
+  assignee?: Profile
+  converted_client?: Client
 }
 
 export interface ProcessType {
@@ -104,6 +148,24 @@ export interface Process {
   responsible_user?: Profile
   custom_fields?: ProcessCustomField[]
   financials?: ProcessFinancial
+  stages?: ProcessStage[]
+}
+
+export interface ProcessStage {
+  id: string
+  process_id: string
+  stage_key: string
+  label: string
+  sort_order: number
+  status: StageStatus
+  scheduled_date?: string
+  attended?: boolean
+  result?: string
+  data: Record<string, unknown>
+  notes?: string
+  completed_at?: string
+  created_at: string
+  updated_at: string
 }
 
 export interface ProcessCustomField {
@@ -215,6 +277,11 @@ export type Database = {
         Insert: Omit<Client, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<Client, 'id' | 'created_at' | 'updated_at'>>
       }
+      leads: {
+        Row: Lead
+        Insert: Omit<Lead, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<Lead, 'id' | 'created_at' | 'updated_at'>>
+      }
       process_types: {
         Row: ProcessType
         Insert: Omit<ProcessType, 'id' | 'created_at' | 'updated_at'>
@@ -224,6 +291,11 @@ export type Database = {
         Row: Process
         Insert: Omit<Process, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<Process, 'id' | 'created_at' | 'updated_at'>>
+      }
+      process_stages: {
+        Row: ProcessStage
+        Insert: Omit<ProcessStage, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<ProcessStage, 'id' | 'created_at' | 'updated_at'>>
       }
       process_custom_fields: {
         Row: ProcessCustomField

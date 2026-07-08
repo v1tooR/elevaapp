@@ -1,11 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, FileText, Clock, RefreshCw, Link2, ArrowUpRight, DollarSign, Calendar } from 'lucide-react'
+import { ArrowLeft, FileText, Clock, RefreshCw, Link2, ArrowUpRight, DollarSign, Calendar, ListChecks } from 'lucide-react'
 import { ProcessStatusBadge, PaymentStatusBadge } from '@/components/shared/status-badge'
 import { formatDate, formatDateTime, formatCurrency, HISTORY_ACTION_LABELS } from '@/lib/utils'
 import { EditProcessModal } from '@/components/processos/edit-process-modal'
 import { DocumentUploader } from '@/components/shared/document-uploader'
+import { CnhStagesPanel } from '@/components/processos/cnh-stages-panel'
 
 const ACTION_ICONS: Record<string, string> = {
   created: '🟢',
@@ -26,10 +27,11 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
     { data: history },
     { data: documents },
     { data: events },
+    { data: stages },
   ] = await Promise.all([
     supabase.from('processes').select(`
       *,
-      clients(id, name, cpf, phone, email),
+      clients(id, name, cpf, phone, email, disability_type),
       process_types(*),
       responsible_user:profiles!processes_responsible_user_id_fkey(id, name),
       custom_fields:process_custom_fields(*),
@@ -39,6 +41,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
       .eq('process_id', id).order('created_at', { ascending: false }).limit(20),
     supabase.from('documents').select('*').eq('process_id', id).order('created_at', { ascending: false }),
     supabase.from('calendar_events').select('*').eq('process_id', id).order('event_date', { ascending: true }).limit(5),
+    supabase.from('process_stages').select('*').eq('process_id', id).order('sort_order'),
   ])
 
   if (processError?.code === 'PGRST116' || !process) notFound()
@@ -284,6 +287,37 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
 
           {/* ── Right Column ─────────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-5">
+
+            {/* CNH Especial stages */}
+            {pt?.slug === 'cnh_especial' && stages && stages.length > 0 && (
+              <div className="anim anim-1 bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                <div className="px-5 py-4 border-b border-slate-50 flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
+                    <ListChecks className="w-3.5 h-3.5 text-purple-500" />
+                  </div>
+                  <div className="flex-1">
+                    <h2 className="dash font-bold text-slate-900">Etapas CNH Especial</h2>
+                    <p className="text-xs text-slate-400 mt-0.5 dash">
+                      {stages.length} etapa{stages.length !== 1 ? 's' : ''} — clique para expandir e editar
+                    </p>
+                  </div>
+                  {/* Progress summary */}
+                  <span className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg dash">
+                    {stages.filter((s: any) => ['concluido', 'aprovado'].includes(s.status)).length}/{stages.length} concluídas
+                  </span>
+                </div>
+                <div className="p-4">
+                  <CnhStagesPanel
+                    stages={stages as any}
+                    processId={process.id}
+                    clientId={client?.id ?? ''}
+                    clientName={client?.name ?? ''}
+                    responsibleUserId={(responsible as any)?.id ?? null}
+                    disability={client?.disability_type ?? undefined}
+                  />
+                </div>
+              </div>
+            )}
 
             {/* Documents */}
             <div className="anim anim-2 bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>

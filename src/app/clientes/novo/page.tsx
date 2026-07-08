@@ -7,8 +7,10 @@ import { MaskedInput } from '@/components/ui/masked-input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import Link from 'next/link'
-import { ArrowLeft, User, MapPin, Lock, AlertCircle, KeyRound, Eye, EyeOff, RefreshCw } from 'lucide-react'
+import { ArrowLeft, User, MapPin, Lock, AlertCircle, KeyRound, Eye, EyeOff, RefreshCw, Stethoscope } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { canHaveCnhEspecial, isNonDriverDisability } from '@/lib/eligibility'
+import type { DisabilityType, ClientType } from '@/types/database'
 
 const CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!'
 
@@ -16,6 +18,36 @@ const BRAZIL_STATES = [
   'AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG',
   'PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'
 ]
+
+const DISABILITY_OPTIONS: { value: DisabilityType | ''; label: string }[] = [
+  { value: '',          label: 'Não informado' },
+  { value: 'fisica',    label: 'Física' },
+  { value: 'auditiva',  label: 'Auditiva' },
+  { value: 'visual',    label: 'Visual' },
+  { value: 'monocular', label: 'Monocular' },
+  { value: 'autismo',   label: 'Autismo (TEA)' },
+  { value: 'mental',    label: 'Mental / Intelectual' },
+]
+
+function Toggle({ enabled, onToggle, disabled }: { enabled: boolean; onToggle: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      disabled={disabled}
+      className={cn(
+        'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
+        disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer',
+        enabled ? 'bg-emerald-500' : 'bg-slate-200'
+      )}
+    >
+      <span className={cn(
+        'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200',
+        enabled ? 'translate-x-4' : 'translate-x-0'
+      )} />
+    </button>
+  )
+}
 
 const sectionCard = {
   background: '#fff',
@@ -35,6 +67,30 @@ export default function NovoClientePage() {
   const [portalEmail, setPortalEmail] = useState('')
   const [portalPassword, setPortalPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
+
+  const [eligi, setEligi] = useState({
+    client_type: '' as ClientType | '',
+    disability_type: '' as DisabilityType | '',
+    has_cnh_especial: false,
+    receives_loas_bpc: false,
+    has_medical_report: false,
+    report_valid_until: '',
+  })
+
+  const updateEligi = (key: string, value: boolean | string) =>
+    setEligi(prev => {
+      const next = { ...prev, [key]: value }
+      if ((key === 'client_type' || key === 'disability_type') &&
+        !canHaveCnhEspecial(
+          key === 'client_type' ? (value as ClientType | '') || undefined : prev.client_type || undefined,
+          key === 'disability_type' ? (value as DisabilityType | '') || undefined : prev.disability_type || undefined,
+        )) {
+        next.has_cnh_especial = false
+      }
+      return next
+    })
+
+  const cnhAllowed = canHaveCnhEspecial(eligi.client_type || undefined, eligi.disability_type || undefined)
 
   const generatePassword = () => {
     setPortalPassword(Array.from({ length: 12 }, () => CHARS[Math.floor(Math.random() * CHARS.length)]).join(''))
@@ -61,6 +117,12 @@ export default function NovoClientePage() {
       state: form.state || null,
       gov_password_reference: form.gov_password_reference || null,
       internal_notes: form.internal_notes || null,
+      client_type: eligi.client_type || null,
+      disability_type: eligi.disability_type || null,
+      has_cnh_especial: eligi.has_cnh_especial,
+      receives_loas_bpc: eligi.receives_loas_bpc,
+      has_medical_report: eligi.has_medical_report,
+      report_valid_until: eligi.report_valid_until || null,
     }).select().single()
 
     if (err) {
@@ -212,6 +274,76 @@ export default function NovoClientePage() {
                 placeholder="Observações visíveis apenas para a equipe..."
                 rows={3}
               />
+            </div>
+          </div>
+
+          {/* ── Elegibilidade ─────────────────────────────────────── */}
+          <div className="anim anim-4 rounded-2xl p-6" style={sectionCard}>
+            <div className="flex items-center gap-2.5 mb-5">
+              <div className="w-8 h-8 rounded-xl bg-purple-50 flex items-center justify-center shrink-0">
+                <Stethoscope className="w-4 h-4 text-purple-500" />
+              </div>
+              <div>
+                <h2 className="dash font-bold text-slate-900 text-sm">Elegibilidade</h2>
+                <p className="text-[11px] text-slate-400 dash">Perfil para isenções PCD</p>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-slate-700 dash">Perfil do cliente</label>
+                  <select
+                    value={eligi.client_type}
+                    onChange={e => updateEligi('client_type', e.target.value)}
+                    className="state-select block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white transition-all dash"
+                  >
+                    <option value="">Não informado</option>
+                    <option value="condutor">Condutor (motorista)</option>
+                    <option value="nao_condutor">Não condutor</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-slate-700 dash">Tipo de deficiência</label>
+                  <select
+                    value={eligi.disability_type}
+                    onChange={e => updateEligi('disability_type', e.target.value)}
+                    className="state-select block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white transition-all dash"
+                  >
+                    {DISABILITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                  {eligi.disability_type && isNonDriverDisability(eligi.disability_type as DisabilityType) && (
+                    <p className="text-[11px] text-amber-600 dash">Deficiência visual/mental não permite direção.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-1">
+                {[
+                  { key: 'has_cnh_especial',  label: 'Possui CNH Especial',     disabled: !cnhAllowed },
+                  { key: 'receives_loas_bpc', label: 'Recebe LOAS/BPC',         disabled: false },
+                  { key: 'has_medical_report',label: 'Possui laudo médico',     disabled: false },
+                ].map(({ key, label, disabled }) => (
+                  <div key={key} className="flex items-center justify-between py-0.5">
+                    <p className={cn('text-sm font-medium dash', disabled ? 'text-slate-400' : 'text-slate-700')}>{label}</p>
+                    <Toggle
+                      enabled={eligi[key as keyof typeof eligi] as boolean}
+                      onToggle={() => updateEligi(key, !(eligi[key as keyof typeof eligi] as boolean))}
+                      disabled={disabled}
+                    />
+                  </div>
+                ))}
+
+                {eligi.has_medical_report && (
+                  <div className="pl-4 border-l-2 border-purple-100">
+                    <Input
+                      label="Validade do laudo"
+                      type="date"
+                      value={eligi.report_valid_until}
+                      onChange={e => updateEligi('report_valid_until', e.target.value)}
+                    />
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
