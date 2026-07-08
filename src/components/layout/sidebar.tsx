@@ -77,11 +77,6 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
       className="flex flex-col h-full w-64 shrink-0"
       style={{ background: '#1E1A17', borderRight: '1px solid rgba(255,255,255,0.06)' }}
     >
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;700;800&display=swap');
-        .sb { font-family: 'Raleway', sans-serif; }
-      `}</style>
-
       {/* ── Brand header ── */}
       <div
         className="flex items-center justify-between px-4 py-4 shrink-0"

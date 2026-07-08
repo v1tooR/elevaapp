@@ -26,7 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
       </head>
-      <body className="h-full bg-slate-50 text-slate-900 antialiased" suppressHydrationWarning>
+      <body className="h-full antialiased" suppressHydrationWarning>
         <PWARegister />
         {children}
       </body>

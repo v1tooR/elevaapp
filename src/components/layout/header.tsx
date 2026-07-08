@@ -109,11 +109,21 @@ export function Header({ onMenuClick, profile }: HeaderProps) {
   }
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200 flex items-center gap-3 px-4 lg:px-6 sticky top-0 z-30">
+    <header
+      className="h-14 flex items-center gap-3 px-4 lg:px-6 sticky top-0 z-30"
+      style={{
+        background: 'var(--card)',
+        borderBottom: '1px solid var(--border)',
+        boxShadow: '0 1px 0 rgba(161,79,42,0.04)',
+      }}
+    >
       {/* Mobile hamburger */}
       <button
         onClick={onMenuClick}
-        className="lg:hidden p-2 rounded-lg hover:bg-slate-100 text-slate-500 transition-colors cursor-pointer"
+        className="lg:hidden p-2 rounded-lg transition-colors cursor-pointer"
+        style={{ color: 'var(--muted-foreground)' }}
+        onMouseEnter={e => (e.currentTarget.style.background = 'var(--muted)')}
+        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
       >
         <Menu className="w-5 h-5" />
       </button>
@@ -126,9 +136,23 @@ export function Header({ onMenuClick, profile }: HeaderProps) {
           ref={buttonRef}
           onClick={handleOpen}
           aria-label="Notificações"
-          className={`relative p-2 rounded-lg transition-all duration-150 cursor-pointer ${
-            open ? 'bg-slate-100 text-slate-700' : 'hover:bg-slate-100 text-slate-400 hover:text-slate-700'
-          }`}
+          className="relative p-2 rounded-lg transition-all duration-150 cursor-pointer"
+          style={{
+            color: open ? 'var(--terracotta)' : 'var(--muted-foreground)',
+            background: open ? 'rgba(161,79,42,0.08)' : 'transparent',
+          }}
+          onMouseEnter={e => {
+            if (!open) {
+              e.currentTarget.style.background = 'var(--muted)'
+              e.currentTarget.style.color = 'var(--foreground)'
+            }
+          }}
+          onMouseLeave={e => {
+            if (!open) {
+              e.currentTarget.style.background = 'transparent'
+              e.currentTarget.style.color = 'var(--muted-foreground)'
+            }
+          }}
         >
           <Bell className="w-5 h-5" />
           {unread.length > 0 && (
@@ -140,11 +164,15 @@ export function Header({ onMenuClick, profile }: HeaderProps) {
         {open && (
           <div
             ref={popoverRef}
-            className="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-xl border border-slate-200 overflow-hidden z-50"
-            style={{ boxShadow: '0 8px 32px rgba(0,0,0,0.12), 0 2px 8px rgba(0,0,0,0.06)' }}
+            className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl overflow-hidden z-50"
+            style={{
+              background: 'var(--card)',
+              border: '1px solid var(--border)',
+              boxShadow: 'var(--shadow-elevated)',
+            }}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+            <div className="flex items-center justify-between px-4 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
               <div className="flex items-center gap-2">
                 <h3 className="text-sm font-bold text-slate-900">Notificações</h3>
                 {unread.length > 0 && (
@@ -159,7 +187,10 @@ export function Header({ onMenuClick, profile }: HeaderProps) {
                     onClick={markAllRead}
                     disabled={markingAll}
                     title="Marcar todas como lidas"
-                    className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer disabled:opacity-50"
+                    className="p-1.5 rounded-lg transition-colors cursor-pointer disabled:opacity-50"
+                    style={{ color: 'var(--muted-foreground)' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = 'var(--muted)'; e.currentTarget.style.color = 'var(--foreground)' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted-foreground)' }}
                   >
                     {markingAll
                       ? <span className="w-3.5 h-3.5 block rounded-full border-2 border-slate-300 border-t-slate-600 animate-spin" />
@@ -169,7 +200,10 @@ export function Header({ onMenuClick, profile }: HeaderProps) {
                 )}
                 <button
                   onClick={() => setOpen(false)}
-                  className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors cursor-pointer"
+                  className="p-1.5 rounded-lg transition-colors cursor-pointer"
+                  style={{ color: 'var(--muted-foreground)' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = 'var(--muted)'; e.currentTarget.style.color = 'var(--foreground)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--muted-foreground)' }}
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -240,12 +274,12 @@ export function Header({ onMenuClick, profile }: HeaderProps) {
             </div>
 
             {/* Footer */}
-            <div className="px-4 py-3 border-t border-slate-100 bg-slate-50/50">
+            <div className="px-4 py-3" style={{ borderTop: '1px solid var(--border)', background: 'var(--muted)' }}>
               <Link
                 href={notifHref}
                 onClick={() => setOpen(false)}
-                className="flex items-center justify-center gap-1.5 w-full text-xs font-semibold transition-colors hover:opacity-75"
-                style={{ color: '#A14F2A' }}
+                className="flex items-center justify-center gap-1.5 w-full text-xs font-semibold transition-opacity hover:opacity-75"
+                style={{ color: 'var(--primary)' }}
               >
                 Ver todas as notificações
                 <ArrowRight className="w-3.5 h-3.5" />

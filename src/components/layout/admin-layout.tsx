@@ -14,7 +14,7 @@ export function AdminLayout({ children, profile }: AdminLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--background)' }}>
       {/* Mobile overlay */}
       {sidebarOpen && (
         <div
@@ -24,7 +24,7 @@ export function AdminLayout({ children, profile }: AdminLayoutProps) {
       )}
 
       {/* Desktop sidebar */}
-      <div className="hidden lg:flex lg:flex-shrink-0">
+      <div className="hidden lg:flex lg:shrink-0">
         <Sidebar profile={profile} />
       </div>
 

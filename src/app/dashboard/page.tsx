@@ -71,40 +71,9 @@ export default async function DashboardPage() {
   ]
 
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;700;800&display=swap');
+    <div className="space-y-5">
 
-        .dash { font-family: 'Raleway', sans-serif; }
-
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(20px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .anim { animation: slideUp 0.45s ease-out both; }
-        .anim-1 { animation-delay: 0.05s; }
-        .anim-2 { animation-delay: 0.10s; }
-        .anim-3 { animation-delay: 0.15s; }
-        .anim-4 { animation-delay: 0.20s; }
-        .anim-5 { animation-delay: 0.25s; }
-        .anim-6 { animation-delay: 0.30s; }
-
-        .bar-fill { animation: barGrow 0.9s cubic-bezier(0.34,1.56,0.64,1) both; }
-        @keyframes barGrow {
-          from { width: 0% !important; }
-        }
-
-        .process-row { transition: background 0.15s; }
-        .process-row:hover { background: #FBF8F6; }
-        .process-row:hover .row-name { color: #A14F2A; }
-
-        .link-arrow { transition: transform 0.15s; }
-        .view-all:hover .link-arrow { transform: translate(2px, -2px); }
-      `}</style>
-
-      <div className="space-y-5">
-
-        {/* ── Welcome Banner ───────────────────────────────────────── */}
+      {/* ── Welcome Banner ───────────────────────────────────────── */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
           style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
@@ -386,7 +355,6 @@ export default async function DashboardPage() {
             )}
           </div>
         </div>
-      </div>
-    </>
+    </div>
   )
 }
