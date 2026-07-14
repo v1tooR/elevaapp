@@ -94,8 +94,6 @@ export default async function DocumentosPage({ searchParams }: { searchParams: P
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -117,10 +115,10 @@ export default async function DocumentosPage({ searchParams }: { searchParams: P
         {/* ── Banner ──────────────────────────────────────────────── */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1A3055 55%, #1E40AF 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
         >
           <div className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-[0.07]"
-            style={{ background: 'radial-gradient(circle, #60A5FA, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
           <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
@@ -128,11 +126,11 @@ export default async function DocumentosPage({ searchParams }: { searchParams: P
             <div className="flex items-center justify-between gap-4 mb-5">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-                  <FileText className="w-6 h-6 text-blue-300" />
+                  <FileText className="w-6 h-6 text-primary-foreground/75" />
                 </div>
                 <div>
                   <h1 className="dash text-white text-2xl lg:text-3xl font-bold leading-tight">Documentos</h1>
-                  <p className="dash text-blue-300/70 text-sm mt-0.5">
+                  <p className="dash text-primary-foreground/65 text-sm mt-0.5">
                     {counts.total} documento{counts.total !== 1 ? 's' : ''}
                     {activeStatusLabel && <> · <span className="text-white/90">{activeStatusLabel}</span></>}
                   </p>

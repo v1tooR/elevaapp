@@ -78,8 +78,6 @@ export default async function NotificacoesPage({ searchParams }: { searchParams:
   return (
     <div className="space-y-5 max-w-2xl">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
         .anim-1 { animation: slideUp 0.45s cubic-bezier(.22,1,.36,1) both; }
         .anim-2 { animation: slideUp 0.45s cubic-bezier(.22,1,.36,1) 0.07s both; }
@@ -88,7 +86,7 @@ export default async function NotificacoesPage({ searchParams }: { searchParams:
       `}</style>
 
       {/* ── Dark banner ── */}
-      <div className="anim-1 rounded-2xl overflow-hidden relative" style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1a2f50 50%, #0f2340 100%)' }}>
+      <div className="anim-1 rounded-2xl overflow-hidden relative" style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}>
         <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(ellipse at 75% 50%, #818cf8 0%, transparent 60%)' }} />
         <div className="relative px-6 py-5">
           <div className="flex items-start justify-between gap-4">
@@ -166,7 +164,7 @@ export default async function NotificacoesPage({ searchParams }: { searchParams:
         <div className="anim-3 bg-white rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
             <div className="w-14 h-14 rounded-2xl bg-indigo-50 flex items-center justify-center mb-4">
-              <Bell className="w-7 h-7 text-indigo-300" />
+              <Bell className="w-7 h-7 text-primary" />
             </div>
             <p className="dash text-base font-bold text-slate-700">Nenhuma notificação</p>
             <p className="dash text-sm text-slate-400 mt-1">

@@ -57,7 +57,7 @@ const STATUS_CFG = {
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb']
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro']
 
-const inputCls = "block w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-slate-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-all dash"
+const inputCls = "block w-full rounded-xl border border-border px-3 py-2.5 text-sm bg-muted focus:bg-card focus:border-primary focus:outline-none transition-all dash"
 const labelCls = "block text-xs font-bold text-slate-400 uppercase tracking-widest mb-1.5 dash"
 
 function isoDate(y: number, m: number, d: number) {
@@ -154,7 +154,7 @@ export function CalendarGridClient({ clients, profileId }: Props) {
             </div>
             <button
               onClick={() => { setSelectedDay(todayIso); setCreateOpen(true) }}
-              className="dash inline-flex items-center gap-1.5 bg-blue-600 text-white px-3.5 py-2 rounded-xl text-sm font-semibold hover:bg-blue-700 transition-colors cursor-pointer shadow-sm"
+              className="dash inline-flex items-center gap-1.5 bg-primary text-primary-foreground px-3.5 py-2 rounded-xl text-sm font-semibold hover:bg-primary/90 transition-colors cursor-pointer shadow-sm"
             >
               <Plus className="w-4 h-4" /> Novo Evento
             </button>
@@ -200,7 +200,7 @@ export function CalendarGridClient({ clients, profileId }: Props) {
                         <span className={cn(
                           'dash inline-flex items-center justify-center w-6 h-6 text-xs font-bold rounded-full transition-all',
                           isToday
-                            ? 'bg-blue-600 text-white shadow-sm'
+                            ? 'bg-primary text-primary-foreground shadow-sm'
                             : isSelected
                             ? 'bg-blue-200 text-blue-800'
                             : 'text-slate-500 hover:text-slate-800',

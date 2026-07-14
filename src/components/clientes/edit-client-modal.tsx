@@ -133,8 +133,6 @@ export function EditClientModal({ client }: { client: Client }) {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes modalIn {
           from { opacity: 0; transform: scale(0.96) translateY(8px); }
           to   { opacity: 1; transform: scale(1) translateY(0); }
@@ -158,11 +156,11 @@ export function EditClientModal({ client }: { client: Client }) {
             {/* Modal header */}
             <div
               className="flex items-center justify-between px-6 py-4 shrink-0"
-              style={{ background: 'linear-gradient(135deg, #0C1A2E, #1E40AF)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+              style={{ background: 'linear-gradient(135deg, #6B3019, #A14F2A)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
             >
               <div>
                 <h2 className="dash text-white font-bold text-base">Editar Cliente</h2>
-                <p className="dash text-blue-300/70 text-xs mt-0.5">{client.name}</p>
+                <p className="dash text-primary-foreground/70 text-xs mt-0.5">{client.name}</p>
               </div>
               <button
                 onClick={close}

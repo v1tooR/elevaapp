@@ -79,8 +79,6 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -103,21 +101,21 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         {/* ── Banner ─────────────────────────────────────────────── */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1A3055 55%, #1E40AF 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
         >
           <div className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-[0.07]"
-            style={{ background: 'radial-gradient(circle, #60A5FA, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
           <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
           <div className="relative flex items-center justify-between gap-4 p-6 lg:p-8">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-                <Target className="w-6 h-6 text-blue-300" />
+                <Target className="w-6 h-6 text-primary-foreground/75" />
               </div>
               <div>
                 <h1 className="dash text-white text-2xl lg:text-3xl font-bold leading-tight">Leads</h1>
-                <p className="dash text-blue-300/70 text-sm mt-0.5">
+                <p className="dash text-primary-foreground/65 text-sm mt-0.5">
                   {count ?? 0} lead{count !== 1 ? 's' : ''} {filterStatus ? `com status "${STATUS_LABEL[filterStatus]}"` : 'no total'}
                 </p>
               </div>
@@ -144,7 +142,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                 name="q"
                 defaultValue={q}
                 placeholder="Buscar por nome ou telefone..."
-                className="search-input w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-all dash"
+                className="search-input w-full pl-10 pr-4 py-2.5 border border-border rounded-xl text-sm bg-muted focus:bg-card focus:border-primary focus:outline-none transition-all dash"
               />
             </div>
 
@@ -238,7 +236,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               {!q && !filterStatus && !filterAssigned && (
                 <Link
                   href="/leads/novo"
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors dash"
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors dash"
                 >
                   <Plus className="w-4 h-4" /> Novo lead
                 </Link>

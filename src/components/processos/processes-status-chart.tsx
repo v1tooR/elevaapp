@@ -44,7 +44,7 @@ export function ProcessesStatusChart({ data }: Props) {
           type="category"
           dataKey="label"
           width={88}
-          tick={{ fontSize: 11, fontFamily: 'Outfit, sans-serif', fill: '#94A3B8' }}
+          tick={{ fontSize: 11, fontFamily: 'var(--font-dm-sans)', fill: '#8B6F5E' }}
           tickLine={false}
           axisLine={false}
         />

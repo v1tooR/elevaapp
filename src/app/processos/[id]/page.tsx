@@ -7,6 +7,7 @@ import { formatDate, formatDateTime, formatCurrency, HISTORY_ACTION_LABELS } fro
 import { EditProcessModal } from '@/components/processos/edit-process-modal'
 import { DocumentUploader } from '@/components/shared/document-uploader'
 import { CnhStagesPanel } from '@/components/processos/cnh-stages-panel'
+import { InitCnhStagesButton } from '@/components/processos/init-cnh-stages-button'
 
 const ACTION_ICONS: Record<string, string> = {
   created: '🟢',
@@ -31,21 +32,24 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
   ] = await Promise.all([
     supabase.from('processes').select(`
       *,
-      clients(id, name, cpf, phone, email, disability_type),
+      clients(id, name, cpf, phone, email, disability_type, client_type),
       process_types(*),
-      responsible_user:profiles!processes_responsible_user_id_fkey(id, name),
+      responsible_user:profiles!responsible_user_id(id, name),
       custom_fields:process_custom_fields(*),
       financials:process_financials(*)
     `).eq('id', id).single(),
-    supabase.from('process_history').select(`*, changer:profiles!process_history_changed_by_fkey(id, name)`)
+    supabase.from('process_history').select(`*, changer:profiles!changed_by(id, name)`)
       .eq('process_id', id).order('created_at', { ascending: false }).limit(20),
     supabase.from('documents').select('*').eq('process_id', id).order('created_at', { ascending: false }),
     supabase.from('calendar_events').select('*').eq('process_id', id).order('event_date', { ascending: true }).limit(5),
     supabase.from('process_stages').select('*').eq('process_id', id).order('sort_order'),
   ])
 
-  if (processError?.code === 'PGRST116' || !process) notFound()
-  if (processError) throw new Error(processError.message)
+  if (processError) {
+    if (processError.code === 'PGRST116') notFound()
+    throw new Error(processError.message)
+  }
+  if (!process) notFound()
 
   const pt = process.process_types as any
   const client = process.clients as any
@@ -57,8 +61,6 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -80,7 +82,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
         {/* ── Hero Banner ──────────────────────────────────────────── */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: `linear-gradient(135deg, #0C1A2E 0%, #152040 55%, ${typeColor}44 100%)` }}
+          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
         >
           <div className="pointer-events-none absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-[0.12]"
             style={{ background: `radial-gradient(circle, ${typeColor}, transparent 70%)` }} />
@@ -89,7 +91,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
 
           {/* Nav bar */}
           <div className="relative flex items-center justify-between gap-3 px-6 pt-5">
-            <Link href="/processos" className="back-btn flex items-center gap-1.5 text-blue-300/80 hover:text-white text-xs font-medium px-3 py-1.5 rounded-lg">
+            <Link href="/processos" className="back-btn flex items-center gap-1.5 text-primary-foreground/75 hover:text-white text-xs font-medium px-3 py-1.5 rounded-lg">
               <ArrowLeft className="w-3.5 h-3.5" /> Voltar a Processos
             </Link>
             <EditProcessModal process={process as any} />
@@ -112,18 +114,18 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                 <div className="flex flex-wrap items-center gap-2 mt-2">
                   <Link
                     href={`/clientes/${client?.id}`}
-                    className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-200/80 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 hover:bg-white/20 transition-all dash"
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-primary-foreground/75 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 hover:bg-white/20 transition-all dash"
                   >
                     {client?.name}
                     <ArrowUpRight className="w-3 h-3" />
                   </Link>
                   {process.protocol && (
-                    <span className="text-xs font-mono text-blue-200/70 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
+                    <span className="text-xs font-mono text-primary-foreground/70 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
                       {process.protocol}
                     </span>
                   )}
                   {responsible && (
-                    <span className="text-xs text-blue-200/70 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
+                    <span className="text-xs text-primary-foreground/70 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
                       Resp: {responsible.name}
                     </span>
                   )}
@@ -134,12 +136,12 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
               <div className="hidden sm:flex gap-3 shrink-0">
                 <div className="text-center bg-white/10 border border-white/10 rounded-xl px-4 py-2.5">
                   <p className="dash text-xl font-bold text-white">{documents?.length ?? 0}</p>
-                  <p className="dash text-[10px] text-blue-300/70 mt-0.5">Documentos</p>
+                  <p className="dash text-[10px] text-primary-foreground/65 mt-0.5">Documentos</p>
                 </div>
                 {financials?.service_value && (
                   <div className="text-center bg-white/10 border border-white/10 rounded-xl px-4 py-2.5">
                     <p className="dash text-xl font-bold text-white">{formatCurrency(financials.service_value)}</p>
-                    <p className="dash text-[10px] text-blue-300/70 mt-0.5">Valor</p>
+                    <p className="dash text-[10px] text-primary-foreground/65 mt-0.5">Valor</p>
                   </div>
                 )}
               </div>
@@ -289,32 +291,44 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
           <div className="lg:col-span-2 space-y-5">
 
             {/* CNH Especial stages */}
-            {pt?.slug === 'cnh_especial' && stages && stages.length > 0 && (
+            {pt?.slug === 'cnh_especial' && (
               <div className="anim anim-1 bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
                 <div className="px-5 py-4 border-b border-slate-50 flex items-center gap-2.5">
-                  <div className="w-7 h-7 rounded-lg bg-purple-50 flex items-center justify-center shrink-0">
-                    <ListChecks className="w-3.5 h-3.5 text-purple-500" />
+                  <div className="w-7 h-7 rounded-lg bg-amber-50 flex items-center justify-center shrink-0">
+                    <ListChecks className="w-3.5 h-3.5 text-amber-600" />
                   </div>
                   <div className="flex-1">
                     <h2 className="dash font-bold text-slate-900">Etapas CNH Especial</h2>
                     <p className="text-xs text-slate-400 mt-0.5 dash">
-                      {stages.length} etapa{stages.length !== 1 ? 's' : ''} — clique para expandir e editar
+                      {stages && stages.length > 0
+                        ? `${stages.length} etapa${stages.length !== 1 ? 's' : ''} — clique para expandir e editar`
+                        : 'Nenhuma etapa criada ainda'
+                      }
                     </p>
                   </div>
-                  {/* Progress summary */}
-                  <span className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg dash">
-                    {stages.filter((s: any) => ['concluido', 'aprovado'].includes(s.status)).length}/{stages.length} concluídas
-                  </span>
+                  {stages && stages.length > 0 && (
+                    <span className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg dash">
+                      {stages.filter((s: any) => ['concluido', 'aprovado'].includes(s.status)).length}/{stages.length} concluídas
+                    </span>
+                  )}
                 </div>
                 <div className="p-4">
-                  <CnhStagesPanel
-                    stages={stages as any}
-                    processId={process.id}
-                    clientId={client?.id ?? ''}
-                    clientName={client?.name ?? ''}
-                    responsibleUserId={(responsible as any)?.id ?? null}
-                    disability={client?.disability_type ?? undefined}
-                  />
+                  {stages && stages.length > 0 ? (
+                    <CnhStagesPanel
+                      stages={stages as any}
+                      processId={process.id}
+                      clientId={client?.id ?? ''}
+                      clientName={client?.name ?? ''}
+                      responsibleUserId={(responsible as any)?.id ?? null}
+                      disability={(client as any)?.disability_type ?? undefined}
+                    />
+                  ) : (
+                    <InitCnhStagesButton
+                      processId={process.id}
+                      clientId={client?.id ?? ''}
+                      disability={(client as any)?.disability_type ?? undefined}
+                    />
+                  )}
                 </div>
               </div>
             )}
@@ -427,10 +441,10 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                       <div key={ev.id} className="flex items-start gap-4 px-5 py-4 border-b border-slate-50 last:border-0">
                         <div
                           className="w-11 h-11 rounded-xl flex flex-col items-center justify-center shrink-0"
-                          style={{ background: isToday ? 'linear-gradient(135deg, #1E3A5F, #1E40AF)' : '#EFF6FF' }}
+                          style={{ background: isToday ? 'linear-gradient(135deg, #6B3019, #A14F2A)' : 'rgba(161,79,42,0.08)' }}
                         >
-                          <span className="text-[9px] font-bold uppercase leading-none" style={{ color: isToday ? '#93C5FD' : '#3B82F6' }}>{month}</span>
-                          <span className="text-sm font-bold leading-tight mt-0.5" style={{ color: isToday ? '#fff' : '#1D4ED8' }}>{day}</span>
+                          <span className="text-[9px] font-bold uppercase leading-none" style={{ color: isToday ? '#E8B99F' : '#A14F2A' }}>{month}</span>
+                          <span className="text-sm font-bold leading-tight mt-0.5" style={{ color: isToday ? '#fff' : '#6B3019' }}>{day}</span>
                         </div>
                         <div className="flex-1 min-w-0 pt-0.5">
                           <p className="dash font-semibold text-slate-900 text-sm">{ev.title}</p>

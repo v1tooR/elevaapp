@@ -44,9 +44,6 @@ export default function ResetPasswordPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap');
-        * { font-family: 'DM Sans', sans-serif; }
-        h1, h2, .heading { font-family: 'Raleway', sans-serif; }
         @keyframes fadeUp {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -79,7 +76,7 @@ export default function ResetPasswordPage() {
           width: 100%;
           background: linear-gradient(135deg, #A14F2A, #6B3019);
           color: #fff;
-          font-family: 'Raleway', sans-serif;
+          font-family: var(--font-display);
           font-weight: 700;
           font-size: 15px;
           padding: 13px;

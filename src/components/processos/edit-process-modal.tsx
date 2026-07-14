@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Edit, X, TrendingUp, Link2, Settings, Layers, DollarSign } from 'lucide-react'
@@ -172,8 +173,6 @@ export function EditProcessModal({ process }: { process: Process & { process_typ
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes modalIn {
           from { opacity: 0; transform: scale(0.96) translateY(8px); }
           to   { opacity: 1; transform: scale(1) translateY(0); }
@@ -189,14 +188,14 @@ export function EditProcessModal({ process }: { process: Process & { process_typ
         Editar
       </button>
 
-      {open && (
+      {open && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
           <div className="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
 
             {/* Header */}
             <div
               className="flex items-center justify-between px-6 py-4 shrink-0"
-              style={{ background: `linear-gradient(135deg, #0C1A2E, ${typeColor}66)`, borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+              style={{ background: 'linear-gradient(135deg, #6B3019, #A14F2A)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
             >
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${typeColor}30`, border: `1px solid ${typeColor}50` }}>
@@ -204,7 +203,7 @@ export function EditProcessModal({ process }: { process: Process & { process_typ
                 </div>
                 <div>
                   <h2 className="dash text-white font-bold text-base">Editar Processo</h2>
-                  <p className="dash text-blue-300/70 text-xs mt-0.5">{process.process_types?.name}</p>
+                  <p className="dash text-primary-foreground/70 text-xs mt-0.5">{process.process_types?.name}</p>
                 </div>
               </div>
               <button onClick={close} className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-all">
@@ -283,7 +282,7 @@ export function EditProcessModal({ process }: { process: Process & { process_typ
                         value={financial.service_value}
                         onChange={e => setFinancial(p => ({ ...p, service_value: maskCurrency(e.target.value) }))}
                         placeholder="R$ 0,00"
-                        className="block w-full rounded-xl border border-slate-200 px-4 py-3 text-base font-bold text-slate-900 placeholder:text-slate-300 placeholder:font-normal bg-slate-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-all dash"
+                        className="block w-full rounded-xl border border-border px-4 py-3 text-base font-bold text-foreground placeholder:text-muted-foreground placeholder:font-normal bg-muted focus:bg-card focus:border-primary focus:outline-none transition-all dash"
                       />
                     </div>
 
@@ -337,7 +336,7 @@ export function EditProcessModal({ process }: { process: Process & { process_typ
             </form>
           </div>
         </div>
-      )}
+      , document.body)}
     </>
   )
 }

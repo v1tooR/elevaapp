@@ -66,7 +66,7 @@ function NovoProcessoForm() {
   useEffect(() => {
     const supabase = createClient()
     Promise.all([
-      supabase.from('process_types').select('*').eq('is_active', true).order('name'),
+      supabase.from('process_types').select('*').eq('is_active', true).neq('slug', 'resumo').order('name'),
       supabase.from('clients').select('id, name, gov_password_reference, disability_type, client_type').eq('is_active', true).order('name'),
       supabase.from('profiles').select('id, name').in('role', ['admin', 'analista', 'super_admin']).order('name'),
     ]).then(([{ data: pt }, { data: cl }, { data: pf }]) => {
@@ -264,8 +264,6 @@ function NovoProcessoForm() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(14px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -286,18 +284,18 @@ function NovoProcessoForm() {
         {/* ── Banner ─────────────────────────────────────────────── */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1A3055 55%, #1E40AF 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
         >
           <div className="pointer-events-none absolute -top-16 -right-16 w-56 h-56 rounded-full opacity-[0.07]"
-            style={{ background: 'radial-gradient(circle, #60A5FA, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
           <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
           <div className="relative p-6">
-            <Link href="/processos" className="inline-flex items-center gap-1.5 text-blue-300/80 hover:text-white text-xs font-medium mb-4">
+            <Link href="/processos" className="inline-flex items-center gap-1.5 text-primary-foreground/75 hover:text-white text-xs font-medium mb-4">
               <ArrowLeft className="w-3.5 h-3.5" /> Voltar a Processos
             </Link>
             <h1 className="dash text-white text-2xl font-bold">Novo Processo</h1>
-            <p className="dash text-blue-300/70 text-sm mt-1">
+            <p className="dash text-primary-foreground/65 text-sm mt-1">
               {selectedTypeName
                 ? <>Criando: <span className="text-white font-semibold">{selectedTypeName}</span></>
                 : 'Selecione o tipo de processo para começar'
@@ -496,7 +494,7 @@ function NovoProcessoForm() {
                             onChange={e => setCustomFieldValues(prev => ({ ...prev, [field.field_name]: e.target.value }))}
                             placeholder={field.field_type === 'currency' ? '0,00' : ''}
                             step={field.field_type === 'currency' ? '0.01' : undefined}
-                            className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-all dash"
+                            className="block w-full rounded-xl border border-border px-3 py-2 text-sm bg-muted focus:bg-card focus:border-primary focus:outline-none transition-all dash"
                           />
                         </div>
                       )}
@@ -533,7 +531,7 @@ function NovoProcessoForm() {
                   value={form.service_value}
                   onChange={e => setForm(prev => ({ ...prev, service_value: maskCurrency(e.target.value) }))}
                   placeholder="R$ 0,00"
-                  className="block w-full rounded-xl border border-slate-200 px-4 py-3 text-base font-bold text-slate-900 placeholder:text-slate-300 placeholder:font-normal bg-slate-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-all dash"
+                  className="block w-full rounded-xl border border-border px-4 py-3 text-base font-bold text-foreground placeholder:text-muted-foreground placeholder:font-normal bg-muted focus:bg-card focus:border-primary focus:outline-none transition-all dash"
                 />
               </div>
 

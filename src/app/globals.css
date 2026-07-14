@@ -1,6 +1,32 @@
-@import url('https://fonts.googleapis.com/css2?family=Raleway:ital,wght@0,400;0,600;0,700;0,800;1,300&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500;1,600&display=swap');
-
 @import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-red-hat-display);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
+  --color-warning: var(--warning);
+  --color-warning-bg: var(--warning-bg);
+  --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
+}
 
 /* ═══════════════════════════════════════════════════
    DESIGN TOKENS — Eleva Isenções
@@ -40,9 +66,7 @@
   --info-bg:              #DBEAFE;
 
   /* Fontes */
-  --font-display: 'Raleway', sans-serif;
-  --font-sans:    'DM Sans', sans-serif;
-  --font-serif:   'Cormorant Garamond', serif;
+  --font-serif: var(--font-red-hat-display);
 
   /* Raio */
   --radius:     0.75rem;
@@ -92,8 +116,16 @@ h1, h2, h3, h4, h5, h6 {
    TIPOGRAFIA
    ═══════════════════════════════════════════════════ */
 .font-display,
+.heading { font-family: var(--font-display); }
+
 .dash,
-.sb { font-family: var(--font-display); }
+.sb { font-family: var(--font-sans); }
+
+h1.dash, h2.dash, h3.dash, h4.dash, h5.dash, h6.dash,
+.dash h1, .dash h2, .dash h3, .dash h4, .dash h5, .dash h6,
+h1.sb, h2.sb, h3.sb, h4.sb, h5.sb, h6.sb {
+  font-family: var(--font-display);
+}
 
 .font-serif-elegant {
   font-family: var(--font-serif);
@@ -159,7 +191,7 @@ h1, h2, h3, h4, h5, h6 {
 .prow:hover { background: #FBF8F6; }
 
 .proc-row { transition: background 0.12s; }
-.proc-row:hover { background: #F8FAFC; }
+.proc-row:hover { background: #FBF8F6; }
 
 .link-arrow { transition: transform 0.15s; }
 .view-all:hover .link-arrow { transform: translate(2px, -2px); }

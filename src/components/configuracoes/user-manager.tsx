@@ -137,7 +137,7 @@ export function UserManager({ profiles }: { profiles: any[] }) {
           {/* Form header */}
           <div
             className="px-5 py-3.5 flex items-center justify-between"
-            style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1e1b4b 100%)' }}
+            style={{ background: 'linear-gradient(135deg, #6B3019 0%, #A14F2A 100%)' }}
           >
             <div>
               <p className="dash text-sm font-bold text-white">Novo Usuário</p>
@@ -206,7 +206,7 @@ export function UserManager({ profiles }: { profiles: any[] }) {
               type="submit"
               disabled={loading}
               className="dash w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-70 cursor-pointer"
-              style={{ background: 'linear-gradient(135deg, #4338ca 0%, #6366f1 100%)', boxShadow: '0 4px 14px rgba(99,102,241,0.35)' }}
+              style={{ background: 'linear-gradient(135deg, #A14F2A 0%, #C97A52 100%)', boxShadow: '0 4px 14px rgba(161,79,42,0.28)' }}
             >
               {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
               {loading ? 'Criando...' : 'Criar usuário'}

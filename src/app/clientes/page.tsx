@@ -8,12 +8,12 @@ interface SearchParams { q?: string; page?: string }
 
 function avatarGradient(name: string) {
   const g = [
-    'linear-gradient(135deg,#1E3A5F,#3B82F6)',
-    'linear-gradient(135deg,#064E3B,#10B981)',
-    'linear-gradient(135deg,#7C2D12,#F97316)',
-    'linear-gradient(135deg,#4C1D95,#8B5CF6)',
-    'linear-gradient(135deg,#881337,#F43F5E)',
-    'linear-gradient(135deg,#134E4A,#14B8A6)',
+    'linear-gradient(135deg,#6B3019,#A14F2A)',
+    'linear-gradient(135deg,#7C3E24,#C97A52)',
+    'linear-gradient(135deg,#8A4A2E,#D08A64)',
+    'linear-gradient(135deg,#5C2A18,#9A4828)',
+    'linear-gradient(135deg,#70402E,#B86C49)',
+    'linear-gradient(135deg,#425438,#718061)',
   ]
   const n = [...name].reduce((s, c) => s + c.charCodeAt(0), 0)
   return g[n % g.length]
@@ -47,8 +47,6 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -70,21 +68,21 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
         {/* â”€â”€ Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1A3055 55%, #1E40AF 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
         >
           <div className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-[0.07]"
-            style={{ background: 'radial-gradient(circle, #60A5FA, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
           <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
           <div className="relative flex items-center justify-between gap-4 p-6 lg:p-8">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-                <Users className="w-6 h-6 text-blue-300" />
+                <Users className="w-6 h-6 text-primary-foreground/75" />
               </div>
               <div>
                 <h1 className="dash text-white text-2xl lg:text-3xl font-bold leading-tight">Clientes</h1>
-                <p className="dash text-blue-300/70 text-sm mt-0.5">
+                <p className="dash text-primary-foreground/65 text-sm mt-0.5">
                   {count ?? 0} cliente{count !== 1 ? 's' : ''} cadastrado{count !== 1 ? 's' : ''}
                 </p>
               </div>
@@ -111,7 +109,7 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
                 name="q"
                 defaultValue={q}
                 placeholder="Buscar por nome, CPF, telefone ou e-mail..."
-                className="search-input w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-all dash"
+                className="search-input w-full pl-10 pr-4 py-2.5 border border-border rounded-xl text-sm bg-muted focus:bg-card focus:border-primary focus:outline-none transition-all dash"
               />
             </div>
             <button
@@ -157,7 +155,7 @@ export default async function ClientesPage({ searchParams }: { searchParams: Pro
               {!q && (
                 <Link
                   href="/clientes/novo"
-                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-semibold rounded-xl hover:bg-blue-700 transition-colors dash"
+                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors dash"
                 >
                   <Plus className="w-4 h-4" /> Cadastrar cliente
                 </Link>

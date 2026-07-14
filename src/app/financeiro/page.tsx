@@ -42,8 +42,6 @@ export default async function FinanceiroPage() {
   return (
     <div className="space-y-5">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
         .anim-1 { animation: slideUp 0.45s cubic-bezier(.22,1,.36,1) both; }
         .anim-2 { animation: slideUp 0.45s cubic-bezier(.22,1,.36,1) 0.08s both; }
@@ -52,7 +50,7 @@ export default async function FinanceiroPage() {
       {/* ── Dark emerald banner ── */}
       <div
         className="anim-1 rounded-2xl overflow-hidden relative"
-        style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #14532d 50%, #052e16 100%)' }}
+        style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
       >
         <div
           className="absolute inset-0 opacity-10"

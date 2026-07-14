@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { UserPlus, X, AlertCircle, CheckCircle } from 'lucide-react'
@@ -60,8 +61,6 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes modalIn {
           from { opacity: 0; transform: scale(0.96) translateY(8px); }
           to   { opacity: 1; transform: scale(1) translateY(0); }
@@ -77,14 +76,14 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
         Converter em Cliente
       </button>
 
-      {open && (
+      {open && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
           <div className="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
 
             {/* Header */}
             <div
               className="px-6 py-4"
-              style={{ background: 'linear-gradient(135deg, #064E3B, #059669)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+              style={{ background: 'linear-gradient(135deg, #6B3019, #A14F2A)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -165,7 +164,7 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
     </>
   )
 }

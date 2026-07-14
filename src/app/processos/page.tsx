@@ -1,6 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { Plus, FolderOpen, TrendingUp, Clock, CheckCircle2, AlertTriangle, ArrowUpRight } from 'lucide-react'
+import {
+  Accessibility, ArrowRight, BadgeDollarSign, Car, CarFront,
+  CheckCircle2, Clock, FileBadge2, FolderKanban, FolderOpen,
+  IdCard, Layers3, Plus, ReceiptText, RotateCcw, Stethoscope, TrendingUp,
+  AlertTriangle,
+  type LucideIcon,
+} from 'lucide-react'
 import { ProcessesStatusChart } from '@/components/processos/processes-status-chart'
 
 const ACTIVE_STATUSES = ['aberto', 'em_andamento', 'em_analise']
@@ -22,6 +28,33 @@ const KPI_ORDER = [
   'aguardando_orgao', 'concluido', 'arquivado', 'cancelado',
 ]
 
+interface ProcessTypeSummary {
+  id: string
+  name: string
+  slug: string
+  description: string | null
+}
+
+const PROCESS_TYPE_ICONS: Record<string, LucideIcon> = {
+  cin: IdCard,
+  estacionamento: Accessibility,
+  cnh_especial: CarFront,
+  processo_ipi: ReceiptText,
+  processo_icms: FileBadge2,
+  processo_ipva: BadgeDollarSign,
+  imposto_de_renda: BadgeDollarSign,
+  laudo: Stethoscope,
+  emplacamento: Car,
+  rodizio: RotateCcw,
+}
+
+const TYPE_ACCENTS = [
+  { color: '#A14F2A', soft: 'rgba(161,79,42,0.10)' },
+  { color: '#6B3019', soft: 'rgba(107,48,25,0.09)' },
+  { color: '#C97A52', soft: 'rgba(201,122,82,0.12)' },
+  { color: '#425438', soft: 'rgba(66,84,56,0.10)' },
+]
+
 export default async function ProcessosHubPage() {
   const supabase = await createClient()
 
@@ -36,7 +69,7 @@ export default async function ProcessosHubPage() {
     { data: allProcs },
     { count: deadlineCount },
   ] = await Promise.all([
-    supabase.from('process_types').select('id, name, slug, color').eq('is_active', true).order('name'),
+    supabase.from('process_types').select('id, name, slug, description').eq('is_active', true).neq('slug', 'resumo').order('name'),
     supabase.from('processes').select('process_type_id, status'),
     supabase.from('calendar_events').select('*', { count: 'exact', head: true })
       .eq('event_type', 'deadline')
@@ -51,13 +84,16 @@ export default async function ProcessosHubPage() {
   const waitingCount = procs.filter(p => WAITING_STATUSES.includes(p.status)).length
   const concludedCount = procs.filter(p => p.status === 'concluido').length
 
-  // Per-type counts (non-archived/cancelled)
+  // Per-type counts for the active operation
   const typeCountMap: Record<string, number> = {}
   for (const p of procs) {
-    if (!['arquivado', 'cancelado'].includes(p.status)) {
+    if ([...ACTIVE_STATUSES, ...WAITING_STATUSES].includes(p.status)) {
       typeCountMap[p.process_type_id] = (typeCountMap[p.process_type_id] ?? 0) + 1
     }
   }
+
+  const processTypeList = (processTypes ?? []) as ProcessTypeSummary[]
+  const portfolioCount = Object.values(typeCountMap).reduce((total, count) => total + count, 0)
 
   // Chart data by status
   const statusCountMap: Record<string, number> = {}
@@ -110,8 +146,6 @@ export default async function ProcessosHubPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -121,10 +155,6 @@ export default async function ProcessosHubPage() {
         .anim-2 { animation-delay: 0.10s; }
         .anim-3 { animation-delay: 0.15s; }
         .anim-4 { animation-delay: 0.20s; }
-        .type-card { transition: all 0.15s; }
-        .type-card:hover { transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.09); }
-        .novo-btn { transition: all 0.12s; }
-        .novo-btn:hover { filter: brightness(1.08); }
       `}</style>
 
       <div className="space-y-5">
@@ -132,21 +162,21 @@ export default async function ProcessosHubPage() {
         {/* ── Banner ─────────────────────────────────────────────── */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1A3055 55%, #1E40AF 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
         >
           <div className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-[0.07]"
-            style={{ background: 'radial-gradient(circle, #60A5FA, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
           <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
           <div className="relative flex items-center justify-between gap-4 p-6 lg:p-8">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-                <FolderOpen className="w-6 h-6 text-blue-300" />
+                <FolderOpen className="w-6 h-6 text-primary-foreground/75" />
               </div>
               <div>
                 <h1 className="dash text-white text-2xl lg:text-3xl font-bold leading-tight">Processos</h1>
-                <p className="dash text-blue-300/70 text-sm mt-0.5">
+                <p className="dash text-primary-foreground/65 text-sm mt-0.5">
                   {procs.length} processo{procs.length !== 1 ? 's' : ''} no total
                   {processTypes ? ` · ${processTypes.length} tipo${processTypes.length !== 1 ? 's' : ''} ativo${processTypes.length !== 1 ? 's' : ''}` : ''}
                 </p>
@@ -204,79 +234,117 @@ export default async function ProcessosHubPage() {
         )}
 
         {/* ── Type cards grid ────────────────────────────────────── */}
-        {processTypes && processTypes.length > 0 && (
-          <div className="anim anim-3">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="dash font-bold text-slate-800 text-base">Tipos de Processo</h2>
-              <span className="dash text-xs text-slate-400">{processTypes.length} ativo{processTypes.length !== 1 ? 's' : ''}</span>
+        {processTypeList.length > 0 && (
+          <section
+            className="anim anim-3 relative overflow-hidden rounded-3xl border border-border bg-card"
+            style={{ boxShadow: '0 10px 35px rgba(107,48,25,0.06)' }}
+          >
+            <div
+              className="relative flex flex-col gap-5 border-b border-border px-5 py-6 sm:flex-row sm:items-center sm:justify-between lg:px-7"
+              style={{ background: 'linear-gradient(135deg, #FFFDFC 0%, #F8F1EB 100%)' }}
+            >
+              <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-primary/5" />
+              <div className="relative flex items-center gap-4">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-[0_8px_20px_rgba(161,79,42,0.22)]">
+                  <Layers3 className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="dash mb-1 text-[10px] font-bold uppercase tracking-[0.18em] text-primary">
+                    Central de serviços
+                  </p>
+                  <h2 className="dash text-xl font-bold text-foreground">Carteiras de processos</h2>
+                  <p className="dash mt-1 max-w-xl text-sm text-muted-foreground">
+                    Acompanhe cada frente de atendimento ou inicie uma nova solicitação.
+                  </p>
+                </div>
+              </div>
+
+              <div className="relative flex items-center gap-2 self-start sm:self-auto">
+                <div className="rounded-xl border border-border bg-card/80 px-3.5 py-2 text-right backdrop-blur-sm">
+                  <p className="dash text-base font-bold leading-none text-foreground">{portfolioCount}</p>
+                  <p className="dash mt-1 text-[10px] text-muted-foreground">
+                    em andamento
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border bg-card/80 px-3.5 py-2 text-right backdrop-blur-sm">
+                  <p className="dash text-base font-bold leading-none text-foreground">{processTypeList.length}</p>
+                  <p className="dash mt-1 text-[10px] text-muted-foreground">
+                    carteiras
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {(processTypes as any[]).map((type) => {
+            <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3 lg:p-5 xl:grid-cols-4">
+              {processTypeList.map((type, index) => {
                 const count = typeCountMap[type.id] ?? 0
-                const color = type.color ?? '#3B82F6'
+                const Icon = PROCESS_TYPE_ICONS[type.slug] ?? FolderKanban
+                const accent = TYPE_ACCENTS[index % TYPE_ACCENTS.length]
+                const description = type.description ?? 'Atendimento e acompanhamento especializado.'
                 return (
-                  <div
+                  <article
                     key={type.id}
-                    className="type-card bg-white rounded-2xl overflow-hidden flex flex-col"
-                    style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+                    className="group relative flex min-h-52 flex-col overflow-hidden rounded-2xl border border-border bg-card transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-[0_12px_30px_rgba(107,48,25,0.10)]"
                   >
-                    {/* Thin color accent top */}
-                    <div className="h-1 w-full" style={{ backgroundColor: color }} />
+                    <div
+                      className="absolute inset-x-0 top-0 h-0.5 opacity-70 transition-all group-hover:h-1 group-hover:opacity-100"
+                      style={{ backgroundColor: accent.color }}
+                    />
+                    <span className="font-display pointer-events-none absolute -right-1 top-2 text-7xl font-black leading-none text-foreground/[0.035]">
+                      {String(index + 1).padStart(2, '0')}
+                    </span>
 
-                    {/* Main clickable area */}
                     <Link
                       href={`/processos/tipo/${type.slug}`}
-                      className="flex-1 p-5 flex flex-col gap-3 hover:bg-slate-50 transition-colors"
+                      className="relative flex flex-1 flex-col p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
                     >
-                      <div className="flex items-start gap-3">
+                      <div className="mb-5 flex items-start justify-between gap-3">
                         <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
-                          style={{ backgroundColor: `${color}18` }}
+                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl transition-transform duration-200 group-hover:scale-105"
+                          style={{ backgroundColor: accent.soft, color: accent.color }}
                         >
-                          <div className="w-4 h-4 rounded-full" style={{ backgroundColor: color }} />
+                          <Icon className="h-5 w-5" strokeWidth={1.8} />
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="dash font-bold text-slate-900 text-sm leading-tight">{type.name}</p>
-                          <p className="dash text-[11px] text-slate-400 mt-0.5 truncate">
-                            {count > 0 ? `${count} processo${count !== 1 ? 's' : ''} ativo${count !== 1 ? 's' : ''}` : 'Nenhum processo ainda'}
-                          </p>
-                        </div>
+                        <span className={`dash rounded-full px-2.5 py-1 text-[10px] font-bold ${
+                          count > 0 ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+                        }`}>
+                          {count > 0 ? `${count} ativo${count !== 1 ? 's' : ''}` : 'Disponível'}
+                        </span>
                       </div>
 
-                      <div>
-                        <span className="dash text-4xl font-bold leading-none" style={{ color }}>{count}</span>
+                      <div className="relative mt-auto">
+                        <h3 className="dash text-base font-bold leading-snug text-foreground transition-colors group-hover:text-primary">
+                          {type.name}
+                        </h3>
+                        <p className="dash mt-1.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
+                          {description}
+                        </p>
                       </div>
                     </Link>
 
-                    {/* Footer actions */}
-                    <div
-                      className="flex items-center justify-between px-5 py-3"
-                      style={{ borderTop: '1px solid #F1F5F9' }}
-                    >
+                    <div className="relative flex items-center gap-2 border-t border-border bg-muted/35 p-3">
                       <Link
                         href={`/processos/tipo/${type.slug}`}
-                        className="dash text-xs text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1 font-medium"
+                        className="dash flex flex-1 items-center justify-between rounded-xl px-2.5 py-2 text-xs font-semibold text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
                       >
-                        Ver todos <ArrowUpRight className="w-3 h-3" />
+                        Abrir carteira <ArrowRight className="h-3.5 w-3.5" />
                       </Link>
                       <Link
                         href={`/processos/novo?type_id=${type.id}`}
-                        className="novo-btn flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition-colors dash"
-                        style={{ backgroundColor: color }}
+                        className="dash flex items-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-bold text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
                       >
-                        <Plus className="w-3 h-3" /> Novo
+                        <Plus className="h-3.5 w-3.5" /> Novo
                       </Link>
                     </div>
-                  </div>
+                  </article>
                 )
               })}
             </div>
-          </div>
+          </section>
         )}
 
         {/* Estado vazio */}
-        {(!processTypes || processTypes.length === 0) && (
+        {processTypeList.length === 0 && (
           <div
             className="anim anim-2 bg-white rounded-2xl flex flex-col items-center justify-center py-20 gap-4"
             style={{ border: '1px solid #E2E8F0' }}

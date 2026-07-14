@@ -9,7 +9,7 @@ export default async function ConfiguracoesPage() {
   const supabase = await createClient()
 
   const [{ data: processTypes }, { data: profiles }] = await Promise.all([
-    supabase.from('process_types').select('*').order('name'),
+    supabase.from('process_types').select('*').neq('slug', 'resumo').order('name'),
     supabase.from('profiles').select('*').order('name'),
   ])
 
@@ -29,8 +29,6 @@ export default async function ConfiguracoesPage() {
   return (
     <div className="space-y-5">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp { from { opacity:0; transform:translateY(14px); } to { opacity:1; transform:translateY(0); } }
         .anim-1 { animation: slideUp 0.45s cubic-bezier(.22,1,.36,1) both; }
         .anim-2 { animation: slideUp 0.45s cubic-bezier(.22,1,.36,1) 0.08s both; }
@@ -39,7 +37,7 @@ export default async function ConfiguracoesPage() {
       {/* ── Dark indigo banner ── */}
       <div
         className="anim-1 rounded-2xl overflow-hidden relative"
-        style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1e1b4b 55%, #312e81 100%)' }}
+        style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
       >
         <div
           className="absolute inset-0 opacity-10"
@@ -51,7 +49,7 @@ export default async function ConfiguracoesPage() {
               className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: 'rgba(99,102,241,0.2)', border: '1px solid rgba(99,102,241,0.35)' }}
             >
-              <Settings className="w-6 h-6 text-indigo-300" />
+              <Settings className="w-6 h-6 text-primary-foreground/75" />
             </div>
             <div>
               <h1 className="dash text-2xl font-bold text-white">Configurações</h1>

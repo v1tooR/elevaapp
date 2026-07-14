@@ -74,8 +74,6 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -93,10 +91,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         {/* ── Banner ─────────────────────────────────────────────── */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1A3055 55%, #1E40AF 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
         >
           <div className="pointer-events-none absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-[0.08]"
-            style={{ background: 'radial-gradient(circle, #60A5FA, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
           <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
@@ -104,7 +102,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <div className="relative flex items-center justify-between gap-3 px-6 pt-5 pb-0">
             <Link
               href="/leads"
-              className="back-btn flex items-center gap-1.5 text-blue-300/80 hover:text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-all"
+              className="back-btn flex items-center gap-1.5 text-primary-foreground/75 hover:text-white text-xs font-medium px-3 py-1.5 rounded-lg transition-all"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               Voltar a Leads
@@ -139,7 +137,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               </div>
               <h1 className="dash text-white text-2xl font-bold leading-tight">{lead.name}</h1>
               {lead.phone && (
-                <p className="dash text-blue-300/70 text-sm mt-1">{formatPhone(lead.phone)}</p>
+                <p className="dash text-primary-foreground/65 text-sm mt-1">{formatPhone(lead.phone)}</p>
               )}
             </div>
           </div>

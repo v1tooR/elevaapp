@@ -152,8 +152,6 @@ export default function NovoClientePage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(14px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -171,23 +169,23 @@ export default function NovoClientePage() {
         {/* ── Banner ─────────────────────────────────────────────── */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1A3055 55%, #1E40AF 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
         >
           <div className="pointer-events-none absolute -top-16 -right-16 w-56 h-56 rounded-full opacity-[0.07]"
-            style={{ background: 'radial-gradient(circle, #60A5FA, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
           <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
           <div className="relative p-6">
             <Link
               href="/clientes"
-              className="inline-flex items-center gap-1.5 text-blue-300/80 hover:text-white text-xs font-medium mb-4"
+              className="inline-flex items-center gap-1.5 text-primary-foreground/75 hover:text-white text-xs font-medium mb-4"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               Voltar a Clientes
             </Link>
             <h1 className="dash text-white text-2xl font-bold">Novo Cliente</h1>
-            <p className="dash text-blue-300/70 text-sm mt-1">Preencha os dados para cadastrar o cliente</p>
+            <p className="dash text-primary-foreground/65 text-sm mt-1">Preencha os dados para cadastrar o cliente</p>
           </div>
         </div>
 
@@ -367,7 +365,7 @@ export default function NovoClientePage() {
                 }}
                 className={cn(
                   'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 cursor-pointer',
-                  criarAcesso ? 'bg-indigo-600' : 'bg-slate-200'
+                  criarAcesso ? 'bg-primary' : 'bg-slate-200'
                 )}
               >
                 <span className={cn(
@@ -386,7 +384,7 @@ export default function NovoClientePage() {
                     value={portalEmail}
                     onChange={e => setPortalEmail(e.target.value)}
                     placeholder="email@exemplo.com"
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none dash transition-all"
+                    className="w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground focus:border-primary focus:ring-2 focus:ring-primary/10 outline-none dash transition-all"
                   />
                 </div>
                 <div>
@@ -406,7 +404,7 @@ export default function NovoClientePage() {
                       value={portalPassword}
                       onChange={e => setPortalPassword(e.target.value)}
                       placeholder="Mínimo 6 caracteres"
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 pr-10 text-sm text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none dash transition-all"
+                      className="w-full rounded-lg border border-border px-3 py-2 pr-10 text-sm text-foreground focus:border-primary focus:ring-2 focus:ring-primary/10 outline-none dash transition-all"
                     />
                     <button
                       type="button"

@@ -80,7 +80,7 @@ export function DocumentUploader({ processId, clientId, onUploadComplete }: Prop
       {!open ? (
         <button
           onClick={() => setOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 border border-dashed border-slate-300 rounded-lg text-sm text-slate-500 hover:border-blue-400 hover:text-blue-500 hover:bg-blue-50 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary hover:bg-primary/5 transition-colors"
         >
           <Plus className="w-4 h-4" /> Adicionar link do Drive
         </button>

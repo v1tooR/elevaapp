@@ -28,12 +28,12 @@ const CLIENT_TYPE_LABEL: Record<string, string> = {
 
 function avatarGradient(name: string) {
   const g = [
-    'linear-gradient(135deg,#1E3A5F,#3B82F6)',
-    'linear-gradient(135deg,#064E3B,#10B981)',
-    'linear-gradient(135deg,#7C2D12,#F97316)',
-    'linear-gradient(135deg,#4C1D95,#8B5CF6)',
-    'linear-gradient(135deg,#881337,#F43F5E)',
-    'linear-gradient(135deg,#134E4A,#14B8A6)',
+    'linear-gradient(135deg,#6B3019,#A14F2A)',
+    'linear-gradient(135deg,#7C3E24,#C97A52)',
+    'linear-gradient(135deg,#8A4A2E,#D08A64)',
+    'linear-gradient(135deg,#5C2A18,#9A4828)',
+    'linear-gradient(135deg,#70402E,#B86C49)',
+    'linear-gradient(135deg,#425438,#718061)',
   ]
   const n = [...name].reduce((s, c) => s + c.charCodeAt(0), 0)
   return g[n % g.length]
@@ -73,8 +73,6 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }
@@ -98,10 +96,10 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
         {/* ── Hero Banner ──────────────────────────────────────────── */}
         <div
           className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #0C1A2E 0%, #1A3055 55%, #1E40AF 100%)' }}
+          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
         >
           <div className="pointer-events-none absolute -top-16 -right-16 w-64 h-64 rounded-full opacity-[0.08]"
-            style={{ background: 'radial-gradient(circle, #60A5FA, transparent 70%)' }} />
+            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
           <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
@@ -109,7 +107,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
           <div className="relative flex items-center justify-between gap-3 px-6 pt-5 pb-0">
             <Link
               href="/clientes"
-              className="back-btn flex items-center gap-1.5 text-blue-300/80 hover:text-white text-xs font-medium px-3 py-1.5 rounded-lg"
+              className="back-btn flex items-center gap-1.5 text-primary-foreground/75 hover:text-white text-xs font-medium px-3 py-1.5 rounded-lg"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               Voltar a Clientes
@@ -138,17 +136,17 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
               <h1 className="dash text-white text-2xl font-bold leading-tight truncate">{client.name}</h1>
               <div className="flex flex-wrap items-center gap-2 mt-2">
                 {client.cpf && (
-                  <span className="text-xs font-medium text-blue-200/80 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
+                  <span className="text-xs font-medium text-primary-foreground/75 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
                     CPF {formatCPF(client.cpf)}
                   </span>
                 )}
                 {client.phone && (
-                  <span className="text-xs font-medium text-blue-200/80 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
+                  <span className="text-xs font-medium text-primary-foreground/75 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
                     {formatPhone(client.phone)}
                   </span>
                 )}
                 {(client.city || client.state) && (
-                  <span className="text-xs font-medium text-blue-200/80 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
+                  <span className="text-xs font-medium text-primary-foreground/75 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
                     {[client.city, client.state].filter(Boolean).join(' / ')}
                   </span>
                 )}
@@ -159,11 +157,11 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
             <div className="hidden sm:flex gap-3 shrink-0">
               <div className="text-center bg-white/10 border border-white/10 rounded-xl px-4 py-2.5">
                 <p className="dash text-xl font-bold text-white">{processes?.length ?? 0}</p>
-                <p className="dash text-[10px] text-blue-300/70 mt-0.5">Processos</p>
+                <p className="dash text-[10px] text-primary-foreground/65 mt-0.5">Processos</p>
               </div>
               <div className="text-center bg-white/10 border border-white/10 rounded-xl px-4 py-2.5">
                 <p className="dash text-xl font-bold text-white">{documents?.length ?? 0}</p>
-                <p className="dash text-[10px] text-blue-300/70 mt-0.5">Documentos</p>
+                <p className="dash text-[10px] text-primary-foreground/65 mt-0.5">Documentos</p>
               </div>
             </div>
           </div>
@@ -375,7 +373,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
               >
                 <div
                   className="flex items-center justify-between gap-4 px-5 py-4"
-                  style={{ background: 'linear-gradient(135deg, #4C1D95 0%, #6D28D9 100%)' }}
+                  style={{ background: 'linear-gradient(135deg, #6B3019 0%, #A14F2A 100%)' }}
                 >
                   <div className="flex items-center gap-3">
                     <div className="w-9 h-9 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
@@ -383,7 +381,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                     </div>
                     <div>
                       <p className="dash text-white font-bold text-sm">Iniciar processo de CNH Especial</p>
-                      <p className="dash text-purple-200/80 text-xs mt-0.5">
+                      <p className="dash text-primary-foreground/75 text-xs mt-0.5">
                         Cliente condutor {client.disability_type ? `com deficiência ${DISABILITY_LABEL[client.disability_type].toLowerCase()}` : 'PCD'} ainda não possui CNH Especial
                       </p>
                     </div>

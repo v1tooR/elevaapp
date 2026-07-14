@@ -126,7 +126,7 @@ export function PortalAccessCard({ client, hasAccess: initial, profileEmail, cal
                   value={email}
                   onChange={e => setEmail(e.target.value)}
                   placeholder="email@exemplo.com"
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none dash"
+                  className="w-full rounded-lg border border-border px-3 py-2 text-sm text-foreground focus:border-primary focus:ring-2 focus:ring-primary/10 outline-none dash"
                 />
               </div>
               <div>
@@ -146,7 +146,7 @@ export function PortalAccessCard({ client, hasAccess: initial, profileEmail, cal
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="Mínimo 6 caracteres"
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2 pr-10 text-sm text-slate-900 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none dash"
+                    className="w-full rounded-lg border border-border px-3 py-2 pr-10 text-sm text-foreground focus:border-primary focus:ring-2 focus:ring-primary/10 outline-none dash"
                   />
                   <button
                     type="button"
@@ -169,7 +169,7 @@ export function PortalAccessCard({ client, hasAccess: initial, profileEmail, cal
                   type="button"
                   onClick={handleCreate}
                   disabled={loading || !email || !password}
-                  className="flex-1 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-lg transition-colors dash cursor-pointer"
+                  className="flex-1 py-2 text-xs font-semibold text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 rounded-lg transition-colors dash cursor-pointer"
                 >
                   {loading ? 'Criando...' : 'Criar acesso'}
                 </button>

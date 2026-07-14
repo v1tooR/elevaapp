@@ -19,7 +19,7 @@ export function DocFilters({ clients, docTypes, typeFilter, clientFilter, status
     router.push(`/documentos?${params.toString()}`)
   }
 
-  const selectCls = "flex-1 min-w-40 rounded-xl border border-slate-200 px-3 py-2 text-sm bg-slate-50 focus:bg-white focus:border-blue-400 focus:outline-none transition-all dash"
+  const selectCls = "flex-1 min-w-40 rounded-xl border border-border px-3 py-2 text-sm bg-muted focus:bg-card focus:border-primary focus:outline-none transition-all dash"
 
   return (
     <div className="flex gap-3 flex-wrap">

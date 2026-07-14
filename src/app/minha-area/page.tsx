@@ -40,9 +40,6 @@ export default async function MinhaAreaPage() {
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Raleway:wght@400;600;700;800&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap');
-        .dash { font-family: 'DM Sans', sans-serif; }
-        .dash h1, .dash h2, .dash h3 { font-family: 'Raleway', sans-serif; }
         @keyframes slideUp {
           from { opacity: 0; transform: translateY(16px); }
           to   { opacity: 1; transform: translateY(0); }

@@ -90,7 +90,7 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
             <ElevaIcon className="w-full h-full" fill="#efe3d6" />
           </div>
           <div>
-            <p className="sb text-sm font-bold text-white tracking-widest leading-tight">ELEVA</p>
+            <p className="font-display text-sm font-bold text-white tracking-widest leading-tight">ELEVA</p>
             <p className="sb text-[10px] leading-tight text-white/40" style={{ letterSpacing: '0.04em' }}>Isenções</p>
           </div>
         </div>

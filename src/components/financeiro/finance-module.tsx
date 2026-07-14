@@ -102,11 +102,11 @@ function BarChartComp({ months }: { months: MonthStat[] }) {
     <ResponsiveContainer width="100%" height={160}>
       <BarChart data={months} margin={{ top: 4, right: 4, left: -8, bottom: 0 }} barCategoryGap="28%">
         <CartesianGrid vertical={false} stroke="#F1F5F9" strokeDasharray="3 3" />
-        <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8', fontFamily: 'Outfit, sans-serif' }} axisLine={false} tickLine={false} />
-        <YAxis tickFormatter={fmtShort} tick={{ fontSize: 11, fill: '#cbd5e1', fontFamily: 'Outfit, sans-serif' }} axisLine={false} tickLine={false} width={36} />
+        <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#8B6F5E', fontFamily: 'var(--font-dm-sans)' }} axisLine={false} tickLine={false} />
+        <YAxis tickFormatter={fmtShort} tick={{ fontSize: 11, fill: '#C9B8AA', fontFamily: 'var(--font-dm-sans)' }} axisLine={false} tickLine={false} width={36} />
         <Tooltip
           formatter={(v: unknown, name: unknown) => [fmt(v as number), name === 'income' ? 'Receitas' : 'Despesas']}
-          contentStyle={{ fontSize: 12, borderRadius: 12, border: '1px solid #e2e8f0', padding: '6px 10px', fontFamily: 'Outfit, sans-serif' }}
+          contentStyle={{ fontSize: 12, borderRadius: 12, border: '1px solid #E5D9CE', padding: '6px 10px', fontFamily: 'var(--font-dm-sans)' }}
         />
         <Bar dataKey="income"  fill="#22c55e" radius={[4, 4, 0, 0]} maxBarSize={18} />
         <Bar dataKey="expense" fill="#f87171" radius={[4, 4, 0, 0]} maxBarSize={18} />
@@ -129,11 +129,11 @@ function AreaChartComp({ months }: { months: MonthStat[] }) {
           </linearGradient>
         </defs>
         <CartesianGrid vertical={false} stroke="#F1F5F9" strokeDasharray="3 3" />
-        <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#94a3b8', fontFamily: 'Outfit, sans-serif' }} axisLine={false} tickLine={false} />
-        <YAxis tickFormatter={fmtShort} tick={{ fontSize: 11, fill: '#cbd5e1', fontFamily: 'Outfit, sans-serif' }} axisLine={false} tickLine={false} width={36} />
+        <XAxis dataKey="label" tick={{ fontSize: 11, fill: '#8B6F5E', fontFamily: 'var(--font-dm-sans)' }} axisLine={false} tickLine={false} />
+        <YAxis tickFormatter={fmtShort} tick={{ fontSize: 11, fill: '#C9B8AA', fontFamily: 'var(--font-dm-sans)' }} axisLine={false} tickLine={false} width={36} />
         <Tooltip
           formatter={(v: unknown) => [fmt(v as number), 'Saldo']}
-          contentStyle={{ fontSize: 12, borderRadius: 12, border: '1px solid #e2e8f0', padding: '6px 10px', fontFamily: 'Outfit, sans-serif' }}
+          contentStyle={{ fontSize: 12, borderRadius: 12, border: '1px solid #E5D9CE', padding: '6px 10px', fontFamily: 'var(--font-dm-sans)' }}
         />
         <Area type="monotone" dataKey="balance" stroke={color} strokeWidth={2} fill="url(#bal-grad)"
           dot={{ fill: '#fff', stroke: color, strokeWidth: 2, r: 3 }} activeDot={{ r: 5, fill: color }} />
@@ -144,7 +144,7 @@ function AreaChartComp({ months }: { months: MonthStat[] }) {
 
 // ── Modal wrapper ─────────────────────────────────────────────────────────────
 
-function Modal({ title, subtitle, onClose, children, wide, gradient = 'linear-gradient(135deg, #0C1A2E 0%, #1e3a5f 100%)' }: {
+function Modal({ title, subtitle, onClose, children, wide, gradient = 'linear-gradient(135deg, #6B3019 0%, #A14F2A 100%)' }: {
   title: string
   subtitle?: string
   onClose: () => void
@@ -595,7 +595,7 @@ function OFXImportModal({ onClose, onImported }: { onClose: () => void; onImport
     <Modal
       title="Importar extrato OFX / QFX"
       subtitle="Importe transações do seu banco"
-      gradient="linear-gradient(135deg, #0C1A2E 0%, #1e40af 100%)"
+      gradient="linear-gradient(135deg, #6B3019 0%, #A14F2A 100%)"
       onClose={onClose}
       wide
     >
@@ -609,7 +609,7 @@ function OFXImportModal({ onClose, onImported }: { onClose: () => void; onImport
             onDragLeave={() => setDragging(false)}
             onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
             onClick={() => fileRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${dragging ? 'border-blue-400 bg-blue-50' : 'border-slate-200 hover:border-slate-300 bg-slate-50'}`}>
+            className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 bg-muted'}`}>
             <Upload className={`w-9 h-9 mx-auto mb-3 ${dragging ? 'text-blue-500' : 'text-slate-300'}`} />
             <p className="dash text-base font-bold text-slate-700 mb-1">
               {dragging ? 'Solte o arquivo aqui' : 'Arraste ou clique para selecionar'}
@@ -685,7 +685,7 @@ function OFXImportModal({ onClose, onImported }: { onClose: () => void; onImport
               Cancelar
             </button>
             <button onClick={doImport} disabled={importing || selected.size === 0}
-              className="dash flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 disabled:opacity-50 transition-colors cursor-pointer">
+              className="dash flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-bold hover:bg-primary/90 disabled:opacity-50 transition-colors cursor-pointer">
               <Upload className="w-4 h-4" />
               {importing ? 'Importando...' : `Importar ${selected.size} lançamento${selected.size !== 1 ? 's' : ''}`}
             </button>
@@ -775,8 +775,6 @@ export default function FinanceModule() {
   return (
     <div className="space-y-5">
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap');
-        .dash { font-family: 'Outfit', sans-serif; }
         @keyframes modalIn { from { opacity:0; transform:scale(0.96) translateY(8px); } to { opacity:1; transform:scale(1) translateY(0); } }
         .modal-anim { animation: modalIn 0.25s cubic-bezier(.22,1,.36,1) both; }
       `}</style>
