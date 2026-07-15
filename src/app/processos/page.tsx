@@ -40,6 +40,7 @@ const PROCESS_TYPE_ICONS: Record<string, LucideIcon> = {
   estacionamento: Accessibility,
   cnh_especial: CarFront,
   processo_ipi: ReceiptText,
+  processo_iof: ReceiptText,
   processo_icms: FileBadge2,
   processo_ipva: BadgeDollarSign,
   imposto_de_renda: BadgeDollarSign,

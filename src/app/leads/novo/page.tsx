@@ -9,7 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import Link from 'next/link'
 import { ArrowLeft, Target, User, Stethoscope, Tag, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { canHaveCnhEspecial, isNonDriverDisability } from '@/lib/eligibility'
+import { canHaveCnhEspecial } from '@/lib/eligibility'
 import type { DisabilityType, LeadSource } from '@/types/database'
 
 const sectionCard = {
@@ -134,6 +134,7 @@ export default function NovoLeadPage() {
       is_driver: profile.is_driver,
       disability_type: profile.disability_type || null,
       has_cnh_especial: profile.has_cnh_especial,
+      cnh_status: profile.has_cnh_especial ? 'com_restricoes' : profile.is_driver ? null : 'nao_possui',
       has_medical_report: profile.has_medical_report,
       report_valid: profile.has_medical_report ? profile.report_valid : null,
       status: 'novo',
@@ -238,17 +239,17 @@ export default function NovoLeadPage() {
                 >
                   {DISABILITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
-                {profile.disability_type && isNonDriverDisability(profile.disability_type as DisabilityType) && (
-                  <p className="text-[11px] text-amber-600 dash">Deficiência visual/mental não permite direção — CNH Especial indisponível.</p>
+                {profile.disability_type && profile.is_driver && (
+                  <p className="text-[11px] text-blue-600 dash">A aptidão e eventuais restrições serão definidas pela avaliação médico-pericial.</p>
                 )}
               </div>
 
               {/* has_cnh_especial */}
               <div className="flex items-center justify-between py-1">
                 <div>
-                  <p className={cn('text-sm font-medium dash', cnhAllowed ? 'text-slate-700' : 'text-slate-400')}>Já possui CNH Especial?</p>
+                  <p className={cn('text-sm font-medium dash', cnhAllowed ? 'text-slate-700' : 'text-slate-400')}>Já possui CNH com restrições?</p>
                   {!cnhAllowed && (
-                    <p className="text-[11px] text-slate-400 dash">Disponível apenas para condutores com deficiência física, auditiva, monocular ou autismo</p>
+                    <p className="text-[11px] text-slate-400 dash">Informe o perfil condutor e a condição para registrar esta informação.</p>
                   )}
                 </div>
                 <Toggle

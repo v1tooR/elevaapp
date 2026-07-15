@@ -26,6 +26,24 @@ const CLIENT_TYPE_LABEL: Record<string, string> = {
   nao_condutor: 'Não condutor',
 }
 
+const CNH_STATUS_LABEL: Record<string, string> = {
+  nao_possui: 'Não possui',
+  comum: 'Sem restrições PCD',
+  com_restricoes: 'Com restrições',
+  em_regularizacao: 'Em regularização',
+  inapto_temporario: 'Inapto temporariamente',
+  inapto: 'Inapto',
+}
+
+const MEDICAL_STATUS_LABEL: Record<string, string> = {
+  nao_realizada: 'Não realizada',
+  agendada: 'Agendada',
+  apto: 'Apto',
+  apto_com_restricoes: 'Apto com restrições',
+  inapto_temporario: 'Inapto temporariamente',
+  inapto: 'Inapto',
+}
+
 function avatarGradient(name: string) {
   const g = [
     'linear-gradient(135deg,#6B3019,#A14F2A)',
@@ -304,7 +322,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
             </div>
 
             {/* Elegibilidade */}
-            {(client.client_type || client.disability_type || client.has_cnh_especial ||
+            {(client.client_type || client.disability_type || client.cnh_status ||
               client.receives_loas_bpc || client.has_medical_report) && (
               <div
                 className="anim anim-3 bg-white rounded-2xl p-5"
@@ -323,18 +341,45 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                       <span className="text-xs font-semibold text-slate-700 dash">{CLIENT_TYPE_LABEL[client.client_type]}</span>
                     </div>
                   )}
-                  {client.disability_type && (
+                  {(client.disability_types?.length > 0 || client.disability_type) && (
                     <div className="flex justify-between">
-                      <span className="text-xs text-slate-400 dash">Deficiência</span>
-                      <span className="text-xs font-semibold text-slate-700 dash">{DISABILITY_LABEL[client.disability_type]}</span>
+                      <span className="text-xs text-slate-400 dash">Condição</span>
+                      <span className="text-right text-xs font-semibold text-slate-700 dash">
+                        {(client.disability_types?.length > 0 ? client.disability_types : [client.disability_type])
+                          .filter(Boolean)
+                          .map((type: string) => DISABILITY_LABEL[type] ?? type)
+                          .join(', ')}
+                      </span>
                     </div>
                   )}
-                  <div className="flex justify-between">
-                    <span className="text-xs text-slate-400 dash">CNH Especial</span>
-                    <span className="text-xs font-semibold dash" style={{ color: client.has_cnh_especial ? '#16A34A' : '#94A3B8' }}>
-                      {client.has_cnh_especial ? 'Sim' : 'Não'}
-                    </span>
-                  </div>
+                  {client.cnh_status && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-xs text-slate-400 dash">CNH</span>
+                      <span className="text-right text-xs font-semibold text-slate-700 dash">{CNH_STATUS_LABEL[client.cnh_status]}</span>
+                    </div>
+                  )}
+                  {client.cnh_restrictions?.length > 0 && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-xs text-slate-400 dash">Restrições registradas</span>
+                      <span className="text-right text-xs font-semibold text-slate-700 dash">{client.cnh_restrictions.join(', ')}</span>
+                    </div>
+                  )}
+                  {client.medical_assessment_status && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-xs text-slate-400 dash">Avaliação pericial</span>
+                      <span className="text-right text-xs font-semibold text-slate-700 dash">{MEDICAL_STATUS_LABEL[client.medical_assessment_status]}</span>
+                    </div>
+                  )}
+                  {client.client_type === 'condutor' && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-xs text-slate-400 dash">Exame prático</span>
+                      <span className="text-right text-xs font-semibold text-slate-700 dash">
+                        {client.requires_practical_exam === null || client.requires_practical_exam === undefined
+                          ? 'Aguardando perícia'
+                          : client.requires_practical_exam ? 'Determinado' : 'Dispensado'}
+                      </span>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <span className="text-xs text-slate-400 dash">LOAS/BPC</span>
                     <span className="text-xs font-semibold dash" style={{ color: client.receives_loas_bpc ? '#16A34A' : '#94A3B8' }}>
@@ -366,7 +411,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
           <div className="lg:col-span-2 space-y-5">
 
             {/* CNH Especial shortcut */}
-            {canHaveCnhEspecial(client.client_type, client.disability_type) && !client.has_cnh_especial && (
+            {canHaveCnhEspecial(client.client_type, client.disability_type) && client.cnh_status !== 'com_restricoes' && (
               <div
                 className="anim anim-1 rounded-2xl overflow-hidden"
                 style={{ border: '1px solid #C4B5FD', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
@@ -380,9 +425,9 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                       <Zap className="w-4.5 h-4.5 text-white" />
                     </div>
                     <div>
-                      <p className="dash text-white font-bold text-sm">Iniciar processo de CNH Especial</p>
+                      <p className="dash text-white font-bold text-sm">Iniciar regularização da CNH</p>
                       <p className="dash text-primary-foreground/75 text-xs mt-0.5">
-                        Cliente condutor {client.disability_type ? `com deficiência ${DISABILITY_LABEL[client.disability_type].toLowerCase()}` : 'PCD'} ainda não possui CNH Especial
+                        A perícia definirá as restrições, adaptações e a necessidade de exame prático
                       </p>
                     </div>
                   </div>

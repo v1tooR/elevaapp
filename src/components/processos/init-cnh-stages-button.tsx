@@ -4,15 +4,13 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { createCnhProcessStages } from '@/lib/cnh-stages'
 import { ListChecks, Loader2 } from 'lucide-react'
-import type { DisabilityType } from '@/types/database'
 
 interface Props {
   processId: string
   clientId: string
-  disability?: string
 }
 
-export function InitCnhStagesButton({ processId, clientId, disability }: Props) {
+export function InitCnhStagesButton({ processId, clientId }: Props) {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -22,26 +20,24 @@ export function InitCnhStagesButton({ processId, clientId, disability }: Props) 
     setError('')
     const supabase = createClient()
 
-    let disabilityType = disability
+    const { data: client } = await supabase
+      .from('clients')
+      .select('client_type, disability_type, medical_assessment_status, requires_practical_exam')
+      .eq('id', clientId)
+      .single()
 
-    // If disability not passed, fetch from client record
-    if (!disabilityType) {
-      const { data: client } = await supabase
-        .from('clients')
-        .select('disability_type')
-        .eq('id', clientId)
-        .single()
-      disabilityType = client?.disability_type ?? ''
-    }
-
-    if (!disabilityType) {
+    if (!client?.disability_type) {
       setError('Tipo de deficiência não cadastrado no cliente. Atualize o cadastro antes de inicializar as etapas.')
       setLoading(false)
       return
     }
 
     try {
-      await createCnhProcessStages(supabase, processId, disabilityType as DisabilityType)
+      await createCnhProcessStages(supabase, processId, {
+        clientType: client.client_type,
+        medicalAssessmentStatus: client.medical_assessment_status,
+        requiresPracticalExam: client.requires_practical_exam,
+      })
       router.refresh()
     } catch (err: any) {
       setError(err.message ?? 'Erro ao criar etapas')
@@ -56,7 +52,7 @@ export function InitCnhStagesButton({ processId, clientId, disability }: Props) 
         <div className="flex-1">
           <p className="text-sm font-semibold text-amber-800">Etapas não inicializadas</p>
           <p className="text-xs text-amber-600 mt-0.5">
-            Este processo foi criado antes do sistema de etapas. Clique em inicializar para criar as etapas automaticamente com base na deficiência do cliente.
+            Este processo foi criado antes do sistema de etapas. A inicialização usará o resultado pericial cadastrado; se ele ainda não existir, o exame prático ficará aguardando definição.
           </p>
         </div>
       </div>

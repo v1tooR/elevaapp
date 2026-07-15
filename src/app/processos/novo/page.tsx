@@ -10,10 +10,13 @@ import { PROCESS_TYPE_CUSTOM_FIELDS, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { syncProcessFinancial } from '@/lib/sync-process-financial'
 import { createCnhProcessStages } from '@/lib/cnh-stages'
+import { analyzeEligibility, isEligibilityProcess } from '@/lib/eligibility'
+import { EligibilityAnalysisCard } from '@/components/processos/eligibility-analysis-card'
+import type { VehicleCondition } from '@/types/database'
 import Link from 'next/link'
 import {
   ArrowLeft, Sparkles, TrendingUp, Link2, Check,
-  Layers, Settings, DollarSign, AlertCircle, ChevronRight, CheckCircle2,
+  Layers, Settings, DollarSign, AlertCircle, ChevronRight,
 } from 'lucide-react'
 
 const STATUS_OPTIONS = Object.entries(PROCESS_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))
@@ -42,8 +45,6 @@ function NovoProcessoForm() {
   const [processTypes, setProcessTypes] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
   const [profiles, setProfiles] = useState<any[]>([])
-  const [clientDisability, setClientDisability] = useState('')
-  const [clientType, setClientType] = useState('')
   const [selectedTypeSlug, setSelectedTypeSlug] = useState('')
   const [selectedTypeName, setSelectedTypeName] = useState('')
   const [selectedTypeColor, setSelectedTypeColor] = useState('')
@@ -62,13 +63,15 @@ function NovoProcessoForm() {
     payment_status: 'pending',
     expected_payment_date: '',
     financial_notes: '',
+    jurisdiction_state: '',
+    vehicle_condition: '' as VehicleCondition | '',
   })
 
   useEffect(() => {
     const supabase = createClient()
     Promise.all([
       supabase.from('process_types').select('*').eq('is_active', true).neq('slug', 'resumo').order('name'),
-      supabase.from('clients').select('id, name, gov_password_reference, disability_type, client_type').eq('is_active', true).order('name'),
+      supabase.from('clients').select('id, name, state, gov_password_reference, client_type, disability_type, disability_types, disability_severity, cnh_status, cnh_restrictions, medical_assessment_status, requires_adapted_vehicle, requires_practical_exam, has_medical_report, authorized_drivers').eq('is_active', true).order('name'),
       supabase.from('profiles').select('id, name').in('role', ['admin', 'analista', 'super_admin']).order('name'),
       supabase.auth.getUser(),
     ]).then(async ([{ data: pt }, { data: cl }, { data: pf }, { data: { user } }]) => {
@@ -85,8 +88,7 @@ function NovoProcessoForm() {
       if (preClientId && cl) {
         const found = cl.find((c: any) => c.id === preClientId)
         if (found?.gov_password_reference) setClientGovPassword(found.gov_password_reference)
-        if (found?.disability_type) setClientDisability(found.disability_type)
-        if (found?.client_type)     setClientType(found.client_type)
+        if (found?.state) setForm(prev => ({ ...prev, jurisdiction_state: prev.jurisdiction_state || found.state }))
       }
 
       // Pre-select type from URL param (type_id=UUID or type=slug)
@@ -106,15 +108,17 @@ function NovoProcessoForm() {
         if (hasSenha && govPass) setCustomFieldValues({ senha_gov: govPass })
       }
     })
-  }, [])
+  }, [preClientId, preTypeId, preTypeSlug])
 
   const handleClientChange = (clientId: string) => {
-    setForm(prev => ({ ...prev, client_id: clientId }))
     const found = clients.find((c: any) => c.id === clientId)
     const govPass = found?.gov_password_reference ?? ''
     setClientGovPassword(govPass)
-    setClientDisability(found?.disability_type ?? '')
-    setClientType(found?.client_type ?? '')
+    setForm(prev => ({
+      ...prev,
+      client_id: clientId,
+      jurisdiction_state: found?.state ?? '',
+    }))
     if (govPass && selectedTypeSlug) {
       const fields = PROCESS_TYPE_CUSTOM_FIELDS[selectedTypeSlug] ?? []
       if (fields.some(f => f.field_name === 'senha_gov')) {
@@ -145,18 +149,26 @@ function NovoProcessoForm() {
 
   const customFields = PROCESS_TYPE_CUSTOM_FIELDS[selectedTypeSlug] ?? []
 
-  // CNH Especial eligibility warning — shown inline before submit
-  const cnhClient = selectedTypeSlug === 'cnh_especial' && form.client_id
-    ? clients.find((c: any) => c.id === form.client_id)
+  const selectedClient = form.client_id
+    ? clients.find((client: any) => client.id === form.client_id)
     : null
-  const cnhWarning = cnhClient
-    ? cnhClient.client_type !== 'condutor'
-      ? { type: 'error' as const, msg: 'Perfil "Condutor" não definido no cadastro do cliente. CNH Especial não disponível.' }
-      : !cnhClient.disability_type
-      ? { type: 'warning' as const, msg: 'Tipo de deficiência não cadastrado. Atualize o cliente antes de criar este processo.' }
-      : (cnhClient.disability_type === 'visual' || cnhClient.disability_type === 'mental')
-      ? { type: 'error' as const, msg: 'Deficiência visual ou mental não permite CNH Especial.' }
-      : { type: 'success' as const, msg: 'Cliente elegível — as etapas do processo CNH Especial serão criadas automaticamente.' }
+  const eligibilityAnalysis = selectedClient && isEligibilityProcess(selectedTypeSlug)
+    ? analyzeEligibility({
+        processTypeSlug: selectedTypeSlug,
+        state: form.jurisdiction_state || selectedClient.state,
+        vehicleCondition: form.vehicle_condition || null,
+        clientType: selectedClient.client_type,
+        disabilityType: selectedClient.disability_type,
+        disabilityTypes: selectedClient.disability_types,
+        disabilitySeverity: selectedClient.disability_severity,
+        cnhStatus: selectedClient.cnh_status,
+        cnhRestrictions: selectedClient.cnh_restrictions,
+        medicalAssessmentStatus: selectedClient.medical_assessment_status,
+        requiresAdaptedVehicle: selectedClient.requires_adapted_vehicle,
+        requiresPracticalExam: selectedClient.requires_practical_exam,
+        hasMedicalReport: selectedClient.has_medical_report,
+        authorizedDrivers: selectedClient.authorized_drivers,
+      })
     : null
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -164,22 +176,6 @@ function NovoProcessoForm() {
     if (!form.client_id || !form.process_type_id) {
       setError('Selecione o cliente e o tipo de processo.')
       return
-    }
-
-    // Block CNH Especial if client is not eligible
-    if (selectedTypeSlug === 'cnh_especial') {
-      if (clientType !== 'condutor') {
-        setError('CNH Especial disponível apenas para clientes com perfil "Condutor". Atualize o cadastro do cliente.')
-        return
-      }
-      if (!clientDisability) {
-        setError('O cliente não tem tipo de deficiência cadastrado. Atualize o cadastro antes de criar este processo.')
-        return
-      }
-      if (clientDisability === 'visual' || clientDisability === 'mental') {
-        setError('Deficiência visual ou mental não permite CNH Especial.')
-        return
-      }
     }
 
     setLoading(true)
@@ -195,6 +191,10 @@ function NovoProcessoForm() {
       status: form.status as any,
       responsible_user_id: form.responsible_user_id || null,
       observations: form.observations || null,
+      jurisdiction_state: form.jurisdiction_state || selectedClient?.state || null,
+      vehicle_condition: selectedTypeSlug === 'cnh_especial' ? null : form.vehicle_condition || null,
+      eligibility_status: eligibilityAnalysis?.status ?? null,
+      eligibility_analysis: eligibilityAnalysis ?? null,
     }).select().single()
 
     if (procErr || !process) {
@@ -249,13 +249,18 @@ function NovoProcessoForm() {
     })
 
     // CNH Especial: populate process stages based on client's disability
-    if (selectedTypeSlug === 'cnh_especial' && clientDisability) {
+    if (selectedTypeSlug === 'cnh_especial' && selectedClient?.client_type === 'condutor') {
       try {
-        await createCnhProcessStages(supabase, process.id, clientDisability as any)
-      } catch (stageErr: any) {
+        await createCnhProcessStages(supabase, process.id, {
+          clientType: selectedClient.client_type,
+          medicalAssessmentStatus: selectedClient.medical_assessment_status,
+          requiresPracticalExam: selectedClient.requires_practical_exam,
+        })
+      } catch (stageErr: unknown) {
         // Process created; stages failed — still redirect but warn
         console.error('cnh-stages error:', stageErr)
-        setError('Processo criado, mas houve um erro ao criar as etapas: ' + stageErr.message)
+        const message = stageErr instanceof Error ? stageErr.message : 'Erro desconhecido'
+        setError('Processo criado, mas houve um erro ao criar as etapas: ' + message)
         setLoading(false)
         return
       }
@@ -403,22 +408,16 @@ function NovoProcessoForm() {
                   onChange={e => handleClientChange(e.target.value)}
                   required
                 />
-                {cnhWarning && (
-                  <div
-                    className="flex items-start gap-2.5 rounded-xl px-3.5 py-3"
-                    style={{
-                      background: cnhWarning.type === 'error' ? '#FEF2F2' : cnhWarning.type === 'warning' ? '#FFFBEB' : '#F0FDF4',
-                      border:     `1px solid ${cnhWarning.type === 'error' ? '#FECACA' : cnhWarning.type === 'warning' ? '#FDE68A' : '#BBF7D0'}`,
-                    }}
-                  >
-                    {cnhWarning.type === 'success'
-                      ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                      : <AlertCircle className={`w-4 h-4 shrink-0 mt-0.5 ${cnhWarning.type === 'error' ? 'text-red-500' : 'text-amber-500'}`} />
-                    }
-                    <p className={`text-xs dash ${cnhWarning.type === 'error' ? 'text-red-700' : cnhWarning.type === 'warning' ? 'text-amber-700' : 'text-emerald-700'}`}>
-                      {cnhWarning.msg}
-                    </p>
-                  </div>
+                {eligibilityAnalysis && (
+                  <EligibilityAnalysisCard
+                    analysis={eligibilityAnalysis}
+                    state={form.jurisdiction_state}
+                    vehicleCondition={form.vehicle_condition}
+                    onStateChange={jurisdiction_state => setForm(prev => ({ ...prev, jurisdiction_state }))}
+                    onVehicleConditionChange={vehicle_condition => setForm(prev => ({ ...prev, vehicle_condition }))}
+                    showState={['processo_icms', 'processo_ipva'].includes(selectedTypeSlug)}
+                    showVehicleCondition={selectedTypeSlug !== 'cnh_especial'}
+                  />
                 )}
               </div>
               <Select

@@ -28,7 +28,11 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
         phone: lead.phone ?? null,
         client_type: clientType,
         disability_type: lead.disability_type ?? null,
+        disability_types: lead.disability_type ? [lead.disability_type] : [],
         has_cnh_especial: lead.has_cnh_especial ?? false,
+        cnh_status: lead.cnh_status ?? (lead.has_cnh_especial ? 'com_restricoes' : lead.is_driver ? null : 'nao_possui'),
+        medical_assessment_status: lead.medical_assessment_status ?? 'nao_realizada',
+        requires_practical_exam: lead.requires_practical_exam ?? null,
         has_medical_report: lead.has_medical_report ?? false,
         is_active: true,
       })

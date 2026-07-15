@@ -45,6 +45,22 @@ export type LeadSource = 'instagram' | 'google' | 'indicacao' | 'vendedor' | 'ou
 // --- Shared enums ---
 export type DisabilityType = 'fisica' | 'auditiva' | 'visual' | 'monocular' | 'autismo' | 'mental'
 export type ClientType = 'condutor' | 'nao_condutor'
+export type DisabilitySeverity = 'leve' | 'moderada' | 'grave' | 'gravissima' | 'nao_informada'
+export type CnhStatus = 'nao_possui' | 'comum' | 'com_restricoes' | 'em_regularizacao' | 'inapto_temporario' | 'inapto'
+export type MedicalAssessmentStatus = 'nao_realizada' | 'agendada' | 'apto' | 'apto_com_restricoes' | 'inapto_temporario' | 'inapto'
+export type VehicleCondition = 'zero_km' | 'usado'
+export type EligibilityStatus =
+  | 'pre_elegivel'
+  | 'pendente_informacoes'
+  | 'requer_validacao'
+  | 'provavelmente_nao_elegivel'
+  | 'elegibilidade_confirmada'
+
+export interface AuthorizedDriver {
+  name: string
+  cpf: string
+  cnh: string
+}
 
 // --- Process Stages ---
 export type StageStatus =
@@ -85,7 +101,17 @@ export interface Client {
   // eligibility fields (migration 007)
   client_type?: ClientType
   disability_type?: DisabilityType
+  disability_types?: DisabilityType[]
   has_cnh_especial?: boolean
+  disability_severity?: DisabilitySeverity
+  disability_details?: string
+  cnh_status?: CnhStatus
+  cnh_restrictions?: string[]
+  medical_assessment_status?: MedicalAssessmentStatus
+  requires_adapted_vehicle?: boolean | null
+  requires_practical_exam?: boolean | null
+  authorized_drivers?: AuthorizedDriver[]
+  eligibility_notes?: string
   receives_loas_bpc?: boolean
   has_medical_report?: boolean
   report_valid_until?: string
@@ -100,6 +126,9 @@ export interface Lead {
   phone?: string
   is_driver?: boolean
   has_cnh_especial?: boolean
+  cnh_status?: CnhStatus
+  medical_assessment_status?: MedicalAssessmentStatus
+  requires_practical_exam?: boolean | null
   disability_type?: DisabilityType
   has_medical_report?: boolean
   report_valid?: boolean
@@ -139,6 +168,13 @@ export interface Process {
   started_at?: string
   completed_at?: string
   observations?: string
+  jurisdiction_state?: string
+  vehicle_condition?: VehicleCondition
+  eligibility_status?: EligibilityStatus
+  eligibility_analysis?: Record<string, unknown>
+  eligibility_review_notes?: string
+  eligibility_reviewed_at?: string
+  eligibility_reviewed_by?: string
   renewal_date?: string | null
   renewal_calendar_event_id?: string | null
   created_at: string

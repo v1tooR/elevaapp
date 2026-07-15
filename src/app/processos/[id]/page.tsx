@@ -9,6 +9,8 @@ import { EditProcessModal } from '@/components/processos/edit-process-modal'
 import { DocumentUploader } from '@/components/shared/document-uploader'
 import { CnhStagesPanel } from '@/components/processos/cnh-stages-panel'
 import { InitCnhStagesButton } from '@/components/processos/init-cnh-stages-button'
+import { EligibilityReviewPanel } from '@/components/processos/eligibility-review-panel'
+import { isEligibilityProcess, type EligibilityAnalysis } from '@/lib/eligibility'
 
 const ACTION_ICONS: Record<string, string> = {
   created: '🟢',
@@ -35,7 +37,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
   ] = await Promise.all([
     supabase.from('processes').select(`
       *,
-      clients(id, name, cpf, phone, email, disability_type, client_type),
+      clients(id, name, cpf, phone, email, disability_type, client_type, medical_assessment_status, requires_practical_exam),
       process_types(*),
       responsible_user:profiles!responsible_user_id(id, name),
       custom_fields:process_custom_fields(*),
@@ -199,6 +201,18 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                   <span className="text-slate-400 dash text-xs">Abertura</span>
                   <span className="dash text-slate-700 text-xs">{formatDate(process.created_at)}</span>
                 </div>
+                {process.jurisdiction_state && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 dash text-xs">UF da análise</span>
+                    <span className="dash font-semibold text-slate-700 text-xs">{process.jurisdiction_state}</span>
+                  </div>
+                )}
+                {process.vehicle_condition && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-400 dash text-xs">Veículo</span>
+                    <span className="dash font-semibold text-slate-700 text-xs">{process.vehicle_condition === 'zero_km' ? 'Zero-quilômetro' : 'Usado'}</span>
+                  </div>
+                )}
                 {process.completed_at && (
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400 dash text-xs">Conclusão</span>
@@ -293,6 +307,17 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
           {/* ── Right Column ─────────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-5">
 
+            {isEligibilityProcess(pt?.slug ?? '') && process.eligibility_status && profile?.id && (
+              <EligibilityReviewPanel
+                processId={process.id}
+                reviewerId={profile.id}
+                status={process.eligibility_status as any}
+                analysis={(process.eligibility_analysis as unknown as EligibilityAnalysis) ?? null}
+                reviewNotes={process.eligibility_review_notes}
+                reviewedAt={process.eligibility_reviewed_at}
+              />
+            )}
+
             {/* CNH Especial stages */}
             {pt?.slug === 'cnh_especial' && (
               <div className="anim anim-1 bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
@@ -323,13 +348,11 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                       clientId={client?.id ?? ''}
                       clientName={client?.name ?? ''}
                       responsibleUserId={(responsible as any)?.id ?? null}
-                      disability={(client as any)?.disability_type ?? undefined}
                     />
                   ) : (
                     <InitCnhStagesButton
                       processId={process.id}
                       clientId={client?.id ?? ''}
-                      disability={(client as any)?.disability_type ?? undefined}
                     />
                   )}
                 </div>

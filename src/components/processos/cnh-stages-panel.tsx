@@ -15,8 +15,7 @@ import {
   handlePericiaReprovada,
   handleEmissaoConcluida,
 } from '@/lib/cnh-stages'
-import { getSuggestedCnhRestriction } from '@/lib/eligibility'
-import type { ProcessStage, StageStatus, DisabilityType } from '@/types/database'
+import type { ProcessStage, StageStatus } from '@/types/database'
 import { formatDate } from '@/lib/utils'
 
 interface Props {
@@ -25,7 +24,6 @@ interface Props {
   clientId: string
   clientName: string
   responsibleUserId: string | null
-  disability?: string
 }
 
 type EditState = {
@@ -60,9 +58,10 @@ const STATUS_OPTIONS_BY_KEY: Record<string, string[]> = {
   agendamento_poupatempo: ['pendente', 'em_andamento', 'concluido'],
   pericia_medica:         ['pendente', 'em_andamento', 'aprovado', 'reprovado'],
   recurso_junta_medica:   ['pendente', 'em_andamento', 'aprovado', 'reprovado'],
-  exame_pratico:          ['pendente', 'em_andamento', 'aprovado', 'reprovado'],
+  exame_pratico:          ['pendente', 'em_andamento', 'aprovado', 'reprovado', 'nao_aplicavel'],
   emissao_cnh:            ['pendente', 'em_andamento', 'concluido'],
   liberado_isencoes:      ['pendente', 'concluido'],
+  cnh_regularizada:       ['pendente', 'concluido'],
 }
 
 const HAS_SCHEDULED_DATE = new Set([
@@ -87,14 +86,11 @@ const STAGE_ICONS: Record<string, React.ElementType> = {
   exame_pratico:          Car,
   emissao_cnh:            FileCheck,
   liberado_isencoes:      BadgeCheck,
+  cnh_regularizada:       BadgeCheck,
 }
 
-function initEdit(stage: ProcessStage, disability?: string): EditState {
+function initEdit(stage: ProcessStage): EditState {
   const data = { ...(stage.data as Record<string, unknown>) }
-  if (stage.stage_key === 'emissao_cnh' && !data.restricoes && disability) {
-    const suggested = getSuggestedCnhRestriction(disability as DisabilityType)
-    if (suggested) data.restricoes = suggested
-  }
   return {
     status:         stage.status,
     scheduled_date: stage.scheduled_date ?? '',
@@ -106,10 +102,10 @@ function initEdit(stage: ProcessStage, disability?: string): EditState {
 }
 
 function isComplete(status: string) {
-  return ['concluido', 'aprovado'].includes(status)
+  return ['concluido', 'aprovado', 'nao_aplicavel'].includes(status)
 }
 
-export function CnhStagesPanel({ stages, processId, clientId, clientName, responsibleUserId, disability }: Props) {
+export function CnhStagesPanel({ stages, processId, clientId, clientName, responsibleUserId }: Props) {
   const router = useRouter()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loadingId, setLoadingId] = useState<string | null>(null)
@@ -118,7 +114,7 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
   const [calSuccess, setCalSuccess] = useState<Record<string, string>>({})
   const [edits, setEdits] = useState<Record<string, EditState>>({})
 
-  const getEdit = (stage: ProcessStage): EditState => edits[stage.id] ?? initEdit(stage, disability)
+  const getEdit = (stage: ProcessStage): EditState => edits[stage.id] ?? initEdit(stage)
 
   const updateEdit = (stage: ProcessStage, key: keyof EditState, value: unknown) =>
     setEdits(prev => ({
@@ -260,6 +256,17 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
   // ── Main stage save ────────────────────────────────────────────────────────
   const saveStage = async (stage: ProcessStage) => {
     const edit = getEdit(stage)
+    if (
+      stage.stage_key === 'pericia_medica' &&
+      (edit.result === 'aprovado' || edit.status === 'aprovado') &&
+      typeof edit.data.requires_practical_exam !== 'boolean'
+    ) {
+      setErrors(prev => ({
+        ...prev,
+        [stage.id]: 'Informe se o exame prático foi determinado antes de aprovar a perícia.',
+      }))
+      return
+    }
     setLoadingId(stage.id)
     setErrors(prev => ({ ...prev, [stage.id]: '' }))
     const supabase = createClient()
@@ -289,7 +296,52 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
     if (stage.stage_key === 'pericia_medica' && (edit.result === 'reprovado' || edit.status === 'reprovado')) {
       await handlePericiaReprovada(supabase, processId)
     }
+    if (stage.stage_key === 'pericia_medica' && (edit.result === 'aprovado' || edit.status === 'aprovado')) {
+      const requiresPracticalExam = edit.data.requires_practical_exam
+      const requiresAdaptedVehicle = edit.data.requires_adapted_vehicle
+      const restrictions = String(edit.data.restricoes ?? '')
+        .split(',')
+        .map(value => value.trim().toUpperCase())
+        .filter(Boolean)
+
+      await supabase.from('clients').update({
+        medical_assessment_status: restrictions.length > 0 ? 'apto_com_restricoes' : 'apto',
+        requires_practical_exam: typeof requiresPracticalExam === 'boolean' ? requiresPracticalExam : null,
+        requires_adapted_vehicle: typeof requiresAdaptedVehicle === 'boolean' ? requiresAdaptedVehicle : null,
+        cnh_restrictions: restrictions,
+      }).eq('id', clientId)
+
+      if (typeof requiresPracticalExam === 'boolean') {
+        await supabase.from('process_stages').update({
+          status: requiresPracticalExam ? 'pendente' : 'nao_aplicavel',
+          label: 'Exame Prático',
+        }).eq('process_id', processId).eq('stage_key', 'exame_pratico')
+      }
+
+      if (restrictions.length > 0) {
+        const { data: issuanceStage } = await supabase
+          .from('process_stages')
+          .select('id, data')
+          .eq('process_id', processId)
+          .eq('stage_key', 'emissao_cnh')
+          .maybeSingle()
+        if (issuanceStage) {
+          await supabase.from('process_stages').update({
+            data: { ...(issuanceStage.data as Record<string, unknown>), restricoes: restrictions.join(', ') },
+          }).eq('id', issuanceStage.id)
+        }
+      }
+    }
     if (stage.stage_key === 'emissao_cnh' && edit.status === 'concluido') {
+      const restrictions = String(edit.data.restricoes ?? '')
+        .split(',')
+        .map(value => value.trim().toUpperCase())
+        .filter(Boolean)
+      await supabase.from('clients').update({
+        has_cnh_especial: true,
+        cnh_status: 'com_restricoes',
+        cnh_restrictions: restrictions,
+      }).eq('id', clientId)
       await handleEmissaoConcluida(supabase, processId)
     }
 
@@ -778,15 +830,47 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
 
                     {/* pericia_medica: observacoes */}
                     {stage.stage_key === 'pericia_medica' && (
-                      <div className="space-y-1.5">
-                        <p className="text-xs font-semibold text-slate-600">Observações da perícia</p>
-                        <textarea
-                          value={(edit.data.observacoes as string) ?? ''}
-                          onChange={e => updateData(stage, 'observacoes', e.target.value)}
-                          placeholder="Notas do médico perito..."
-                          rows={2}
-                          className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none resize-none"
-                        />
+                      <div className="space-y-3">
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-semibold text-slate-600">Restrições determinadas</p>
+                          <input
+                            type="text"
+                            value={(edit.data.restricoes as string) ?? ''}
+                            onChange={e => updateData(stage, 'restricoes', e.target.value)}
+                            placeholder="Códigos do laudo/RENACH, ex.: B, X"
+                            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
+                          />
+                          <p className="text-[10px] text-slate-400">Informe somente os códigos emitidos; não os deduza pelo tipo de deficiência.</p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {[
+                            { key: 'requires_practical_exam', label: 'Exame prático determinado?' },
+                            { key: 'requires_adapted_vehicle', label: 'Veículo adaptado determinado?' },
+                          ].map(field => (
+                            <div key={field.key} className="space-y-1.5">
+                              <p className="text-xs font-semibold text-slate-600">{field.label}</p>
+                              <select
+                                value={typeof edit.data[field.key] === 'boolean' ? String(edit.data[field.key]) : ''}
+                                onChange={e => updateData(stage, field.key, e.target.value === '' ? null : e.target.value === 'true')}
+                                className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
+                              >
+                                <option value="">Aguardando definição</option>
+                                <option value="true">Sim</option>
+                                <option value="false">Não</option>
+                              </select>
+                            </div>
+                          ))}
+                        </div>
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-semibold text-slate-600">Observações da perícia</p>
+                          <textarea
+                            value={(edit.data.observacoes as string) ?? ''}
+                            onChange={e => updateData(stage, 'observacoes', e.target.value)}
+                            placeholder="Notas do médico perito..."
+                            rows={2}
+                            className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none resize-none"
+                          />
+                        </div>
                       </div>
                     )}
 
@@ -880,7 +964,7 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
                             type="text"
                             value={(edit.data.restricoes as string) ?? ''}
                             onChange={e => updateData(stage, 'restricoes', e.target.value)}
-                            placeholder="ex: B, X, C a L"
+                            placeholder="Códigos emitidos, ex.: B, X, D"
                             className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
                           />
                         </div>

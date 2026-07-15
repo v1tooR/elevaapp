@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 // Mapeia slug do tipo de processo → nome da categoria financeira
 const SLUG_TO_CATEGORY: Record<string, string> = {
   processo_ipi:    'IPI',
+  processo_iof:    'IOF',
   processo_icms:   'ICMS',
   processo_ipva:   'IPVA',
   cnh_especial:    'CNH Especial',

@@ -144,6 +144,7 @@ export const PROCESS_TYPE_CUSTOM_FIELDS: Record<string, Array<{
     { field_name: 'senha_gov', field_label: 'Senha Gov.br', field_type: 'text' },
   ],
   processo_icms: [],
+  processo_iof: [],
   processo_ipva: [
     { field_name: 'senha_gov', field_label: 'Senha Gov.br', field_type: 'text' },
     { field_name: 'data_adicional', field_label: 'Data Adicional', field_type: 'date' },

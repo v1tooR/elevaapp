@@ -17,8 +17,9 @@ const STAGE_FRIENDLY: Record<string, { title: string; desc: string; tip: string 
   pericia_medica:         { title: 'Perícia Médica',       desc: 'Avaliação médica no DETRAN (RENACH)',           tip: 'Compareça na data agendada com os documentos' },
   recurso_junta_medica:   { title: 'Recurso Médico',       desc: 'Recurso junto à Junta Médica (3 especialistas)', tip: 'Aguarde o resultado do recurso médico' },
   exame_pratico:          { title: 'Exame Prático',        desc: 'Teste de condução para adaptação veicular',     tip: 'Prepare-se para o exame com seu veículo adaptado' },
-  emissao_cnh:            { title: 'Emissão da CNH',       desc: 'Emissão da CNH com código de deficiência',     tip: 'Sua CNH Especial está sendo processada pelo DETRAN' },
-  liberado_isencoes:      { title: 'Liberado p/ Isenções', desc: 'CNH Especial emitida — processo concluído!',   tip: 'Você já pode iniciar os processos de isenção fiscal' },
+  emissao_cnh:            { title: 'Emissão da CNH',       desc: 'Emissão da CNH com as restrições determinadas', tip: 'Sua CNH com restrições está sendo processada pelo DETRAN' },
+  liberado_isencoes:      { title: 'CNH regularizada',     desc: 'CNH emitida — processo concluído',              tip: 'A equipe revisará separadamente cada benefício' },
+  cnh_regularizada:       { title: 'CNH regularizada',     desc: 'CNH emitida — processo concluído',              tip: 'A equipe revisará separadamente cada benefício' },
 }
 
 const CHECKLIST_FRIENDLY: Record<string, string> = {
@@ -198,9 +199,9 @@ export default async function ClienteProcessoDetailPage({
                   </div>
                   <div>
                     <p className="dash text-xs font-semibold text-emerald-600 uppercase tracking-wide mb-0.5">Processo Concluído</p>
-                    <h2 className="dash text-lg font-bold text-slate-900">CNH Especial emitida!</h2>
+                    <h2 className="dash text-lg font-bold text-slate-900">CNH com restrições emitida!</h2>
                     <p className="text-sm text-slate-500 mt-1">
-                      Você está liberado para iniciar os processos de isenção fiscal.
+                      A equipe agora verificará separadamente a elegibilidade de cada benefício solicitado.
                     </p>
                   </div>
                 </div>

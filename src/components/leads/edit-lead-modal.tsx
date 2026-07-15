@@ -9,7 +9,7 @@ import { MaskedInput } from '@/components/ui/masked-input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
-import { canHaveCnhEspecial, isNonDriverDisability } from '@/lib/eligibility'
+import { canHaveCnhEspecial } from '@/lib/eligibility'
 import type { Lead, DisabilityType, LeadSource, LeadStatus } from '@/types/database'
 
 const DISABILITY_OPTIONS: { value: DisabilityType | ''; label: string }[] = [
@@ -136,6 +136,7 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
       is_driver: profile.is_driver,
       disability_type: profile.disability_type || null,
       has_cnh_especial: profile.has_cnh_especial,
+      cnh_status: profile.has_cnh_especial ? 'com_restricoes' : profile.is_driver ? null : 'nao_possui',
       has_medical_report: profile.has_medical_report,
       report_valid: profile.has_medical_report ? profile.report_valid : null,
     }).eq('id', lead.id)
@@ -216,13 +217,13 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
                     <select value={profile.disability_type} onChange={e => updateProfile('disability_type', e.target.value)} className={sel}>
                       {DISABILITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
-                    {profile.disability_type && isNonDriverDisability(profile.disability_type as DisabilityType) && (
-                      <p className="text-[11px] text-amber-600 dash">Visual/mental não permite direção.</p>
+                    {profile.disability_type && profile.is_driver && (
+                      <p className="text-[11px] text-blue-600 dash">A avaliação médico-pericial define aptidão e restrições.</p>
                     )}
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <p className={cn('text-sm font-medium dash', cnhAllowed ? 'text-slate-700' : 'text-slate-400')}>Já possui CNH Especial?</p>
+                    <p className={cn('text-sm font-medium dash', cnhAllowed ? 'text-slate-700' : 'text-slate-400')}>Já possui CNH com restrições?</p>
                     <Toggle enabled={profile.has_cnh_especial} onToggle={() => updateProfile('has_cnh_especial', !profile.has_cnh_especial)} disabled={!cnhAllowed} />
                   </div>
 

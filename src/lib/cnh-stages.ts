@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { DisabilityType, StageStatus } from '@/types/database'
-import { getCnhSubflow } from './eligibility'
+import type { StageStatus } from '@/types/database'
+import { getCnhSubflow, type CnhAssessmentInput } from './eligibility'
 
 // ─── Stage templates ──────────────────────────────────────────────────────────
 // sort_order em múltiplos de 10 para permitir inserção condicional sem shifts
@@ -9,6 +9,7 @@ interface StageTemplate {
   stage_key: string
   label: string
   sort_order: number
+  status?: StageStatus
   data: Record<string, unknown>
 }
 
@@ -30,7 +31,12 @@ const STAGE_PERICIA: StageTemplate = {
   stage_key: 'pericia_medica',
   label: 'Perícia Médica (RENACH)',
   sort_order: 30,
-  data: { observacoes: '' },
+  data: {
+    observacoes: '',
+    restricoes: '',
+    requires_practical_exam: null,
+    requires_adapted_vehicle: null,
+  },
 }
 
 // sort_order 35 ← inserido condicionalmente entre perícia (30) e o próximo (40)
@@ -64,48 +70,50 @@ const STAGE_EMISSAO: StageTemplate = {
   data: { restricoes: '', vencimento_cnh: '' },
 }
 
-// sort_order 50 para sem_exame, 60 para com_exame — ajustado abaixo
-const STAGE_LIBERADO: StageTemplate = {
-  stage_key: 'liberado_isencoes',
-  label: 'Liberado para iniciar isenções',
+const STAGE_REGULARIZADA: StageTemplate = {
+  stage_key: 'cnh_regularizada',
+  label: 'CNH regularizada — revisar benefícios',
   sort_order: 60,
   data: {},
 }
 
-const STAGES_COM_EXAME: StageTemplate[] = [
-  STAGE_CHECKLIST,
-  STAGE_AGENDAMENTO,
-  STAGE_PERICIA,
-  STAGE_EXAME_PRATICO,                           // sort_order 40
-  STAGE_EMISSAO,                                 // sort_order 50
-  { ...STAGE_LIBERADO, sort_order: 60 },
-]
-
-const STAGES_SEM_EXAME: StageTemplate[] = [
-  STAGE_CHECKLIST,
-  STAGE_AGENDAMENTO,
-  STAGE_PERICIA,
-  { ...STAGE_EMISSAO, sort_order: 40 },          // sobe uma posição
-  { ...STAGE_LIBERADO, sort_order: 50 },
-]
-
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export function getCnhStageTemplates(disability: DisabilityType): StageTemplate[] | null {
-  const subflow = getCnhSubflow(disability)
+export function getCnhStageTemplates(assessment: CnhAssessmentInput): StageTemplate[] | null {
+  const subflow = getCnhSubflow(assessment)
   if (!subflow) return null
-  return subflow === 'com_exame_pratico' ? STAGES_COM_EXAME : STAGES_SEM_EXAME
+
+  const practicalExam: StageTemplate = {
+    ...STAGE_EXAME_PRATICO,
+    label: subflow === 'aguardando_pericia' ? 'Exame Prático (se determinado)' : STAGE_EXAME_PRATICO.label,
+    status: subflow === 'sem_exame_pratico' ? 'nao_aplicavel' : 'pendente',
+  }
+
+  return [
+    STAGE_CHECKLIST,
+    STAGE_AGENDAMENTO,
+    {
+      ...STAGE_PERICIA,
+      data: {
+        ...STAGE_PERICIA.data,
+        requires_practical_exam: assessment.requiresPracticalExam ?? null,
+      },
+    },
+    practicalExam,
+    STAGE_EMISSAO,
+    STAGE_REGULARIZADA,
+  ]
 }
 
 /** Insere todas as etapas iniciais de um processo CNH Especial recém-criado. */
 export async function createCnhProcessStages(
   supabase: SupabaseClient,
   processId: string,
-  disability: DisabilityType,
+  assessment: CnhAssessmentInput,
 ): Promise<void> {
-  const templates = getCnhStageTemplates(disability)
+  const templates = getCnhStageTemplates(assessment)
   if (!templates) {
-    throw new Error(`Deficiência '${disability}' não permite CNH Especial`)
+    throw new Error('O cliente está cadastrado como não condutor. Revise o perfil antes de iniciar a CNH.')
   }
 
   const rows = templates.map(t => ({
@@ -113,7 +121,7 @@ export async function createCnhProcessStages(
     stage_key: t.stage_key,
     label: t.label,
     sort_order: t.sort_order,
-    status: 'pendente' as StageStatus,
+    status: t.status ?? 'pendente' as StageStatus,
     data: t.data,
   }))
 
@@ -205,7 +213,7 @@ export async function handlePericiaReprovada(
 
 /**
  * Chamado quando emissao_cnh é marcada como concluída.
- * Marca liberado_isencoes como concluído, atualiza processo e notifica cliente e responsável.
+ * Marca a regularização da CNH como concluída e orienta a revisão separada dos benefícios.
  */
 export async function handleEmissaoConcluida(
   supabase: SupabaseClient,
@@ -215,9 +223,9 @@ export async function handleEmissaoConcluida(
     .from('process_stages')
     .update({ status: 'concluido' as StageStatus, completed_at: new Date().toISOString() })
     .eq('process_id', processId)
-    .eq('stage_key', 'liberado_isencoes')
+    .in('stage_key', ['cnh_regularizada', 'liberado_isencoes'])
 
-  await syncProcessMacroStatus(supabase, processId, 'liberado_isencoes', 'concluido')
+  await syncProcessMacroStatus(supabase, processId, 'cnh_regularizada', 'concluido')
 
   const { data: proc } = await supabase
     .from('processes')
@@ -236,7 +244,7 @@ export async function handleEmissaoConcluida(
     client_id: proc.client_id,
     process_id: processId,
     title: 'CNH Especial emitida',
-    message: 'CNH Especial emitida — você está liberado para iniciar as isenções.',
+    message: 'CNH com restrições emitida. A elegibilidade de cada benefício será revisada separadamente.',
     type: 'success' as const,
   }
 
@@ -252,7 +260,7 @@ export async function handleEmissaoConcluida(
  * Atualiza o status macro do processo com base na etapa que acabou de mudar.
  * Regras:
  *  - qualquer etapa → em_andamento/concluido/aprovado: processo passa de 'aberto' para 'em_andamento'
- *  - liberado_isencoes → concluido: processo passa para 'concluido'
+ *  - cnh_regularizada (ou etapa legada liberado_isencoes) → concluido: processo concluído
  */
 export async function syncProcessMacroStatus(
   supabase: SupabaseClient,
@@ -260,7 +268,7 @@ export async function syncProcessMacroStatus(
   stageKey: string,
   stageStatus: StageStatus,
 ): Promise<void> {
-  if (stageKey === 'liberado_isencoes' && stageStatus === 'concluido') {
+  if (['cnh_regularizada', 'liberado_isencoes'].includes(stageKey) && stageStatus === 'concluido') {
     await supabase
       .from('processes')
       .update({ status: 'concluido', completed_at: new Date().toISOString() })
