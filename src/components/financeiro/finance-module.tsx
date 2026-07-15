@@ -5,7 +5,8 @@ import {
   Plus, ArrowUpRight, ArrowDownRight, TrendingUp, Wallet,
   Search, X, Pencil, Trash2, RefreshCw, Tag,
   ChevronDown, Upload, FileText, CheckSquare, Square,
-  CheckCircle2, Clock, AlertCircle, HandCoins,
+  CheckCircle2, Clock, AlertCircle, HandCoins, CalendarDays,
+  SlidersHorizontal, RotateCcw,
 } from 'lucide-react'
 import {
   ResponsiveContainer, BarChart, Bar, AreaChart, Area,
@@ -116,8 +117,10 @@ function BarChartComp({ months }: { months: MonthStat[] }) {
 }
 
 function AreaChartComp({ months }: { months: MonthStat[] }) {
-  let cum = 0
-  const data = months.map(m => { cum += m.income - m.expense; return { label: m.label, balance: cum } })
+  const data = months.reduce<{ label: string; balance: number }[]>((acc, month) => {
+    const previousBalance = acc.at(-1)?.balance ?? 0
+    return [...acc, { label: month.label, balance: previousBalance + month.income - month.expense }]
+  }, [])
   const color = (data[data.length - 1]?.balance ?? 0) >= 0 ? '#6366F1' : '#EF4444'
   return (
     <ResponsiveContainer width="100%" height={160}>
@@ -154,35 +157,43 @@ function Modal({ title, subtitle, onClose, children, wide, gradient = 'linear-gr
 }) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
     document.addEventListener('keydown', h)
-    return () => document.removeEventListener('keydown', h)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', h)
+    }
   }, [onClose])
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-end justify-center p-0 sm:items-center sm:p-4"
       style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose() }}
     >
       <div
-        className={`modal-anim bg-white rounded-2xl shadow-2xl w-full overflow-hidden flex flex-col ${wide ? 'max-w-xl' : 'max-w-md'}`}
-        style={{ maxHeight: '90vh' }}
+        className={`modal-anim flex max-h-[92dvh] w-full flex-col overflow-hidden rounded-t-[22px] bg-white shadow-2xl sm:max-h-[90vh] sm:rounded-2xl ${wide ? 'sm:max-w-xl' : 'sm:max-w-md'}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
       >
         {/* Dark gradient header */}
-        <div className="flex items-center justify-between px-6 py-4 shrink-0" style={{ background: gradient }}>
+        <div className="flex shrink-0 items-center justify-between px-5 py-4 sm:px-6" style={{ background: gradient }}>
           <div>
             <h3 className="dash text-sm font-bold text-white">{title}</h3>
             {subtitle && <p className="dash text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.55)' }}>{subtitle}</p>}
           </div>
           <button
             onClick={onClose}
-            className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors hover:bg-white/10 cursor-pointer"
+            className="flex h-9 w-9 items-center justify-center rounded-lg transition-colors hover:bg-white/10 cursor-pointer"
+            aria-label="Fechar"
           >
             <X className="w-4 h-4 text-white/60" />
           </button>
         </div>
         {/* Scrollable content */}
-        <div className="px-6 py-5 overflow-y-auto flex-1">{children}</div>
+        <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">{children}</div>
       </div>
     </div>
   )
@@ -217,7 +228,8 @@ function EntryFormModal({ editing, categories, onClose, onSaved }: {
   const [saving, setSaving] = useState(false)
   const [err, setErr] = useState('')
 
-  const save = async () => {
+  const save = async (event?: React.FormEvent) => {
+    event?.preventDefault()
     if (!form.title.trim() || !form.amount || !form.occurred_at) {
       setErr('Preencha todos os campos obrigatórios.'); return
     }
@@ -255,7 +267,7 @@ function EntryFormModal({ editing, categories, onClose, onSaved }: {
       onClose={onClose}
       wide
     >
-      <div className="space-y-4">
+      <form onSubmit={save} className="space-y-4">
         {/* Tipo */}
         <div>
           <label className={lbl}>Tipo *</label>
@@ -289,7 +301,7 @@ function EntryFormModal({ editing, categories, onClose, onSaved }: {
         </div>
 
         {/* Valor + Data */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className={lbl}>Valor (R$) *</label>
             <input type="number" step="0.01" min="0.01" className={inp}
@@ -316,7 +328,7 @@ function EntryFormModal({ editing, categories, onClose, onSaved }: {
         </div>
 
         {/* Status + Recorrência */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div>
             <label className={lbl}>Status</label>
             <div className="relative">
@@ -355,12 +367,12 @@ function EntryFormModal({ editing, categories, onClose, onSaved }: {
 
         {err && <p className="dash text-sm text-red-600 bg-red-50 rounded-xl px-3 py-2">{err}</p>}
 
-        <div className="flex gap-3 justify-end pt-1">
-          <button onClick={onClose}
+        <div className="grid grid-cols-2 gap-3 pt-1 sm:flex sm:justify-end">
+          <button type="button" onClick={onClose}
             className="dash px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer">
             Cancelar
           </button>
-          <button onClick={save} disabled={saving}
+          <button type="submit" disabled={saving}
             className="dash px-5 py-2.5 rounded-xl text-white text-sm font-bold transition-all disabled:opacity-60 cursor-pointer"
             style={{
               background: form.type === 'INCOME' ? 'linear-gradient(135deg, #15803d, #22c55e)' : 'linear-gradient(135deg, #b91c1c, #ef4444)',
@@ -372,7 +384,7 @@ function EntryFormModal({ editing, categories, onClose, onSaved }: {
             }
           </button>
         </div>
-      </div>
+      </form>
     </Modal>
   )
 }
@@ -412,7 +424,7 @@ function EntryDetailModal({ entry, onClose, onEdit, onDelete }: {
       </div>
 
       <div className="space-y-4 mb-5">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <p className="dash text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Data</p>
             <p className="dash text-sm font-semibold text-slate-700">{fmtDate(entry.occurred_at)}</p>
@@ -427,7 +439,7 @@ function EntryDetailModal({ entry, onClose, onEdit, onDelete }: {
             ) : <span className="dash text-sm text-slate-400">Sem categoria</span>}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
             <p className="dash text-xs font-bold text-slate-400 uppercase tracking-widest mb-1">Status</p>
             <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${stCfg.cls}`}>
@@ -457,7 +469,7 @@ function EntryDetailModal({ entry, onClose, onEdit, onDelete }: {
         )}
       </div>
 
-      <div className="flex gap-3 justify-end border-t border-slate-100 pt-4">
+      <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 sm:flex sm:justify-end">
         <button onClick={() => { onDelete(entry.id); onClose() }}
           className="dash flex items-center gap-1.5 px-4 py-2.5 rounded-xl border border-red-200 bg-red-50 text-red-600 text-sm font-semibold hover:bg-red-100 transition-colors cursor-pointer">
           <Trash2 className="w-3.5 h-3.5" /> Excluir
@@ -506,13 +518,13 @@ function CategoryManagerModal({ categories, onClose, onRefresh }: {
       <div className="space-y-4">
         <div className="bg-slate-50 rounded-xl p-4">
           <p className="dash text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">Nova categoria</p>
-          <div className="flex gap-2 items-end">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-2">
             <input
               className="dash flex-1 rounded-xl border border-slate-200 px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
               value={name} onChange={e => { setName(e.target.value); setErr('') }}
               onKeyDown={e => { if (e.key === 'Enter') create() }}
               placeholder="Nome da categoria" />
-            <div className="flex gap-1.5">
+            <div className="flex flex-wrap gap-2">
               {DEFAULT_COLORS.slice(0, 5).map(c => (
                 <button key={c} type="button" onClick={() => setColor(c)}
                   className="w-5 h-5 rounded-full transition-transform hover:scale-110 cursor-pointer"
@@ -520,7 +532,7 @@ function CategoryManagerModal({ categories, onClose, onRefresh }: {
               ))}
             </div>
             <button onClick={create} disabled={saving}
-              className="dash px-3 py-2.5 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-700 disabled:opacity-60 transition-colors whitespace-nowrap cursor-pointer">
+              className="dash rounded-xl bg-slate-900 px-3 py-2.5 text-xs font-bold text-white transition-colors hover:bg-slate-700 disabled:opacity-60 whitespace-nowrap cursor-pointer">
               {saving ? '...' : 'Criar'}
             </button>
           </div>
@@ -574,15 +586,25 @@ function OFXImportModal({ onClose, onImported }: { onClose: () => void; onImport
     const toImport = txns.filter(t => selected.has(t.fitid))
     if (!toImport.length) return
     setImporting(true); setProgress(0); setErr('')
-    let done = 0
-    for (const t of toImport) {
-      await fetch('/api/financeiro', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: t.type, title: t.description.substring(0, 120), amount: t.amount.toFixed(2), occurred_at: t.date, status: 'CONFIRMED', recurrence: 'NONE' }),
-      })
-      done++; setProgress(Math.round((done / toImport.length) * 100))
+    try {
+      let done = 0
+      for (const t of toImport) {
+        const response = await fetch('/api/financeiro', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ type: t.type, title: t.description.substring(0, 120), amount: t.amount.toFixed(2), occurred_at: t.date, status: 'CONFIRMED', recurrence: 'NONE' }),
+        })
+        if (!response.ok) {
+          const data = await response.json().catch(() => null)
+          throw new Error(data?.error || `Falha ao importar "${t.description}".`)
+        }
+        done++; setProgress(Math.round((done / toImport.length) * 100))
+      }
+      onImported(); onClose()
+    } catch (error) {
+      setErr(error instanceof Error ? error.message : 'Não foi possível concluir a importação.')
+    } finally {
+      setImporting(false)
     }
-    setImporting(false); onImported(); onClose()
   }
 
   const toggle = (id: string) => {
@@ -609,7 +631,7 @@ function OFXImportModal({ onClose, onImported }: { onClose: () => void; onImport
             onDragLeave={() => setDragging(false)}
             onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f) handleFile(f) }}
             onClick={() => fileRef.current?.click()}
-            className={`border-2 border-dashed rounded-2xl p-12 text-center cursor-pointer transition-all ${dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 bg-muted'}`}>
+            className={`cursor-pointer rounded-2xl border-2 border-dashed p-7 text-center transition-all sm:p-12 ${dragging ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 bg-muted'}`}>
             <Upload className={`w-9 h-9 mx-auto mb-3 ${dragging ? 'text-blue-500' : 'text-slate-300'}`} />
             <p className="dash text-base font-bold text-slate-700 mb-1">
               {dragging ? 'Solte o arquivo aqui' : 'Arraste ou clique para selecionar'}
@@ -622,7 +644,7 @@ function OFXImportModal({ onClose, onImported }: { onClose: () => void; onImport
 
       {step === 'preview' && (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3">
             {[
               { label: 'Entradas',     value: fmt(txns.filter(t => t.type === 'INCOME').reduce((s, t) => s + t.amount, 0)),  bg: 'rgba(34,197,94,0.08)',   color: '#16a34a' },
               { label: 'Saídas',       value: fmt(txns.filter(t => t.type === 'EXPENSE').reduce((s, t) => s + t.amount, 0)), bg: 'rgba(239,68,68,0.08)',   color: '#dc2626' },
@@ -653,12 +675,12 @@ function OFXImportModal({ onClose, onImported }: { onClose: () => void; onImport
               const isSel = selected.has(t.fitid)
               return (
                 <div key={t.fitid} onClick={() => toggle(t.fitid)}
-                  className={`flex items-center gap-3 px-4 py-2.5 border-b border-slate-100 cursor-pointer transition-colors ${isSel ? 'bg-blue-50' : 'opacity-50 hover:opacity-70'}`}>
+                  className={`grid cursor-pointer grid-cols-[auto_1fr_auto] items-center gap-x-2 gap-y-1 border-b border-slate-100 px-3 py-2.5 transition-colors sm:grid-cols-[auto_auto_1fr_auto] sm:gap-3 sm:px-4 ${isSel ? 'bg-blue-50' : 'opacity-50 hover:opacity-70'}`}>
                   {isSel ? <CheckSquare className="w-4 h-4 text-blue-500 shrink-0" /> : <Square className="w-4 h-4 text-slate-300 shrink-0" />}
-                  <span className="dash text-xs text-slate-400 whitespace-nowrap w-20">
+                  <span className="dash col-span-2 row-start-2 text-[10px] text-slate-400 whitespace-nowrap sm:col-span-1 sm:row-start-auto sm:w-20 sm:text-xs">
                     {new Date(t.date + 'T12:00:00').toLocaleDateString('pt-BR')}
                   </span>
-                  <span className="dash flex-1 text-sm text-slate-700 truncate">{t.description}</span>
+                  <span className="dash min-w-0 truncate text-sm text-slate-700">{t.description}</span>
                   <span className={`dash text-sm font-bold whitespace-nowrap ${t.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
                     {t.type === 'INCOME' ? '+' : '-'}{fmt(t.amount)}
                   </span>
@@ -679,7 +701,13 @@ function OFXImportModal({ onClose, onImported }: { onClose: () => void; onImport
             </div>
           )}
 
-          <div className="flex gap-3 justify-end">
+          {err && (
+            <p role="alert" className="dash rounded-xl bg-red-50 px-3 py-2 text-sm text-red-600">
+              {err}
+            </p>
+          )}
+
+          <div className="grid grid-cols-2 gap-3 sm:flex sm:justify-end">
             <button onClick={onClose} disabled={importing}
               className="dash px-4 py-2.5 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50 cursor-pointer">
               Cancelar
@@ -704,6 +732,8 @@ export default function FinanceModule() {
   const [stats, setStats]           = useState<FinanceStats | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading]       = useState(true)
+  const [loadError, setLoadError]   = useState('')
+  const entriesRequestRef           = useRef(0)
 
   const [filterMonth, setFilterMonth] = useState<string>(() => {
     const n = new Date()
@@ -721,16 +751,28 @@ export default function FinanceModule() {
   const [showOFX, setShowOFX]               = useState(false)
 
   const loadEntries = useCallback(async () => {
+    const requestId = ++entriesRequestRef.current
     setLoading(true)
-    const p = new URLSearchParams()
-    if (filterType)     p.set('type', filterType)
-    if (filterMonth)    p.set('month', filterMonth)
-    if (filterCategory) p.set('categoryId', filterCategory)
-    if (filterStatus)   p.set('status', filterStatus)
-    if (filterQ.trim()) p.set('q', filterQ.trim())
-    const r = await fetch(`/api/financeiro?${p}`)
-    if (r.ok) { const d = await r.json(); setEntries(d.entries); setSummary(d.summary) }
-    setLoading(false)
+    setLoadError('')
+    try {
+      const p = new URLSearchParams()
+      if (filterType)     p.set('type', filterType)
+      if (filterMonth)    p.set('month', filterMonth)
+      if (filterCategory) p.set('categoryId', filterCategory)
+      if (filterStatus)   p.set('status', filterStatus)
+      if (filterQ.trim()) p.set('q', filterQ.trim())
+      const r = await fetch(`/api/financeiro?${p}`, { cache: 'no-store' })
+      const d = await r.json()
+      if (!r.ok) throw new Error(d.error ?? 'Não foi possível carregar os lançamentos.')
+      if (requestId !== entriesRequestRef.current) return
+      setEntries(d.entries)
+      setSummary(d.summary)
+    } catch (error) {
+      if (requestId !== entriesRequestRef.current) return
+      setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar os lançamentos.')
+    } finally {
+      if (requestId === entriesRequestRef.current) setLoading(false)
+    }
   }, [filterType, filterMonth, filterCategory, filterStatus, filterQ])
 
   const loadStats = useCallback(async () => {
@@ -743,9 +785,20 @@ export default function FinanceModule() {
     if (r.ok) { const d = await r.json(); setCategories(d.categories) }
   }, [])
 
-  useEffect(() => { loadEntries() },    [loadEntries])
-  useEffect(() => { loadStats() },      [loadStats])
-  useEffect(() => { loadCategories() }, [loadCategories])
+  useEffect(() => {
+    const timeout = window.setTimeout(() => { void loadEntries() }, filterQ.trim() ? 300 : 0)
+    return () => window.clearTimeout(timeout)
+  }, [loadEntries, filterQ])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => { void loadStats() }, 0)
+    return () => window.clearTimeout(timeout)
+  }, [loadStats])
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => { void loadCategories() }, 0)
+    return () => window.clearTimeout(timeout)
+  }, [loadCategories])
 
   const reload = () => { loadEntries(); loadStats() }
 
@@ -769,8 +822,18 @@ export default function FinanceModule() {
   const cmp         = stats?.comparison
   const incomeDiff  = cmp ? pctDiff(cmp.currentIncome,  cmp.prevIncome)  : 0
   const expenseDiff = cmp ? pctDiff(cmp.currentExpense, cmp.prevExpense) : 0
+  const selectedMonthLabel = filterMonth
+    ? new Date(`${filterMonth}-01T12:00:00`).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' })
+    : 'Todos os períodos'
+  const activeFilterCount = [filterType, filterCategory, filterStatus, filterQ.trim()].filter(Boolean).length
+  const clearFilters = () => {
+    setFilterType('')
+    setFilterCategory('')
+    setFilterStatus('')
+    setFilterQ('')
+  }
 
-  const selCls = 'dash rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-emerald-400 cursor-pointer'
+  const selCls = 'dash h-10 min-w-0 rounded-xl border border-border bg-white px-3 text-sm text-slate-700 outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10 cursor-pointer'
 
   return (
     <div className="space-y-5">
@@ -796,17 +859,49 @@ export default function FinanceModule() {
         <OFXImportModal onClose={() => setShowOFX(false)} onImported={() => { setFilterMonth(''); reload() }} />
       )}
 
+      <section className="rounded-2xl border border-border bg-white p-4 shadow-sm sm:p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-primary/15 bg-primary/8 text-primary">
+              <CalendarDays className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="dash text-[11px] font-bold uppercase tracking-[0.13em] text-muted-foreground">Visão do período</p>
+              <p className="dash mt-0.5 text-base font-bold capitalize text-foreground">{selectedMonthLabel}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center">
+            <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
+              className={`${selCls} col-span-2 sm:w-auto`} aria-label="Mês do período financeiro" />
+            <button onClick={() => setShowCategories(true)}
+              className="dash flex h-10 items-center justify-center gap-1.5 rounded-xl border border-border bg-white px-3 text-sm font-semibold text-slate-600 transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary">
+              <Tag className="h-3.5 w-3.5" /> Categorias
+            </button>
+            <button onClick={() => setShowOFX(true)}
+              className="dash flex h-10 items-center justify-center gap-1.5 rounded-xl border border-border bg-white px-3 text-sm font-semibold text-slate-600 transition-all hover:border-primary/30 hover:bg-primary/5 hover:text-primary">
+              <Upload className="h-3.5 w-3.5" /> Importar OFX
+            </button>
+            <button onClick={() => { setEditing(null); setShowForm(true) }}
+              className="dash col-span-2 flex h-10 items-center justify-center gap-1.5 rounded-xl bg-primary px-4 text-sm font-bold text-primary-foreground shadow-[0_6px_18px_rgba(161,79,42,0.2)] transition-all hover:-translate-y-0.5 hover:bg-[#8C4222] hover:shadow-[0_8px_22px_rgba(161,79,42,0.26)] sm:col-span-1">
+              <Plus className="h-4 w-4" /> Novo lançamento
+            </button>
+          </div>
+        </div>
+      </section>
+
       {/* ── KPI Cards ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
         {/* Receitas */}
-        <div className="dash bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <div className="dash relative min-w-0 overflow-hidden rounded-2xl border border-border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-green-500" />
           <div className="flex items-start justify-between mb-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }}>
               <ArrowUpRight className="w-5 h-5 text-green-600" />
             </div>
             {cmp && incomeDiff !== 0 && (
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold sm:text-xs" title="Comparação com o mês anterior"
                 style={incomeDiff > 0
                   ? { background: 'rgba(34,197,94,0.1)', color: '#16a34a' }
                   : { background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}>
@@ -814,19 +909,22 @@ export default function FinanceModule() {
               </span>
             )}
           </div>
-          <p className="dash text-xs font-semibold text-slate-500 mb-0.5">Receitas</p>
-          <p className="dash text-xl font-extrabold text-green-600">{fmt(summary.totalIncome)}</p>
+          <p className="dash mb-0.5 text-xs font-semibold text-slate-500">Receitas</p>
+          <p className="dash truncate text-base font-extrabold text-green-600 sm:text-xl" title={fmt(summary.totalIncome)}>
+            {loading ? <span className="inline-block h-5 w-24 animate-pulse rounded bg-slate-100" /> : fmt(summary.totalIncome)}
+          </p>
         </div>
 
         {/* Despesas */}
-        <div className="dash bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <div className="dash relative min-w-0 overflow-hidden rounded-2xl border border-border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-red-500" />
           <div className="flex items-start justify-between mb-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
               <ArrowDownRight className="w-5 h-5 text-red-500" />
             </div>
             {cmp && expenseDiff !== 0 && (
-              <span className="text-xs font-bold px-2 py-0.5 rounded-full"
+              <span className="rounded-full px-2 py-0.5 text-[10px] font-bold sm:text-xs" title="Comparação com o mês anterior"
                 style={expenseDiff > 0
                   ? { background: 'rgba(239,68,68,0.1)', color: '#dc2626' }
                   : { background: 'rgba(34,197,94,0.1)', color: '#16a34a' }}>
@@ -834,12 +932,15 @@ export default function FinanceModule() {
               </span>
             )}
           </div>
-          <p className="dash text-xs font-semibold text-slate-500 mb-0.5">Despesas</p>
-          <p className="dash text-xl font-extrabold text-red-500">{fmt(summary.totalExpense)}</p>
+          <p className="dash mb-0.5 text-xs font-semibold text-slate-500">Despesas</p>
+          <p className="dash truncate text-base font-extrabold text-red-500 sm:text-xl" title={fmt(summary.totalExpense)}>
+            {loading ? <span className="inline-block h-5 w-24 animate-pulse rounded bg-slate-100" /> : fmt(summary.totalExpense)}
+          </p>
         </div>
 
         {/* Saldo */}
-        <div className="dash bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <div className="dash relative min-w-0 overflow-hidden rounded-2xl border border-border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-indigo-500" />
           <div className="flex items-start justify-between mb-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
               style={summary.balance >= 0
@@ -848,22 +949,25 @@ export default function FinanceModule() {
               <TrendingUp className="w-5 h-5" style={{ color: summary.balance >= 0 ? '#4f46e5' : '#dc2626' }} />
             </div>
           </div>
-          <p className="dash text-xs font-semibold text-slate-500 mb-0.5">Saldo</p>
-          <p className="dash text-xl font-extrabold" style={{ color: summary.balance >= 0 ? '#4f46e5' : '#dc2626' }}>
-            {fmt(summary.balance)}
+          <p className="dash mb-0.5 text-xs font-semibold text-slate-500">Saldo</p>
+          <p className="dash truncate text-base font-extrabold sm:text-xl" title={fmt(summary.balance)} style={{ color: summary.balance >= 0 ? '#4f46e5' : '#dc2626' }}>
+            {loading ? <span className="inline-block h-5 w-24 animate-pulse rounded bg-slate-100" /> : fmt(summary.balance)}
           </p>
         </div>
 
         {/* A Receber */}
-        <div className="dash bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+        <div className="dash relative min-w-0 overflow-hidden rounded-2xl border border-border bg-white p-4 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md">
+          <div className="absolute inset-x-0 top-0 h-0.5 bg-amber-500" />
           <div className="flex items-start justify-between mb-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
               style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)' }}>
               <HandCoins className="w-5 h-5 text-amber-600" />
             </div>
           </div>
-          <p className="dash text-xs font-semibold text-slate-500 mb-0.5">A Receber</p>
-          <p className="dash text-xl font-extrabold text-amber-600">{fmt(stats?.receivables.total ?? 0)}</p>
+          <p className="dash mb-0.5 text-xs font-semibold text-slate-500">A Receber</p>
+          <p className="dash truncate text-base font-extrabold text-amber-600 sm:text-xl" title={fmt(stats?.receivables.total ?? 0)}>
+            {!stats ? <span className="inline-block h-5 w-24 animate-pulse rounded bg-slate-100" /> : fmt(stats.receivables.total)}
+          </p>
           {stats?.receivables.count ? (
             <p className="dash text-xs text-slate-400 mt-0.5">
               {stats.receivables.count} processo{stats.receivables.count !== 1 ? 's' : ''} pendente{stats.receivables.count !== 1 ? 's' : ''}
@@ -874,9 +978,9 @@ export default function FinanceModule() {
 
       {/* ── Charts + Breakdown ────────────────────────────────────────────── */}
       {stats && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
           {/* 6-month charts */}
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <div className="rounded-2xl border border-border bg-white p-4 shadow-sm sm:p-5 lg:col-span-2">
             <div className="flex items-center gap-2.5 mb-4">
               <div className="w-7 h-7 rounded-lg flex items-center justify-center"
                 style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)' }}>
@@ -890,7 +994,7 @@ export default function FinanceModule() {
                 <p className="dash text-sm text-slate-400">Sem dados para este período</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-6 xl:grid-cols-2 xl:gap-4">
                 <div>
                   <div className="flex items-center gap-1.5 mb-3">
                     <span className="w-2.5 h-2.5 rounded-sm bg-green-500 inline-block" />
@@ -911,7 +1015,7 @@ export default function FinanceModule() {
           </div>
 
           {/* Category breakdown */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+          <div className="rounded-2xl border border-border bg-white p-4 shadow-sm sm:p-5">
             <div className="flex items-center gap-2.5 mb-1">
               <div className="w-7 h-7 rounded-lg flex items-center justify-center"
                 style={{ background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.2)' }}>
@@ -929,12 +1033,12 @@ export default function FinanceModule() {
               <div className="space-y-3">
                 {stats.categoryBreakdown.map((item, i) => (
                   <div key={item.id ?? `none-${i}`}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-1.5">
+                    <div className="mb-1.5 flex min-w-0 items-center justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-1.5">
                         <div className="w-2 h-2 rounded-full shrink-0" style={{ background: item.color ?? '#9CA3AF' }} />
-                        <span className="dash text-xs font-semibold text-slate-700">{item.name}</span>
+                        <span className="dash truncate text-xs font-semibold text-slate-700">{item.name}</span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex shrink-0 items-center gap-2">
                         <span className="dash text-xs text-slate-400">{item.percentage}%</span>
                         <span className="dash text-xs font-bold text-red-500">{fmt(item.total)}</span>
                       </div>
@@ -951,81 +1055,104 @@ export default function FinanceModule() {
         </div>
       )}
 
-      {/* ── Filter bar ───────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <input type="month" value={filterMonth} onChange={e => setFilterMonth(e.target.value)}
-            className={selCls} />
-          <select value={filterType} onChange={e => setFilterType(e.target.value)} className={selCls}>
-            <option value="">Todos os tipos</option>
-            <option value="INCOME">Entradas</option>
-            <option value="EXPENSE">Saídas</option>
-          </select>
-          <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={selCls}>
-            <option value="">Todas as categorias</option>
-            <option value="none">Sem categoria</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className={selCls}>
-            <option value="">Todos os status</option>
-            <option value="CONFIRMED">Confirmados</option>
-            <option value="PREDICTED">Previstos</option>
-            <option value="OVERDUE">Em atraso</option>
-          </select>
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-            <input value={filterQ} onChange={e => setFilterQ(e.target.value)} placeholder="Buscar..."
-              className="dash pl-8 pr-8 py-2 rounded-xl border border-slate-200 text-sm bg-white text-slate-700 w-44 focus:outline-none focus:ring-2 focus:ring-emerald-400" />
-            {filterQ && (
-              <button onClick={() => setFilterQ('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
+      {/* ── Lançamentos e filtros ────────────────────────────────────────── */}
+      <section className="overflow-hidden rounded-2xl border border-border bg-white shadow-sm">
+        <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3.5 sm:px-5">
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="dash text-sm font-bold text-foreground">Lançamentos</h2>
+              {!loading && (
+                <span className="dash rounded-full bg-muted px-2 py-0.5 text-[10px] font-bold text-muted-foreground">{summary.count}</span>
+              )}
+            </div>
+            <p className="dash mt-0.5 text-xs text-muted-foreground">Consulte e refine as movimentações do período.</p>
+          </div>
+          {activeFilterCount > 0 && (
+            <button onClick={clearFilters}
+              className="dash flex h-9 shrink-0 items-center gap-1.5 rounded-xl px-2.5 text-xs font-semibold text-primary transition-colors hover:bg-primary/5">
+              <RotateCcw className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Limpar filtros</span>
+              <span className="sm:hidden">Limpar</span>
+            </button>
+          )}
+        </div>
+
+        <div className="bg-[#FBF9F7] p-3 sm:p-4">
+          <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.12em] text-muted-foreground sm:hidden">
+            <SlidersHorizontal className="h-3.5 w-3.5" /> Filtros
+            {activeFilterCount > 0 && <span className="rounded-full bg-primary px-1.5 py-0.5 text-[9px] text-white">{activeFilterCount}</span>}
+          </div>
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-[minmax(220px,1fr)_auto_auto_auto]">
+            <div className="relative col-span-2 lg:col-span-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/65" />
+              <input value={filterQ} onChange={e => setFilterQ(e.target.value)} placeholder="Buscar por título..."
+                className="dash h-10 w-full rounded-xl border border-border bg-white pl-9 pr-9 text-sm text-slate-700 outline-none transition-all placeholder:text-muted-foreground/55 focus:border-primary focus:ring-4 focus:ring-primary/10" />
+              {filterQ && (
+                <button onClick={() => setFilterQ('')} aria-label="Limpar busca"
+                  className="absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-slate-400 hover:bg-muted hover:text-slate-600">
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+            <select value={filterType} onChange={e => setFilterType(e.target.value)} className={selCls} aria-label="Filtrar por tipo">
+              <option value="">Todos os tipos</option>
+              <option value="INCOME">Entradas</option>
+              <option value="EXPENSE">Saídas</option>
+            </select>
+            <select value={filterCategory} onChange={e => setFilterCategory(e.target.value)} className={selCls} aria-label="Filtrar por categoria">
+              <option value="">Categorias</option>
+              <option value="none">Sem categoria</option>
+              {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className={`${selCls} col-span-2 lg:col-span-1`} aria-label="Filtrar por status">
+              <option value="">Todos os status</option>
+              <option value="CONFIRMED">Confirmados</option>
+              <option value="PREDICTED">Previstos</option>
+              <option value="OVERDUE">Em atraso</option>
+            </select>
           </div>
         </div>
-
-        <div className="flex items-center gap-2">
-          <button onClick={() => setShowCategories(true)}
-            className="dash flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer">
-            <Tag className="w-3.5 h-3.5" /> Categorias
-          </button>
-          <button onClick={() => setShowOFX(true)}
-            className="dash flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer">
-            <Upload className="w-3.5 h-3.5" /> Importar OFX
-          </button>
-          <button onClick={() => { setEditing(null); setShowForm(true) }}
-            className="dash flex items-center gap-1.5 px-4 py-2 rounded-xl text-white text-sm font-bold cursor-pointer"
-            style={{ background: 'linear-gradient(135deg, #15803d, #22c55e)', boxShadow: '0 4px 12px rgba(34,197,94,0.3)' }}>
-            <Plus className="w-4 h-4" /> Novo lançamento
-          </button>
-        </div>
-      </div>
+      </section>
 
       {/* ── Entry list grouped by day ─────────────────────────────────────── */}
-      {loading ? (
+      {loadError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-6 text-center">
+          <AlertCircle className="mx-auto h-7 w-7 text-red-400" />
+          <p className="dash mt-2 text-sm font-bold text-red-700">Não foi possível carregar o financeiro</p>
+          <p className="dash mx-auto mt-1 max-w-lg text-xs text-red-600/80">{loadError}</p>
+          <button onClick={loadEntries}
+            className="dash mx-auto mt-4 flex h-9 items-center gap-1.5 rounded-xl border border-red-200 bg-white px-3 text-xs font-bold text-red-700 transition-colors hover:bg-red-100">
+            <RefreshCw className="h-3.5 w-3.5" /> Tentar novamente
+          </button>
+        </div>
+      ) : loading ? (
         <div className="space-y-2">
           {[1, 2, 3].map(i => <div key={i} className="h-16 bg-slate-100 rounded-2xl animate-pulse" />)}
         </div>
       ) : entries.length === 0 ? (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm">
           <div className="flex flex-col items-center justify-center py-16 px-6 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center mb-4">
-              <Wallet className="w-7 h-7 text-emerald-300" />
+            <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/8">
+              <Wallet className="h-7 w-7 text-primary/50" />
             </div>
             <p className="dash text-base font-bold text-slate-700 mb-1">
-              {filterQ || filterType || filterCategory || filterStatus
+              {activeFilterCount > 0
                 ? 'Nenhum resultado para os filtros aplicados'
                 : 'Nenhum lançamento neste período'}
             </p>
             <p className="dash text-sm text-slate-400 mb-5">
-              {filterQ || filterType || filterCategory || filterStatus
+              {activeFilterCount > 0
                 ? 'Tente remover alguns filtros.'
                 : 'Registre o primeiro lançamento do mês.'}
             </p>
-            {!filterQ && !filterType && !filterCategory && !filterStatus && (
+            {activeFilterCount > 0 ? (
+              <button onClick={clearFilters}
+                className="dash flex items-center gap-1.5 rounded-xl border border-border bg-white px-4 py-2.5 text-sm font-bold text-primary transition-colors hover:bg-primary/5">
+                <RotateCcw className="h-4 w-4" /> Limpar filtros
+              </button>
+            ) : (
               <button onClick={() => { setEditing(null); setShowForm(true) }}
-                className="dash px-5 py-2.5 rounded-xl border-2 border-dashed border-emerald-300 text-emerald-600 text-sm font-bold hover:bg-emerald-50 transition-colors cursor-pointer">
+                className="dash rounded-xl border-2 border-dashed border-primary/30 px-5 py-2.5 text-sm font-bold text-primary transition-colors hover:bg-primary/5 cursor-pointer">
                 + Registrar lançamento
               </button>
             )}
@@ -1039,8 +1166,8 @@ export default function FinanceModule() {
             return (
               <div key={group.key}>
                 {/* Day header */}
-                <div className="flex items-center justify-between py-1.5 px-1 border-b border-slate-100 mb-2">
-                  <span className="dash text-xs font-bold text-slate-400 uppercase tracking-widest">{group.label}</span>
+                <div className="mb-2 flex flex-col gap-1.5 border-b border-slate-100 px-1 py-1.5 sm:flex-row sm:items-center sm:justify-between">
+                  <span className="dash text-xs font-bold uppercase tracking-widest text-slate-400">{group.label}</span>
                   <div className="flex gap-3">
                     {dayIn  > 0 && <span className="dash text-xs font-bold text-green-600">+{fmt(dayIn)}</span>}
                     {dayOut > 0 && <span className="dash text-xs font-bold text-red-500">-{fmt(dayOut)}</span>}
@@ -1053,58 +1180,74 @@ export default function FinanceModule() {
                     const isIn  = entry.type === 'INCOME'
                     const stCfg = STATUS_CFG[entry.status]
                     return (
-                      <div key={entry.id} onClick={() => setShowDetail(entry)}
-                        className={`dash bg-white rounded-2xl border shadow-sm px-4 py-3.5 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all ${entry.status === 'OVERDUE' ? 'border-red-200' : 'border-slate-200'}`}>
-                        <div className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-                          style={isIn
-                            ? { background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }
-                            : { background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
-                          {isIn
-                            ? <ArrowUpRight className="w-4 h-4 text-green-600" />
-                            : <ArrowDownRight className="w-4 h-4 text-red-500" />}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-0.5">
-                            <span className="dash text-sm font-bold text-slate-800 truncate">{entry.title}</span>
-                            {entry.status !== 'CONFIRMED' && (
-                              <span className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${stCfg.cls}`}>
-                                <stCfg.Icon className="w-2.5 h-2.5" /> {stCfg.label}
-                              </span>
-                            )}
-                            {entry.recurrence !== 'NONE' && (
-                              <span className="shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-purple-100 text-purple-700">
-                                <RefreshCw className="w-2.5 h-2.5" /> {RECURRENCE_LABELS[entry.recurrence]}
-                              </span>
-                            )}
+                      <article key={entry.id} onClick={() => setShowDetail(entry)}
+                        className={`dash cursor-pointer rounded-2xl border bg-white p-3.5 shadow-sm transition-all hover:-translate-y-px hover:shadow-md sm:p-4 ${entry.status === 'OVERDUE' ? 'border-red-200' : 'border-border'}`}>
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl"
+                            style={isIn
+                              ? { background: 'rgba(34,197,94,0.1)', border: '1px solid rgba(34,197,94,0.2)' }
+                              : { background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.2)' }}>
+                            {isIn
+                              ? <ArrowUpRight className="h-4 w-4 text-green-600" />
+                              : <ArrowDownRight className="h-4 w-4 text-red-500" />}
                           </div>
-                          <div className="flex items-center gap-2">
-                            {entry.category && (
-                              <span className="dash flex items-center gap-1 text-xs text-slate-400">
-                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: entry.category.color }} />
-                                {entry.category.name}
-                              </span>
-                            )}
-                            {entry.description && (
-                              <span className="dash text-xs text-slate-300 truncate max-w-48">{entry.description}</span>
-                            )}
+
+                          <div className="min-w-0 flex-1">
+                            <p className="dash truncate text-sm font-bold text-slate-800">{entry.title}</p>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                              {entry.status !== 'CONFIRMED' && (
+                                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${stCfg.cls}`}>
+                                  <stCfg.Icon className="h-2.5 w-2.5" /> {stCfg.label}
+                                </span>
+                              )}
+                              {entry.recurrence !== 'NONE' && (
+                                <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-semibold text-purple-700">
+                                  <RefreshCw className="h-2.5 w-2.5" /> {RECURRENCE_LABELS[entry.recurrence]}
+                                </span>
+                              )}
+                              {entry.category && (
+                                <span className="dash flex min-w-0 items-center gap-1 text-xs text-slate-400">
+                                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: entry.category.color }} />
+                                  <span className="truncate">{entry.category.name}</span>
+                                </span>
+                              )}
+                            </div>
+                            {entry.description && <p className="dash mt-1 truncate text-xs text-slate-300">{entry.description}</p>}
+                          </div>
+
+                          <div className="hidden shrink-0 items-center gap-3 sm:flex">
+                            <span className={`dash text-base font-extrabold ${isIn ? 'text-green-600' : 'text-red-500'}`}>
+                              {isIn ? '+' : '-'}{fmt(entry.amount)}
+                            </span>
+                            <div className="flex gap-1" onClick={e => e.stopPropagation()}>
+                              <button onClick={() => openEdit(entry)} aria-label={`Editar ${entry.title}`}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-slate-100 hover:text-slate-600">
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button onClick={() => remove(entry.id)} aria-label={`Excluir ${entry.title}`}
+                                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-red-50 hover:text-red-500">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3 shrink-0">
+
+                        <div className="ml-12 mt-3 flex items-center justify-between border-t border-slate-100 pt-2.5 sm:hidden">
                           <span className={`dash text-base font-extrabold ${isIn ? 'text-green-600' : 'text-red-500'}`}>
                             {isIn ? '+' : '-'}{fmt(entry.amount)}
                           </span>
                           <div className="flex gap-1" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => openEdit(entry)}
-                              className="p-1.5 rounded-lg text-slate-300 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer">
-                              <Pencil className="w-3.5 h-3.5" />
+                            <button onClick={() => openEdit(entry)} aria-label={`Editar ${entry.title}`}
+                              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600">
+                              <Pencil className="h-4 w-4" />
                             </button>
-                            <button onClick={() => remove(entry.id)}
-                              className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-colors cursor-pointer">
-                              <Trash2 className="w-3.5 h-3.5" />
+                            <button onClick={() => remove(entry.id)} aria-label={`Excluir ${entry.title}`}
+                              className="flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500">
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
                         </div>
-                      </div>
+                      </article>
                     )
                   })}
                 </div>
