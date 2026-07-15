@@ -16,29 +16,31 @@ const dmSans = DM_Sans({
 })
 
 export const metadata: Metadata = {
-  title: 'Eleva Isenções',
-  description: 'Sistema de Gestão de Processos PCD - Eleva Isenções',
-  manifest: '/manifest.json',
+  applicationName: 'Eleva App',
+  title: {
+    default: 'Eleva App',
+    template: '%s | Eleva App',
+  },
+  description: 'Gestão de processos e isenções para pessoas com deficiência.',
+  manifest: '/manifest.webmanifest',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
-    title: 'Eleva Isenções',
+    title: 'Eleva App',
   },
 }
 
 export const viewport: Viewport = {
-  themeColor: '#1E1A17',
+  themeColor: '#A14F2A',
+  colorScheme: 'light',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="pt-BR" className={`${redHatDisplay.variable} ${dmSans.variable} h-full`}>
-      <head>
-        <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
-      </head>
       <body className="h-full antialiased" suppressHydrationWarning>
         <PWARegister />
         {children}

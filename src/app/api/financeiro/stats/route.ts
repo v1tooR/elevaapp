@@ -7,6 +7,8 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  const { data: _r } = await supabase.from('profiles').select('role').eq('auth_user_id', user.id).single()
+  if (_r?.role !== 'super_admin') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const month = searchParams.get('month') // "2025-06"

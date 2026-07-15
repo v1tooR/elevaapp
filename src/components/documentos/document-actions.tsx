@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { CheckCircle, XCircle, RefreshCw, X } from 'lucide-react'
@@ -48,7 +49,7 @@ export function DocumentActions({ document }: { document: any }) {
 
   return (
     <>
-      {showRejectModal && (
+      {showRejectModal && createPortal(
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(0,0,0,0.55)' }}
@@ -107,7 +108,7 @@ export function DocumentActions({ document }: { document: any }) {
             </div>
           </div>
         </div>
-      )}
+      , document.body)}
 
       <div className="flex items-center justify-end gap-1">
         <button

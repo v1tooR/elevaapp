@@ -1,9 +1,10 @@
 import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { Plus, Search, Target, ArrowUpRight, ChevronLeft, ChevronRight, Filter } from 'lucide-react'
+import { Plus, Search, Target, ArrowUpRight, ChevronLeft, ChevronRight, Filter, LayoutList, Columns3 } from 'lucide-react'
 import { formatPhone } from '@/lib/utils'
+import { LeadKanbanBoard, type LeadKanbanItem } from '@/components/leads/lead-kanban-board'
 
-interface SearchParams { q?: string; status?: string; assigned_to?: string; page?: string }
+interface SearchParams { q?: string; status?: string; assigned_to?: string; page?: string; view?: string }
 
 const STATUS_LABEL: Record<string, string> = {
   novo:            'Novo',
@@ -37,8 +38,9 @@ const SOURCE_STYLE: Record<string, { bg: string; text: string }> = {
 
 export default async function LeadsPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams
+  const view = params.view === 'kanban' ? 'kanban' : 'lista'
   const q = params.q ?? ''
-  const filterStatus = params.status ?? ''
+  const filterStatus = view === 'lista' ? (params.status ?? '') : ''
   const filterAssigned = params.assigned_to ?? ''
   const page = parseInt(params.page ?? '1')
   const perPage = 20
@@ -56,25 +58,33 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     .from('leads')
     .select('*, assignee:assigned_to(id, name)', { count: 'exact' })
     .order('created_at', { ascending: false })
-    .range((page - 1) * perPage, page * perPage - 1)
+
+  query = view === 'kanban'
+    ? query.limit(500)
+    : query.range((page - 1) * perPage, page * perPage - 1)
 
   if (q)              query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%`)
   if (filterStatus)   query = query.eq('status', filterStatus)
   if (filterAssigned) query = query.eq('assigned_to', filterAssigned)
 
   const { data: leads, count } = await query
+  const leadList = (leads ?? []) as LeadKanbanItem[]
   const totalPages = Math.ceil((count ?? 0) / perPage)
 
   const buildUrl = (overrides: Record<string, string>) => {
-    const p = { q, status: filterStatus, assigned_to: filterAssigned, page: '1', ...overrides }
+    const p = { q, status: filterStatus, assigned_to: filterAssigned, page: '1', view, ...overrides }
     const s = new URLSearchParams()
     if (p.q)            s.set('q', p.q)
     if (p.status)       s.set('status', p.status)
     if (p.assigned_to)  s.set('assigned_to', p.assigned_to)
     if (p.page !== '1') s.set('page', p.page)
+    if (p.view === 'kanban') s.set('view', 'kanban')
     const str = s.toString()
     return str ? `/leads?${str}` : '/leads'
   }
+
+  const listUrl = buildUrl({ view: 'lista' })
+  const kanbanUrl = buildUrl({ view: 'kanban', status: '', page: '1' })
 
   return (
     <>
@@ -108,7 +118,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
             style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
 
-          <div className="relative flex items-center justify-between gap-4 p-6 lg:p-8">
+          <div className="relative flex flex-wrap items-center justify-between gap-4 p-6 lg:p-8">
             <div className="flex items-center gap-4">
               <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
                 <Target className="w-6 h-6 text-primary-foreground/75" />
@@ -120,13 +130,34 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                 </p>
               </div>
             </div>
-            <Link
-              href="/leads/novo"
-              className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white border border-white/20 bg-white/10 hover:bg-white/20 hover:border-white/40 transition-all dash"
-            >
-              <Plus className="w-4 h-4" />
-              Novo Lead
-            </Link>
+            <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+              <div className="flex items-center gap-1 rounded-xl bg-white/10 p-1" role="group" aria-label="Modo de visualização">
+                <Link
+                  href={listUrl}
+                  aria-current={view === 'lista' ? 'page' : undefined}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all dash ${view === 'lista' ? 'bg-white text-foreground' : 'text-white/70 hover:text-white'}`}
+                >
+                  <LayoutList className="h-3.5 w-3.5" />
+                  Lista
+                </Link>
+                <Link
+                  href={kanbanUrl}
+                  aria-current={view === 'kanban' ? 'page' : undefined}
+                  className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all dash ${view === 'kanban' ? 'bg-white text-foreground' : 'text-white/70 hover:text-white'}`}
+                >
+                  <Columns3 className="h-3.5 w-3.5" />
+                  Kanban
+                </Link>
+              </div>
+
+              <Link
+                href="/leads/novo"
+                className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:border-white/40 hover:bg-white/20 dash"
+              >
+                <Plus className="w-4 h-4" />
+                Novo Lead
+              </Link>
+            </div>
           </div>
         </div>
 
@@ -136,6 +167,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
         >
           <form method="GET" className="flex flex-wrap gap-3">
+            {view === 'kanban' && <input type="hidden" name="view" value="kanban" />}
             <div className="relative flex-1 min-w-48">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
               <input
@@ -146,16 +178,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               />
             </div>
 
-            <select
-              name="status"
-              defaultValue={filterStatus}
-              className="filter-select border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dash transition-all"
-            >
-              <option value="">Todos os status</option>
-              {Object.entries(STATUS_LABEL).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
-            </select>
+            {view === 'lista' && (
+              <select
+                name="status"
+                defaultValue={filterStatus}
+                className="filter-select border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dash transition-all"
+              >
+                <option value="">Todos os status</option>
+                {Object.entries(STATUS_LABEL).map(([v, l]) => (
+                  <option key={v} value={v}>{l}</option>
+                ))}
+              </select>
+            )}
 
             <select
               name="assigned_to"
@@ -178,7 +212,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
 
             {(q || filterStatus || filterAssigned) && (
               <Link
-                href="/leads"
+                href={buildUrl({ q: '', status: '', assigned_to: '', page: '1' })}
                 className="px-4 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors dash"
               >
                 Limpar
@@ -187,7 +221,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
           </form>
 
           {/* Status pills */}
-          <div className="flex flex-wrap gap-2">
+          {view === 'lista' && <div className="flex flex-wrap gap-2">
             <Link
               href={buildUrl({ status: '' })}
               className="px-3 py-1 rounded-full text-xs font-semibold dash transition-all"
@@ -212,11 +246,15 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                 </Link>
               )
             })}
-          </div>
+          </div>}
         </div>
 
         {/* ── Table ────────────────────────────────────────────────── */}
-        <div
+        {view === 'kanban' ? (
+          <div className="anim anim-2 rounded-2xl border border-border bg-card p-3 shadow-soft lg:p-4">
+            <LeadKanbanBoard leads={leadList} />
+          </div>
+        ) : <div
           className="anim anim-2 bg-white rounded-2xl overflow-hidden"
           style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
         >
@@ -256,7 +294,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                   </tr>
                 </thead>
                 <tbody>
-                  {(leads as any[]).map(lead => {
+                  {leadList.map(lead => {
                     const st = STATUS_STYLE[lead.status] ?? STATUS_STYLE.novo
                     const src = lead.lead_source ? SOURCE_STYLE[lead.lead_source] : null
                     return (
@@ -278,7 +316,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                           ) : <span className="text-slate-300 dash">—</span>}
                         </td>
                         <td className="px-5 py-3.5 text-slate-500 hidden lg:table-cell dash">
-                          {(lead.assignee as any)?.name ?? <span className="text-slate-300">—</span>}
+                          {lead.assignee?.name ?? <span className="text-slate-300">—</span>}
                         </td>
                         <td className="px-5 py-3.5">
                           <span
@@ -305,10 +343,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               </table>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* ── Pagination ─────────────────────────────────────────── */}
-        {totalPages > 1 && (
+        {view === 'lista' && totalPages > 1 && (
           <div className="anim anim-3 flex items-center justify-center gap-2">
             {page > 1 ? (
               <Link

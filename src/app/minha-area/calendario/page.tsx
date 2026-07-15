@@ -38,7 +38,7 @@ export default async function ClienteCalendarioPage({
 
   const { data: allEvents } = await supabase
     .from('calendar_events')
-    .select('*, processes(id, process_types(name, color))')
+    .select('*, processes:processes!calendar_events_process_id_fkey(id, process_types(name, color))')
     .eq('client_id', client.id)
     .eq('visibility', 'client_visible')
     .order('event_date', { ascending: true })

@@ -25,12 +25,12 @@ const adminNav = [
   { href: '/documentos',   label: 'Documentos',   icon: FileText,        group: 'main'    },
   { href: '/calendario',   label: 'Calendário',   icon: Calendar,        group: 'comms'   },
   { href: '/notificacoes', label: 'Notificações', icon: Bell,            group: 'comms',  badge: true },
-  { href: '/financeiro',   label: 'Financeiro',   icon: Banknote,        group: 'finance' },
 ]
 
 const superAdminNav = [
   ...adminNav,
-  { href: '/configuracoes', label: 'Configurações', icon: Settings, group: 'system' },
+  { href: '/financeiro',    label: 'Financeiro',    icon: Banknote, group: 'finance' },
+  { href: '/configuracoes', label: 'Configurações', icon: Settings, group: 'system'  },
 ]
 
 const clientNav = [

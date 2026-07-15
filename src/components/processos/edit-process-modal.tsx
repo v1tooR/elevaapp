@@ -17,7 +17,7 @@ const STATUS_OPTIONS = Object.entries(PROCESS_STATUS_LABELS).map(([v, l]) => ({ 
 
 type Tab = 'info' | 'campos' | 'financeiro'
 
-export function EditProcessModal({ process }: { process: Process & { process_types?: any; custom_fields?: any[]; financials?: any } }) {
+export function EditProcessModal({ process, isSuperAdmin = false }: { process: Process & { process_types?: any; custom_fields?: any[]; financials?: any }; isSuperAdmin?: boolean }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('info')
@@ -53,9 +53,9 @@ export function EditProcessModal({ process }: { process: Process & { process_typ
   const typeColor = process.process_types?.color ?? '#3B82F6'
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    { key: 'info',      label: 'Informações',    icon: <Settings className="w-3.5 h-3.5" /> },
-    { key: 'campos',    label: 'Campos',          icon: <Layers className="w-3.5 h-3.5" /> },
-    { key: 'financeiro',label: 'Financeiro',      icon: <DollarSign className="w-3.5 h-3.5" /> },
+    { key: 'info',      label: 'Informações', icon: <Settings className="w-3.5 h-3.5" /> },
+    { key: 'campos',    label: 'Campos',      icon: <Layers className="w-3.5 h-3.5" /> },
+    ...(isSuperAdmin ? [{ key: 'financeiro' as Tab, label: 'Financeiro', icon: <DollarSign className="w-3.5 h-3.5" /> }] : []),
   ]
 
   const handleSubmit = async (e: React.FormEvent) => {

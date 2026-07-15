@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Edit, X, AlertCircle } from 'lucide-react'
@@ -164,7 +165,7 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
         Editar
       </button>
 
-      {open && (
+      {open && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
           <div className="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
 
@@ -278,7 +279,7 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
             </form>
           </div>
         </div>
-      )}
+      , document.body)}
     </>
   )
 }

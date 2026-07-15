@@ -5,6 +5,8 @@ export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+  const { data: _role } = await supabase.from('profiles').select('role').eq('auth_user_id', user.id).single()
+  if (_role?.role !== 'super_admin') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const type = searchParams.get('type')
@@ -53,8 +55,8 @@ export async function POST(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from('profiles').select('id, role').eq('auth_user_id', user.id).single()
-  if (!profile || !['super_admin', 'admin', 'analista'].includes((profile as any).role)) {
-    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 })
+  if (!profile || (profile as any).role !== 'super_admin') {
+    return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
   }
 
   const body = await request.json()

@@ -149,37 +149,87 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
 
     const key = `${stage.id}-${type}`
     setLoadingCalId(key)
+    setErrors(prev => ({ ...prev, [stage.id]: '' }))
     setCalSuccess(prev => ({ ...prev, [stage.id]: '' }))
     const supabase = createClient()
+    const eventTitle = `${stage.label} — ${clientName}`
 
-    // Persist the date on the stage immediately
-    await supabase
-      .from('process_stages')
-      .update({ scheduled_date: edit.scheduled_date })
-      .eq('id', stage.id)
+    try {
+      // A data da etapa e o evento precisam falhar de forma visível, nunca simular sucesso.
+      const { error: stageError } = await supabase
+        .from('process_stages')
+        .update({ scheduled_date: edit.scheduled_date })
+        .eq('id', stage.id)
 
-    // Create calendar event
-    await supabase.from('calendar_events').insert({
-      title:               `${stage.label} — ${clientName}`,
-      event_date:          edit.scheduled_date,
-      event_type:          'normal' as const,
-      client_id:           clientId,
-      process_id:          processId,
-      responsible_user_id: responsibleUserId ?? null,
-      visibility:          type === 'internal' ? 'admin_only' : 'client_visible',
-      status:              'pending',
-    })
+      if (stageError) throw stageError
 
-    // Notify client if requested
-    if (type === 'client') {
-      const { data: clientRecord } = await supabase
-        .from('clients')
-        .select('profile_id')
-        .eq('id', clientId)
-        .single()
+      // Uma etapa representa um único compromisso. "Notificar cliente" compartilha
+      // esse mesmo evento com o cliente, em vez de criar uma cópia para a equipe.
+      const { data: existingEvents, error: lookupError } = await supabase
+        .from('calendar_events')
+        .select('id, visibility')
+        .eq('process_id', processId)
+        .eq('client_id', clientId)
+        .eq('title', eventTitle)
+        .order('created_at', { ascending: true })
 
-      if (clientRecord?.profile_id) {
-        await supabase.from('notifications').insert({
+      if (lookupError) throw lookupError
+
+      const existingEvent = existingEvents?.[0]
+      const visibility =
+        type === 'client' || existingEvent?.visibility === 'client_visible'
+          ? 'client_visible'
+          : 'admin_only'
+
+      const eventValues = {
+        title:               eventTitle,
+        event_date:          edit.scheduled_date,
+        event_type:          'normal' as const,
+        client_id:           clientId,
+        process_id:          processId,
+        responsible_user_id: responsibleUserId ?? null,
+        visibility,
+        status:              'pending' as const,
+      }
+
+      if (existingEvent) {
+        const { error: eventError } = await supabase
+          .from('calendar_events')
+          .update(eventValues)
+          .eq('id', existingEvent.id)
+
+        if (eventError) throw eventError
+
+        const duplicateIds = existingEvents.slice(1).map(event => event.id)
+        if (duplicateIds.length > 0) {
+          const { error: dedupeError } = await supabase
+            .from('calendar_events')
+            .delete()
+            .in('id', duplicateIds)
+
+          if (dedupeError) throw dedupeError
+        }
+      } else {
+        const { error: eventError } = await supabase
+          .from('calendar_events')
+          .insert(eventValues)
+
+        if (eventError) throw eventError
+      }
+
+      if (type === 'client') {
+        const { data: clientRecord, error: clientError } = await supabase
+          .from('clients')
+          .select('profile_id')
+          .eq('id', clientId)
+          .single()
+
+        if (clientError) throw clientError
+        if (!clientRecord.profile_id) {
+          throw new Error('O cliente ainda não possui acesso ao portal para receber a notificação.')
+        }
+
+        const { error: notificationError } = await supabase.from('notifications').insert({
           user_id:    clientRecord.profile_id,
           client_id:  clientId,
           process_id: processId,
@@ -187,16 +237,24 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
           message:    `Você tem ${stage.label.toLowerCase()} agendado para ${formatDate(edit.scheduled_date)}.`,
           type:       'info' as const,
         })
-      }
-    }
 
-    setLoadingCalId(null)
-    setCalSuccess(prev => ({
-      ...prev,
-      [stage.id]: type === 'client' ? 'Cliente notificado e evento criado' : 'Adicionado à agenda interna',
-    }))
-    setTimeout(() => setCalSuccess(prev => ({ ...prev, [stage.id]: '' })), 3000)
-    router.refresh()
+        if (notificationError) throw notificationError
+      }
+
+      setCalSuccess(prev => ({
+        ...prev,
+        [stage.id]: type === 'client'
+          ? 'Cliente notificado; evento visível nas duas agendas'
+          : 'Agendamento salvo na agenda da equipe',
+      }))
+      setTimeout(() => setCalSuccess(prev => ({ ...prev, [stage.id]: '' })), 3000)
+      router.refresh()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Não foi possível salvar o agendamento.'
+      setErrors(prev => ({ ...prev, [stage.id]: message }))
+    } finally {
+      setLoadingCalId(null)
+    }
   }
 
   // ── Main stage save ────────────────────────────────────────────────────────
@@ -242,6 +300,54 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
       note:        `Etapa "${stage.label}" → ${STATUS_LABEL[edit.status] ?? edit.status}`,
     })
 
+    // ── Auto calendar + notification when scheduled date is set or changed ───
+    const dateChanged =
+      HAS_SCHEDULED_DATE.has(stage.stage_key) &&
+      edit.scheduled_date &&
+      edit.scheduled_date !== (stage.scheduled_date ?? '')
+
+    if (dateChanged) {
+      // Remove eventos client_visible anteriores desta etapa (evita duplicatas)
+      await supabase
+        .from('calendar_events')
+        .delete()
+        .eq('process_id', processId)
+        .eq('client_id', clientId)
+        .eq('visibility', 'client_visible')
+        .ilike('title', `%${stage.label}%`)
+
+      // Cria evento na agenda do cliente
+      await supabase.from('calendar_events').insert({
+        title:               `${stage.label} — ${clientName}`,
+        event_date:          edit.scheduled_date,
+        event_type:          'normal' as const,
+        client_id:           clientId,
+        process_id:          processId,
+        responsible_user_id: responsibleUserId ?? null,
+        visibility:          'client_visible',
+        status:              'pending',
+      })
+
+      // Busca profile_id do cliente (pode ser reaproveitado abaixo)
+      const { data: clientRecord } = await supabase
+        .from('clients')
+        .select('profile_id')
+        .eq('id', clientId)
+        .single()
+
+      if (clientRecord?.profile_id) {
+        await supabase.from('notifications').insert({
+          user_id:    clientRecord.profile_id,
+          client_id:  clientId,
+          process_id: processId,
+          title:      `Agendamento confirmado — ${stage.label}`,
+          message:    `Sua ${stage.label.toLowerCase()} está agendada para ${formatDate(edit.scheduled_date)}. Fique atento ao dia e horário.`,
+          type:       'info' as const,
+        })
+      }
+    }
+
+    // ── Status change notification ───────────────────────────────────────────
     const statusChanged = stage.status !== (edit.status as StageStatus)
     const alreadyHandled =
       (stage.stage_key === 'pericia_medica' && edit.result === 'reprovado') ||

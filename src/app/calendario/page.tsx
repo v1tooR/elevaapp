@@ -19,7 +19,7 @@ export default async function CalendarioPage() {
   const [{ data: clients }, { data: upcoming }, { data: monthEvents }] = await Promise.all([
     supabase.from('clients').select('id, name').eq('is_active', true).order('name'),
     supabase.from('calendar_events')
-      .select('*, clients(id, name), processes(id, process_types(name, color))')
+      .select('*, clients(id, name), processes:processes!calendar_events_process_id_fkey(id, process_types(name, color))')
       .eq('event_type', 'renewal')
       .gte('event_date', today.toISOString().split('T')[0])
       .order('event_date', { ascending: true })

@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { Plus, X } from 'lucide-react'
@@ -7,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
+import { formatDate } from '@/lib/utils'
 
 export function CreateEventModal({ clients, profileId }: { clients: any[]; profileId: string }) {
   const router = useRouter()
@@ -26,6 +28,8 @@ export function CreateEventModal({ clients, profileId }: { clients: any[]; profi
 
   useEffect(() => {
     if (!form.client_id) { setProcesses([]); return }
+    // Auto-switch visibility to client_visible when a client is selected
+    setForm(p => ({ ...p, visibility: 'client_visible' }))
     const supabase = createClient()
     supabase.from('processes').select('id, process_types(name)').eq('client_id', form.client_id)
       .then(({ data }) => setProcesses(data ?? []))
@@ -38,17 +42,39 @@ export function CreateEventModal({ clients, profileId }: { clients: any[]; profi
     if (!form.title || !form.event_date) return
     setLoading(true)
     const supabase = createClient()
+
     await supabase.from('calendar_events').insert({
-      title: form.title,
-      description: form.description || null,
-      event_date: form.event_date,
-      event_time: form.event_time || null,
-      client_id: form.client_id || null,
-      process_id: form.process_id || null,
+      title:               form.title,
+      description:         form.description || null,
+      event_date:          form.event_date,
+      event_time:          form.event_time || null,
+      client_id:           form.client_id || null,
+      process_id:          form.process_id || null,
       responsible_user_id: profileId,
-      visibility: form.visibility as any,
-      status: form.status as any,
+      visibility:          form.visibility as any,
+      status:              form.status as any,
     })
+
+    // Notifica o cliente quando o evento é criado como visível para ele
+    if (form.client_id && form.visibility === 'client_visible') {
+      const { data: clientRecord } = await supabase
+        .from('clients')
+        .select('profile_id')
+        .eq('id', form.client_id)
+        .single()
+
+      if (clientRecord?.profile_id) {
+        await supabase.from('notifications').insert({
+          user_id:    clientRecord.profile_id,
+          client_id:  form.client_id,
+          process_id: form.process_id || null,
+          title:      `Novo agendamento — ${form.title}`,
+          message:    `Um compromisso foi agendado para você: "${form.title}" em ${formatDate(form.event_date)}.`,
+          type:       'info' as const,
+        })
+      }
+    }
+
     setLoading(false)
     setOpen(false)
     setForm({ title: '', description: '', event_date: '', event_time: '', client_id: '', process_id: '', visibility: 'admin_only', status: 'pending' })
@@ -67,7 +93,7 @@ export function CreateEventModal({ clients, profileId }: { clients: any[]; profi
         <Plus className="w-4 h-4" /> Novo Evento
       </button>
 
-      {open && (
+      {open && createPortal(
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between p-6 border-b border-slate-100">
@@ -108,7 +134,7 @@ export function CreateEventModal({ clients, profileId }: { clients: any[]; profi
             </form>
           </div>
         </div>
-      )}
+      , document.body)}
     </>
   )
 }

@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { getProfile } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, FileText, Clock, RefreshCw, Link2, ArrowUpRight, DollarSign, Calendar, ListChecks } from 'lucide-react'
@@ -22,6 +23,8 @@ const ACTION_ICONS: Record<string, string> = {
 export default async function ProcessoDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
+  const profile = await getProfile()
+  const isSuperAdmin = profile?.role === 'super_admin'
 
   const [
     { data: process, error: processError },
@@ -94,7 +97,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
             <Link href="/processos" className="back-btn flex items-center gap-1.5 text-primary-foreground/75 hover:text-white text-xs font-medium px-3 py-1.5 rounded-lg">
               <ArrowLeft className="w-3.5 h-3.5" /> Voltar a Processos
             </Link>
-            <EditProcessModal process={process as any} />
+            <EditProcessModal process={process as any} isSuperAdmin={isSuperAdmin} />
           </div>
 
           {/* Process info */}
@@ -138,7 +141,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                   <p className="dash text-xl font-bold text-white">{documents?.length ?? 0}</p>
                   <p className="dash text-[10px] text-primary-foreground/65 mt-0.5">Documentos</p>
                 </div>
-                {financials?.service_value && (
+                {isSuperAdmin && financials?.service_value && (
                   <div className="text-center bg-white/10 border border-white/10 rounded-xl px-4 py-2.5">
                     <p className="dash text-xl font-bold text-white">{formatCurrency(financials.service_value)}</p>
                     <p className="dash text-[10px] text-primary-foreground/65 mt-0.5">Valor</p>
@@ -242,7 +245,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
             )}
 
             {/* Financial */}
-            {financials && (
+            {isSuperAdmin && financials && (
               <div className="anim anim-3 bg-white rounded-2xl p-5" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
                 <div className="flex items-center gap-2 mb-4">
                   <div className="w-7 h-7 rounded-lg bg-emerald-50 flex items-center justify-center shrink-0">

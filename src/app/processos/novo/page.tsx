@@ -38,6 +38,7 @@ function NovoProcessoForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [dataLoaded, setDataLoaded] = useState(false)
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [processTypes, setProcessTypes] = useState<any[]>([])
   const [clients, setClients] = useState<any[]>([])
   const [profiles, setProfiles] = useState<any[]>([])
@@ -69,10 +70,15 @@ function NovoProcessoForm() {
       supabase.from('process_types').select('*').eq('is_active', true).neq('slug', 'resumo').order('name'),
       supabase.from('clients').select('id, name, gov_password_reference, disability_type, client_type').eq('is_active', true).order('name'),
       supabase.from('profiles').select('id, name').in('role', ['admin', 'analista', 'super_admin']).order('name'),
-    ]).then(([{ data: pt }, { data: cl }, { data: pf }]) => {
+      supabase.auth.getUser(),
+    ]).then(async ([{ data: pt }, { data: cl }, { data: pf }, { data: { user } }]) => {
       setProcessTypes(pt ?? [])
       setClients(cl ?? [])
       setProfiles(pf ?? [])
+      if (user) {
+        const { data: prof } = await supabase.from('profiles').select('role').eq('auth_user_id', user.id).single()
+        setIsSuperAdmin(prof?.role === 'super_admin')
+      }
       setDataLoaded(true)
 
       // Pre-select client
@@ -212,7 +218,7 @@ function NovoProcessoForm() {
       await supabase.from('process_custom_fields').insert(customFieldInserts)
     }
 
-    if (form.service_value || form.payment_method || form.financial_notes) {
+    if (isSuperAdmin && (form.service_value || form.payment_method || form.financial_notes)) {
       const serviceValue = form.service_value ? parseCurrency(form.service_value) : null
       const financeEntryId = serviceValue ? await syncProcessFinancial(supabase, {
         processId: process.id,
@@ -506,7 +512,7 @@ function NovoProcessoForm() {
           )}
 
           {/* ── Financeiro ───────────────────────────────────────── */}
-          <div className="anim anim-4 rounded-2xl overflow-hidden" style={sectionCard}>
+          {isSuperAdmin && <div className="anim anim-4 rounded-2xl overflow-hidden" style={sectionCard}>
             <div className="flex items-center justify-between px-5 py-4 border-b border-slate-50">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-xl bg-emerald-50 flex items-center justify-center shrink-0">
@@ -603,7 +609,7 @@ function NovoProcessoForm() {
                 </div>
               )}
             </div>
-          </div>
+          </div>}
 
           {/* ── Erro ─────────────────────────────────────────────── */}
           {error && (

@@ -17,7 +17,7 @@ export async function GET(request: Request) {
 
   const { data, error } = await supabase
     .from('calendar_events')
-    .select('*, clients(id, name), processes(id, process_types(name, color, renewal_period_months))')
+    .select('*, clients(id, name), processes:processes!calendar_events_process_id_fkey(id, process_types(name, color, renewal_period_months))')
     .gte('event_date', start)
     .lte('event_date', end)
     .order('event_date', { ascending: true })

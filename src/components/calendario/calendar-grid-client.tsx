@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { ChevronLeft, ChevronRight, Plus, X, RefreshCw, Clock, User, FileText, Calendar } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { cn, formatDate } from '@/lib/utils'
 
 type CalEvent = {
   id: string
@@ -90,10 +91,17 @@ export function CalendarGridClient({ clients, profileId }: Props) {
 
   const fetchEvents = useCallback(async () => {
     setLoading(true)
-    const res = await fetch(`/api/calendario?year=${year}&month=${month}`)
-    const json = await res.json()
-    setEvents(json.events ?? [])
-    setLoading(false)
+    try {
+      const res = await fetch(`/api/calendario?year=${year}&month=${month}`, { cache: 'no-store' })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error ?? 'Não foi possível carregar o calendário')
+      setEvents(json.events ?? [])
+    } catch (error) {
+      console.error('Erro ao carregar calendário:', error)
+      setEvents([])
+    } finally {
+      setLoading(false)
+    }
   }, [year, month])
 
   useEffect(() => { fetchEvents() }, [fetchEvents])
@@ -347,18 +355,19 @@ export function CalendarGridClient({ clients, profileId }: Props) {
       </div>
 
       {/* Create event modal */}
-      {createOpen && (
+      {createOpen && createPortal(
         <CreateEventModal
           clients={clients}
           profileId={profileId}
           defaultDate={selectedDay ?? todayIso}
           onClose={() => setCreateOpen(false)}
           onCreated={() => { setCreateOpen(false); fetchEvents(); router.refresh() }}
-        />
+        />,
+        document.body
       )}
 
       {/* Detail modal */}
-      {detailEvent && (
+      {detailEvent && createPortal(
         <EventDetailModal
           event={detailEvent}
           onClose={() => setDetailEvent(null)}
@@ -367,7 +376,8 @@ export function CalendarGridClient({ clients, profileId }: Props) {
             setEvents(prev => prev.map(e => e.id === id ? { ...e, status } : e))
             setDetailEvent(prev => prev?.id === id ? { ...prev, status } : prev)
           }}
-        />
+        />,
+        document.body
       )}
     </>
   )
@@ -396,6 +406,8 @@ function CreateEventModal({
 
   useEffect(() => {
     if (!form.client_id) { setProcesses([]); return }
+    // Auto-switch visibility to client_visible when a client is selected
+    setForm(p => ({ ...p, visibility: 'client_visible' }))
     const supabase = createClient()
     supabase.from('processes').select('id, process_types(name)').eq('client_id', form.client_id)
       .then(({ data }) => setProcesses(
@@ -413,14 +425,40 @@ function CreateEventModal({
     if (!form.title || !form.event_date) return
     setLoading(true)
     const supabase = createClient()
+
     await supabase.from('calendar_events').insert({
-      title: form.title, description: form.description || null,
-      event_date: form.event_date, event_time: form.event_time || null,
-      event_type: form.event_type as any,
-      client_id: form.client_id || null, process_id: form.process_id || null,
+      title:               form.title,
+      description:         form.description || null,
+      event_date:          form.event_date,
+      event_time:          form.event_time || null,
+      event_type:          form.event_type as any,
+      client_id:           form.client_id || null,
+      process_id:          form.process_id || null,
       responsible_user_id: profileId,
-      visibility: form.visibility as any, status: form.status as any,
+      visibility:          form.visibility as any,
+      status:              form.status as any,
     })
+
+    // Notifica o cliente quando o evento é criado como visível para ele
+    if (form.client_id && form.visibility === 'client_visible') {
+      const { data: clientRecord } = await supabase
+        .from('clients')
+        .select('profile_id')
+        .eq('id', form.client_id)
+        .single()
+
+      if (clientRecord?.profile_id) {
+        await supabase.from('notifications').insert({
+          user_id:    clientRecord.profile_id,
+          client_id:  form.client_id,
+          process_id: form.process_id || null,
+          title:      `Novo agendamento — ${form.title}`,
+          message:    `Um compromisso foi agendado para você: "${form.title}" em ${formatDate(form.event_date)}.`,
+          type:       'info' as const,
+        })
+      }
+    }
+
     setLoading(false)
     onCreated()
   }
