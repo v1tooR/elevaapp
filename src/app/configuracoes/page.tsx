@@ -2,19 +2,24 @@ import { createClient } from '@/lib/supabase/server'
 import { Settings } from 'lucide-react'
 import { ProcessTypeManager } from '@/components/configuracoes/process-type-manager'
 import { UserManager } from '@/components/configuracoes/user-manager'
+import { LegalRulesPanel } from '@/components/configuracoes/legal-rules-panel'
+import { requireAuth } from '@/lib/auth'
+import type { LegalRuleVersion, Profile } from '@/types/database'
 
 export const metadata = { title: 'Configurações — Eleva Isenções' }
 
 export default async function ConfiguracoesPage() {
+  const currentProfile = await requireAuth(['super_admin', 'admin'])
   const supabase = await createClient()
 
-  const [{ data: processTypes }, { data: profiles }] = await Promise.all([
+  const [{ data: processTypes }, { data: profiles }, { data: legalRules }] = await Promise.all([
     supabase.from('process_types').select('*').neq('slug', 'resumo').order('name'),
     supabase.from('profiles').select('*').order('name'),
+    supabase.from('legal_rule_versions').select('*').order('effective_from', { ascending: false }),
   ])
 
   const pts = processTypes ?? []
-  const profs = profiles ?? []
+  const profs = (profiles ?? []) as Profile[]
   const activeTypes = pts.filter((p: any) => p.is_active).length
   const totalUsers = profs.length
   const activeUsers = profs.filter((p: any) => p.role !== 'cliente').length
@@ -23,7 +28,7 @@ export default async function ConfiguracoesPage() {
     { label: 'Tipos de processo', value: String(pts.length),    bg: 'rgba(99,102,241,0.15)',  color: '#a5b4fc' },
     { label: 'Tipos ativos',      value: String(activeTypes),   bg: 'rgba(34,197,94,0.15)',   color: '#86efac' },
     { label: 'Usuários',          value: String(totalUsers),    bg: 'rgba(148,163,184,0.15)', color: '#cbd5e1' },
-    { label: 'Staff',             value: String(activeUsers),   bg: 'rgba(245,158,11,0.15)',  color: '#fcd34d' },
+    { label: 'Funcionários',      value: String(activeUsers),   bg: 'rgba(245,158,11,0.15)',  color: '#fcd34d' },
   ]
 
   return (
@@ -74,8 +79,15 @@ export default async function ConfiguracoesPage() {
 
       {/* ── Content grid ── */}
       <div className="anim-2 grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <div className="lg:col-span-2">
+          <UserManager
+            profiles={profs}
+            canManageEmployees={currentProfile.role === 'super_admin'}
+            currentProfileId={currentProfile.id}
+          />
+        </div>
         <ProcessTypeManager processTypes={pts} />
-        <UserManager profiles={profs} />
+        <LegalRulesPanel rules={(legalRules ?? []) as LegalRuleVersion[]} />
       </div>
     </div>
   )

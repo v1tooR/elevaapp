@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## Workflow IMESC/IPVA
+
+O fluxo operacional, a migration necessária e o roteiro de validação estão documentados em [`docs/imesc-workflow.md`](docs/imesc-workflow.md).
+
 ## Getting Started
 
 First, run the development server:

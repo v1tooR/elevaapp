@@ -1,6 +1,6 @@
 'use client'
 
-import { AlertCircle, CheckCircle2, ClipboardCheck, HelpCircle, ShieldCheck } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ClipboardCheck, ExternalLink, HelpCircle, ShieldCheck } from 'lucide-react'
 import type { EligibilityAnalysis } from '@/lib/eligibility'
 import type { VehicleCondition } from '@/types/database'
 
@@ -105,6 +105,26 @@ export function EligibilityAnalysisCard({
           <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-blue-700">Próximas verificações</p>
           <ul className="space-y-1">
             {analysis.recommendations.map(item => <li key={item} className="text-[11px] leading-relaxed text-slate-600">• {item}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {analysis.sources?.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-500">Base oficial consultada</p>
+          <ul className="space-y-1">
+            {analysis.sources.map(source => (
+              <li key={source.url}>
+                <a
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-start gap-1 text-[11px] leading-relaxed text-blue-700 hover:underline"
+                >
+                  {source.title}<ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+                </a>
+              </li>
+            ))}
           </ul>
         </div>
       )}

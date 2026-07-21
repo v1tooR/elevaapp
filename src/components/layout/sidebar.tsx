@@ -61,6 +61,8 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
       .select('*', { count: 'exact', head: true })
       .eq('user_id', profile.id)
       .eq('is_read', false)
+      .eq('is_canceled', false)
+      .lte('available_at', new Date().toISOString())
       .then(({ count }) => setUnreadCount(count ?? 0))
   }, [profile?.id])
 

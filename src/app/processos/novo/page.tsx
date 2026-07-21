@@ -10,7 +10,13 @@ import { PROCESS_TYPE_CUSTOM_FIELDS, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { syncProcessFinancial } from '@/lib/sync-process-financial'
 import { createCnhProcessStages } from '@/lib/cnh-stages'
-import { analyzeEligibility, isEligibilityProcess } from '@/lib/eligibility'
+import {
+  analyzeEligibility,
+  isEligibilityProcess,
+  type ImescSeverity,
+  type ImescStatus,
+  type SefazIpvaStatus,
+} from '@/lib/eligibility'
 import { EligibilityAnalysisCard } from '@/components/processos/eligibility-analysis-card'
 import type { VehicleCondition } from '@/types/database'
 import Link from 'next/link'
@@ -168,6 +174,13 @@ function NovoProcessoForm() {
         requiresPracticalExam: selectedClient.requires_practical_exam,
         hasMedicalReport: selectedClient.has_medical_report,
         authorizedDrivers: selectedClient.authorized_drivers,
+        imescStatus: (customFieldValues.imesc_status || null) as ImescStatus | null,
+        imescReportIssuedAt: customFieldValues.imesc_data_laudo || null,
+        imescSeverity: (customFieldValues.imesc_grau || null) as ImescSeverity | null,
+        sefazIpvaStatus: (customFieldValues.sefaz_ipva_status || null) as SefazIpvaStatus | null,
+        sefazDecisionNotifiedAt: customFieldValues.sefaz_data_ciencia || null,
+        ipvaAppealFiledAt: customFieldValues.recurso_ipva_protocolado_em || null,
+        ipvaAppealProtocol: customFieldValues.recurso_ipva_protocolo || null,
       })
     : null
 
@@ -215,7 +228,25 @@ function NovoProcessoForm() {
       }))
 
     if (customFieldInserts.length > 0) {
-      await supabase.from('process_custom_fields').insert(customFieldInserts)
+      const { error: customFieldsError } = await supabase.from('process_custom_fields').insert(customFieldInserts)
+      if (customFieldsError) {
+        setError('Processo criado, mas não foi possível salvar os campos específicos: ' + customFieldsError.message)
+        setLoading(false)
+        return
+      }
+    }
+
+    if (
+      selectedTypeSlug === 'processo_ipva' &&
+      (form.jurisdiction_state || selectedClient?.state)?.toUpperCase() === 'SP'
+    ) {
+      const workflowResponse = await fetch(`/api/processos/${process.id}/workflow`, { method: 'POST' })
+      const workflowResult = await workflowResponse.json()
+      if (!workflowResponse.ok) {
+        setError('Processo criado, mas não foi possível inicializar o workflow IMESC/IPVA: ' + (workflowResult.error ?? 'Erro desconhecido'))
+        setLoading(false)
+        return
+      }
     }
 
     if (isSuperAdmin && (form.service_value || form.payment_method || form.financial_notes)) {
@@ -483,6 +514,21 @@ function NovoProcessoForm() {
                           />
                           <span className="text-sm font-medium text-slate-700 dash">{field.field_label}</span>
                         </label>
+                      ) : field.field_type === 'select' ? (
+                        <div className="space-y-1">
+                          <label className="block text-sm font-medium text-slate-700 dash">{field.field_label}</label>
+                          <select
+                            value={customFieldValues[field.field_name] ?? ''}
+                            onChange={e => setCustomFieldValues(prev => ({ ...prev, [field.field_name]: e.target.value }))}
+                            className="block w-full rounded-xl border border-border px-3 py-2 text-sm bg-muted focus:bg-card focus:border-primary focus:outline-none transition-all dash"
+                          >
+                            <option value="">Selecione</option>
+                            {(field.options ?? []).map(option => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                          {field.help_text && <p className="text-[10px] leading-relaxed text-slate-400">{field.help_text}</p>}
+                        </div>
                       ) : (
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
@@ -501,6 +547,7 @@ function NovoProcessoForm() {
                             step={field.field_type === 'currency' ? '0.01' : undefined}
                             className="block w-full rounded-xl border border-border px-3 py-2 text-sm bg-muted focus:bg-card focus:border-primary focus:outline-none transition-all dash"
                           />
+                          {field.help_text && <p className="text-[10px] leading-relaxed text-slate-400">{field.help_text}</p>}
                         </div>
                       )}
                     </div>

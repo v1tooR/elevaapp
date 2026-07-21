@@ -11,6 +11,7 @@ import { Select } from '@/components/ui/select'
 import { PROCESS_STATUS_LABELS, PROCESS_TYPE_CUSTOM_FIELDS } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { syncProcessFinancial } from '@/lib/sync-process-financial'
+import { calculateProcessRenewalDate } from '@/lib/process-workflow'
 import type { Process } from '@/types/database'
 
 const STATUS_OPTIONS = Object.entries(PROCESS_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))
@@ -73,20 +74,35 @@ export function EditProcessModal({ process, isSuperAdmin = false }: { process: P
 
     if (err) { setError(err.message); setLoading(false); return }
 
-    for (const field of customFields) {
-      const val = customFieldValues[field.field_name]
-      const existing = (process.custom_fields ?? []).find((f: any) => f.field_name === field.field_name)
-      if (existing) {
-        await supabase.from('process_custom_fields').update({ field_value: val || null }).eq('id', existing.id)
-      } else if (val) {
-        await supabase.from('process_custom_fields').insert({
+    if (customFields.length > 0) {
+      const { error: customFieldsError } = await supabase.from('process_custom_fields').upsert(
+        customFields.map((field, index) => ({
           process_id: process.id,
           field_name: field.field_name,
           field_label: field.field_label,
           field_type: field.field_type,
-          field_value: val,
-          sort_order: customFields.indexOf(field),
-        })
+          field_value: customFieldValues[field.field_name] || null,
+          sort_order: index,
+        })),
+        { onConflict: 'process_id,field_name' },
+      )
+      if (customFieldsError) {
+        setError(customFieldsError.message)
+        setLoading(false)
+        return
+      }
+    }
+
+    if (
+      process.process_types?.slug === 'processo_ipva' &&
+      (process.jurisdiction_state || (process as any).clients?.state)?.toUpperCase() === 'SP'
+    ) {
+      const workflowResponse = await fetch(`/api/processos/${process.id}/workflow`, { method: 'POST' })
+      const workflowResult = await workflowResponse.json()
+      if (!workflowResponse.ok) {
+        setError(workflowResult.error ?? 'Não foi possível sincronizar o workflow IMESC/IPVA.')
+        setLoading(false)
+        return
       }
     }
 
@@ -141,23 +157,26 @@ export function EditProcessModal({ process, isSuperAdmin = false }: { process: P
     }
 
     if (oldStatus !== 'concluido' && form.status === 'concluido') {
-      const renewalMonths = process.process_types?.renewal_period_months
-      if (renewalMonths) {
-        const renewalDate = new Date()
-        renewalDate.setMonth(renewalDate.getMonth() + renewalMonths)
-        const renewalIso = renewalDate.toISOString().split('T')[0]
+      const processTypeSlug = process.process_types?.slug ?? ''
+      const renewalIso = calculateProcessRenewalDate({
+        processTypeSlug,
+        completedAt: new Date().toISOString(),
+        configuredMonths: process.process_types?.renewal_period_months,
+      })
+      if (renewalIso) {
         const eventTitle = `Renovar ${process.process_types?.name ?? 'Processo'} — ${((process as any).clients as any)?.name ?? ''}`
-        const { data: calEvent } = await supabase.from('calendar_events').insert({
+        const { data: calEvent } = await supabase.from('calendar_events').upsert({
           title: eventTitle,
           description: process.process_types?.renewal_notes ?? null,
           event_date: renewalIso,
           event_type: 'renewal',
+          source_key: `renewal:${processTypeSlug}`,
           color: process.process_types?.color ?? null,
           client_id: ((process as any).clients as any)?.id ?? null,
           process_id: process.id,
           visibility: 'admin_only',
           status: 'pending',
-        }).select('id').single()
+        }, { onConflict: 'process_id,source_key' }).select('id').single()
         if (calEvent?.id) {
           await supabase.from('processes').update({ renewal_date: renewalIso, renewal_calendar_event_id: calEvent.id }).eq('id', process.id)
         }
@@ -258,6 +277,21 @@ export function EditProcessModal({ process, isSuperAdmin = false }: { process: P
                             />
                             <span className="text-sm font-medium text-slate-700 dash">{field.field_label}</span>
                           </label>
+                        ) : field.field_type === 'select' ? (
+                          <div className="space-y-1">
+                            <label className="block text-sm font-medium text-slate-700 dash">{field.field_label}</label>
+                            <select
+                              value={customFieldValues[field.field_name] ?? ''}
+                              onChange={e => setCustomFieldValues(p => ({ ...p, [field.field_name]: e.target.value }))}
+                              className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:border-blue-400 focus:outline-none"
+                            >
+                              <option value="">Selecione</option>
+                              {(field.options ?? []).map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                            {field.help_text && <p className="text-[10px] leading-relaxed text-slate-400">{field.help_text}</p>}
+                          </div>
                         ) : (
                           <Input
                             label={field.field_label}

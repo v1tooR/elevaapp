@@ -1,219 +1,484 @@
 'use client'
+
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { Users, Plus, X, Loader2 } from 'lucide-react'
+import {
+  BriefcaseBusiness,
+  Check,
+  Loader2,
+  Plus,
+  Search,
+  ShieldCheck,
+  UserRound,
+  Users,
+  X,
+} from 'lucide-react'
+import type { Profile, UserRole } from '@/types/database'
 
-const ROLE_CFG: Record<string, { label: string; bg: string; color: string; border: string }> = {
-  super_admin: { label: 'Super Admin', bg: 'rgba(139,92,246,0.1)',  color: '#7c3aed', border: 'rgba(139,92,246,0.25)' },
-  admin:       { label: 'Admin',       bg: 'rgba(99,102,241,0.1)',  color: '#4338ca', border: 'rgba(99,102,241,0.25)' },
-  analista:    { label: 'Analista',    bg: 'rgba(34,197,94,0.1)',   color: '#15803d', border: 'rgba(34,197,94,0.25)'  },
-  cliente:     { label: 'Cliente',     bg: 'rgba(148,163,184,0.1)', color: '#475569', border: 'rgba(148,163,184,0.2)' },
+type UserView = 'funcionarios' | 'clientes'
+type EmployeeRole = Extract<UserRole, 'admin' | 'analista'>
+
+const ROLE_CFG: Record<UserRole, { label: string; description: string; badge: string }> = {
+  super_admin: {
+    label: 'Super Admin',
+    description: 'Acesso total ao sistema',
+    badge: 'border-primary/20 bg-primary/10 text-primary',
+  },
+  admin: {
+    label: 'Administrador',
+    description: 'Gerencia a operação e as configurações',
+    badge: 'border-info/20 bg-info-bg text-info',
+  },
+  analista: {
+    label: 'Analista',
+    description: 'Atende clientes e conduz processos',
+    badge: 'border-success/20 bg-success-bg text-success',
+  },
+  cliente: {
+    label: 'Cliente',
+    description: 'Acesso ao portal do cliente',
+    badge: 'border-border bg-muted text-muted-foreground',
+  },
 }
 
-const AVATAR_COLORS = [
-  { bg: 'rgba(99,102,241,0.15)',  color: '#6366f1' },
-  { bg: 'rgba(34,197,94,0.15)',   color: '#22c55e' },
-  { bg: 'rgba(245,158,11,0.15)',  color: '#d97706' },
-  { bg: 'rgba(239,68,68,0.15)',   color: '#ef4444' },
-  { bg: 'rgba(139,92,246,0.15)',  color: '#7c3aed' },
-  { bg: 'rgba(20,184,166,0.15)',  color: '#14b8a6' },
+const AVATAR_CLASSES = [
+  'border-primary/20 bg-primary/10 text-primary',
+  'border-success/20 bg-success-bg text-success',
+  'border-info/20 bg-info-bg text-info',
+  'border-warning/20 bg-warning-bg text-warning',
+  'border-border bg-secondary text-secondary-foreground',
 ]
 
-const inpCls = 'dash block w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 bg-white placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-300/40 focus:border-indigo-300 transition-all'
-const selCls = 'dash block w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300/40 focus:border-indigo-300 transition-all cursor-pointer'
+const EMPLOYEE_ROLE_OPTIONS: Array<{ value: EmployeeRole; label: string; description: string }> = [
+  {
+    value: 'analista',
+    label: 'Analista',
+    description: 'Atende clientes e conduz processos.',
+  },
+  {
+    value: 'admin',
+    label: 'Administrador',
+    description: 'Gerencia a operação e as configurações.',
+  },
+]
 
-export function UserManager({ profiles }: { profiles: any[] }) {
+function avatarClass(name: string) {
+  const index = Array.from(name).reduce((total, char) => total + char.charCodeAt(0), 0)
+  return AVATAR_CLASSES[index % AVATAR_CLASSES.length]
+}
+
+function userInitial(name: string) {
+  return name.trim().charAt(0).toUpperCase() || '?'
+}
+
+async function readApiError(response: Response, fallback: string) {
+  const body = await response.json().catch(() => null)
+  return typeof body?.error === 'string' ? body.error : fallback
+}
+
+interface UserManagerProps {
+  profiles: Profile[]
+  canManageEmployees: boolean
+  currentProfileId: string
+}
+
+export function UserManager({ profiles, canManageEmployees, currentProfileId }: UserManagerProps) {
   const router = useRouter()
+  const [activeView, setActiveView] = useState<UserView>('funcionarios')
+  const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [newUser, setNewUser] = useState({ email: '', name: '', password: '', role: 'analista' })
+  const [creating, setCreating] = useState(false)
+  const [updatingId, setUpdatingId] = useState<string | null>(null)
+  const [roleOverrides, setRoleOverrides] = useState<Partial<Record<string, EmployeeRole>>>({})
+  const [formError, setFormError] = useState<string | null>(null)
+  const [listError, setListError] = useState<string | null>(null)
+  const [newUser, setNewUser] = useState({
+    email: '',
+    name: '',
+    password: '',
+    role: 'analista' as EmployeeRole,
+  })
 
-  const updateRole = async (id: string, role: string) => {
-    const supabase = createClient()
-    await supabase.from('profiles').update({ role }).eq('id', id)
-    router.refresh()
+  const employees = profiles.filter(profile => profile.role !== 'cliente')
+  const clients = profiles.filter(profile => profile.role === 'cliente')
+  const visibleProfiles = activeView === 'funcionarios' ? employees : clients
+  const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR')
+  const filteredProfiles = normalizedSearch
+    ? visibleProfiles.filter(profile =>
+        `${profile.name} ${profile.email}`.toLocaleLowerCase('pt-BR').includes(normalizedSearch)
+      )
+    : visibleProfiles
+
+  const setView = (view: UserView) => {
+    setActiveView(view)
+    setSearch('')
+    setListError(null)
+    if (view === 'clientes') {
+      setShowCreate(false)
+      setFormError(null)
+    }
   }
 
-  const createUser = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-    const supabase = createClient()
-    const { error: err } = await supabase.auth.signUp({
-      email: newUser.email,
-      password: newUser.password,
-      options: { data: { name: newUser.name, role: newUser.role } },
-    })
-    if (err) {
-      setError(err.message)
-    } else {
+  const updateRole = async (profile: Profile, role: EmployeeRole) => {
+    const previousRole = (roleOverrides[profile.id] ?? profile.role) as EmployeeRole
+    if (previousRole === role) return
+
+    setRoleOverrides(current => ({ ...current, [profile.id]: role }))
+    setUpdatingId(profile.id)
+    setListError(null)
+
+    try {
+      const response = await fetch('/api/usuarios', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: profile.id, role }),
+      })
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response, 'Não foi possível alterar a função.'))
+      }
+
+      router.refresh()
+    } catch (error) {
+      setRoleOverrides(current => ({ ...current, [profile.id]: previousRole }))
+      setListError(error instanceof Error ? error.message : 'Não foi possível alterar a função.')
+    } finally {
+      setUpdatingId(null)
+    }
+  }
+
+  const createUser = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setCreating(true)
+    setFormError(null)
+
+    try {
+      const response = await fetch('/api/usuarios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser),
+      })
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response, 'Não foi possível criar o funcionário.'))
+      }
+
       setShowCreate(false)
       setNewUser({ email: '', name: '', password: '', role: 'analista' })
       router.refresh()
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : 'Não foi possível criar o funcionário.')
+    } finally {
+      setCreating(false)
     }
-    setLoading(false)
   }
 
   return (
-    <div className="space-y-3">
-      {/* Header */}
-      <div className="flex items-center gap-3">
-        <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0"
-          style={{ background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)' }}
-        >
-          <Users className="w-4 h-4 text-indigo-500" />
+    <section className="space-y-3" aria-labelledby="usuarios-title">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-primary/20 bg-primary/10">
+            <Users className="h-4 w-4 text-primary" aria-hidden="true" />
+          </div>
+          <div>
+            <h2 id="usuarios-title" className="dash text-base font-bold text-foreground">
+              Usuários e acessos
+            </h2>
+            <p className="dash text-xs text-muted-foreground">
+              {employees.length} funcionário{employees.length !== 1 ? 's' : ''} e {clients.length}{' '}
+              cliente{clients.length !== 1 ? 's' : ''} com acesso
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="dash text-base font-bold text-slate-800">Usuários</h2>
-          <p className="dash text-xs text-slate-400">{profiles.length} usuário{profiles.length !== 1 ? 's' : ''} cadastrado{profiles.length !== 1 ? 's' : ''}</p>
-        </div>
+
+        {canManageEmployees && activeView === 'funcionarios' && (
+          <button
+            type="button"
+            onClick={() => {
+              setShowCreate(current => !current)
+              setFormError(null)
+            }}
+            className="dash inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:w-auto"
+            aria-expanded={showCreate}
+          >
+            {showCreate ? <X className="h-4 w-4" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
+            {showCreate ? 'Cancelar' : 'Novo funcionário'}
+          </button>
+        )}
       </div>
 
-      {/* List card */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm">
-        {profiles.length === 0 ? (
-          <div className="py-10 text-center">
-            <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center mx-auto mb-2 border border-slate-200">
-              <Users className="w-5 h-5 text-slate-300" />
+      <div className="eleva-surface overflow-hidden">
+        <div className="border-b border-border p-3 sm:p-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1" role="tablist" aria-label="Tipo de usuário">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeView === 'funcionarios'}
+                onClick={() => setView('funcionarios')}
+                className={`dash flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
+                  activeView === 'funcionarios'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <BriefcaseBusiness className="h-4 w-4" aria-hidden="true" />
+                <span>Funcionários</span>
+                <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] leading-none text-secondary-foreground">
+                  {employees.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={activeView === 'clientes'}
+                onClick={() => setView('clientes')}
+                className={`dash flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-all ${
+                  activeView === 'clientes'
+                    ? 'bg-card text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <UserRound className="h-4 w-4" aria-hidden="true" />
+                <span>Clientes</span>
+                <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] leading-none text-secondary-foreground">
+                  {clients.length}
+                </span>
+              </button>
             </div>
-            <p className="dash text-sm text-slate-400">Nenhum usuário cadastrado</p>
+
+            <div className="relative w-full lg:max-w-xs">
+              <label htmlFor="user-search" className="sr-only">Buscar usuário</label>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+              <input
+                id="user-search"
+                type="search"
+                value={search}
+                onChange={event => setSearch(event.target.value)}
+                placeholder={`Buscar ${activeView === 'funcionarios' ? 'funcionário' : 'cliente'}...`}
+                className="dash block w-full rounded-xl border border-input bg-card py-2 pl-9 pr-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+            </div>
+          </div>
+
+          <p className="dash mt-3 text-xs text-muted-foreground">
+            {activeView === 'funcionarios'
+              ? 'Equipe interna e nível de acesso de cada funcionário.'
+              : 'Clientes que já possuem acesso à área do cliente.'}
+          </p>
+        </div>
+
+        {showCreate && activeView === 'funcionarios' && canManageEmployees && (
+          <form onSubmit={createUser} className="border-b border-border bg-muted/40 p-4 sm:p-5">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="dash text-sm font-bold text-foreground">Cadastrar funcionário</h3>
+                <p className="dash mt-0.5 text-xs text-muted-foreground">
+                  A conta será criada pronta para acessar o sistema.
+                </p>
+              </div>
+              <ShieldCheck className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-2">
+              <div>
+                <label htmlFor="employee-name" className="dash mb-1.5 block text-xs font-semibold text-foreground">Nome completo</label>
+                <input
+                  id="employee-name"
+                  value={newUser.name}
+                  onChange={event => setNewUser(current => ({ ...current, name: event.target.value }))}
+                  className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Nome do funcionário"
+                  autoComplete="name"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="employee-email" className="dash mb-1.5 block text-xs font-semibold text-foreground">E-mail</label>
+                <input
+                  id="employee-email"
+                  type="email"
+                  value={newUser.email}
+                  onChange={event => setNewUser(current => ({ ...current, email: event.target.value }))}
+                  className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="nome@empresa.com.br"
+                  autoComplete="email"
+                  required
+                />
+              </div>
+              <div>
+                <label htmlFor="employee-password" className="dash mb-1.5 block text-xs font-semibold text-foreground">Senha provisória</label>
+                <input
+                  id="employee-password"
+                  type="password"
+                  value={newUser.password}
+                  onChange={event => setNewUser(current => ({ ...current, password: event.target.value }))}
+                  className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                  placeholder="Mínimo de 6 caracteres"
+                  autoComplete="new-password"
+                  minLength={6}
+                  required
+                />
+              </div>
+              <fieldset>
+                <legend className="dash mb-1.5 block text-xs font-semibold text-foreground">Função</legend>
+                <div className="grid grid-cols-2 gap-2">
+                  {EMPLOYEE_ROLE_OPTIONS.map(option => (
+                    <label
+                      key={option.value}
+                      className={`relative cursor-pointer rounded-xl border px-3 py-2 transition-colors ${
+                        newUser.role === option.value
+                          ? 'border-primary bg-primary/10'
+                          : 'border-input bg-card hover:bg-muted'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="employee-role"
+                        value={option.value}
+                        checked={newUser.role === option.value}
+                        onChange={() => setNewUser(current => ({ ...current, role: option.value }))}
+                        className="sr-only"
+                      />
+                      <span className="dash flex items-center gap-1.5 text-xs font-bold text-foreground">
+                        {newUser.role === option.value && <Check className="h-3.5 w-3.5 text-primary" aria-hidden="true" />}
+                        {option.label}
+                      </span>
+                      <span className="dash mt-0.5 block text-[10px] leading-snug text-muted-foreground">
+                        {option.description}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            </div>
+
+            {formError && (
+              <p role="alert" className="dash mt-3 rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                {formError}
+              </p>
+            )}
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="submit"
+                disabled={creating}
+                className="dash inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              >
+                {creating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
+                {creating ? 'Criando conta...' : 'Criar funcionário'}
+              </button>
+            </div>
+          </form>
+        )}
+
+        {listError && (
+          <p role="alert" className="dash m-4 rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+            {listError}
+          </p>
+        )}
+
+        {filteredProfiles.length === 0 ? (
+          <div className="px-4 py-10 text-center">
+            <div className="mx-auto mb-2 flex h-10 w-10 items-center justify-center rounded-xl border border-border bg-muted">
+              {search ? (
+                <Search className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+              ) : activeView === 'funcionarios' ? (
+                <BriefcaseBusiness className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+              ) : (
+                <UserRound className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+              )}
+            </div>
+            <p className="dash text-sm font-semibold text-foreground">
+              {search
+                ? 'Nenhum resultado encontrado'
+                : activeView === 'funcionarios'
+                  ? 'Nenhum funcionário cadastrado'
+                  : 'Nenhum cliente com acesso'}
+            </p>
+            <p className="dash mt-1 text-xs text-muted-foreground">
+              {search
+                ? 'Tente buscar por outro nome ou e-mail.'
+                : activeView === 'clientes'
+                  ? 'O acesso é liberado no cadastro de cada cliente.'
+                  : 'Cadastre o primeiro funcionário para começar.'}
+            </p>
           </div>
         ) : (
-          <div className="divide-y divide-slate-100">
-            {profiles.map((p, i) => {
-              const av = AVATAR_COLORS[i % AVATAR_COLORS.length]
-              const cfg = ROLE_CFG[p.role] ?? ROLE_CFG.cliente
+          <div className="divide-y divide-border" role="tabpanel">
+            {filteredProfiles.map(profile => {
+              const effectiveRole = roleOverrides[profile.id] ?? profile.role
+              const roleConfig = ROLE_CFG[effectiveRole]
+              const isEditableEmployee =
+                canManageEmployees &&
+                profile.id !== currentProfileId &&
+                (profile.role === 'admin' || profile.role === 'analista')
+
               return (
-                <div key={p.id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50/70 transition-colors">
-                  {/* Avatar */}
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 text-sm font-bold"
-                    style={{ background: av.bg, color: av.color, border: `1px solid ${av.color}30` }}
-                  >
-                    {p.name?.charAt(0)?.toUpperCase() ?? '?'}
+                <div key={profile.id} className="flex flex-col gap-3 px-4 py-3.5 transition-colors hover:bg-muted/40 sm:flex-row sm:items-center">
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border text-sm font-bold ${avatarClass(profile.name)}`}>
+                      {userInitial(profile.name)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2">
+                        <p className="dash truncate text-sm font-semibold text-foreground">{profile.name}</p>
+                        {profile.id === currentProfileId && (
+                          <span className="dash rounded-full bg-secondary px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-secondary-foreground">
+                            Você
+                          </span>
+                        )}
+                        {profile.is_active === false && (
+                          <span className="dash rounded-full bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                            Inativo
+                          </span>
+                        )}
+                      </div>
+                      <p className="dash truncate text-xs text-muted-foreground">{profile.email}</p>
+                    </div>
                   </div>
 
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <p className="dash text-sm font-semibold text-slate-800 truncate">{p.name}</p>
-                    <p className="dash text-xs text-slate-400 truncate">{p.email}</p>
+                  <div className="flex items-center justify-between gap-3 pl-[3.25rem] sm:min-w-64 sm:justify-end sm:pl-0">
+                    <p className="dash hidden text-right text-[10px] leading-tight text-muted-foreground md:block">
+                      {roleConfig.description}
+                    </p>
+                    {isEditableEmployee ? (
+                      <div className="relative shrink-0">
+                        <select
+                          value={effectiveRole}
+                          onChange={event => updateRole(profile, event.target.value as EmployeeRole)}
+                          disabled={updatingId === profile.id}
+                          aria-label={`Função de ${profile.name}`}
+                          className={`dash min-w-32 appearance-none rounded-full border py-1.5 pl-3 pr-8 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-wait disabled:opacity-60 ${roleConfig.badge}`}
+                        >
+                          <option value="admin">Administrador</option>
+                          <option value="analista">Analista</option>
+                        </select>
+                        {updatingId === profile.id && (
+                          <Loader2 className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin" aria-hidden="true" />
+                        )}
+                      </div>
+                    ) : (
+                      <span className={`dash shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold ${roleConfig.badge}`}>
+                        {roleConfig.label}
+                      </span>
+                    )}
                   </div>
-
-                  {/* Role select */}
-                  <select
-                    value={p.role}
-                    onChange={e => updateRole(p.id, e.target.value)}
-                    className="dash text-[11px] px-2.5 py-1 rounded-full font-bold border focus:outline-none cursor-pointer transition-all appearance-none text-center"
-                    style={{ background: cfg.bg, color: cfg.color, borderColor: cfg.border }}
-                  >
-                    {Object.entries(ROLE_CFG).map(([v, c]) => (
-                      <option key={v} value={v}>{c.label}</option>
-                    ))}
-                  </select>
                 </div>
               )
             })}
           </div>
         )}
 
-        {/* Add user trigger */}
-        <div className="px-4 py-3 border-t border-slate-100">
-          <button
-            onClick={() => { setShowCreate(v => !v); setError(null) }}
-            className="dash flex items-center gap-2 text-sm font-semibold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer"
-          >
-            {showCreate ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
-            {showCreate ? 'Cancelar' : 'Adicionar usuário'}
-          </button>
+        <div className="flex items-center justify-between border-t border-border bg-muted/30 px-4 py-2.5">
+          <p className="dash text-[11px] text-muted-foreground">
+            Exibindo {filteredProfiles.length} de {visibleProfiles.length}
+          </p>
+          {activeView === 'clientes' && (
+            <p className="dash text-[11px] font-medium text-primary">Acessos do portal</p>
+          )}
         </div>
       </div>
-
-      {/* Create form */}
-      {showCreate && (
-        <div className="bg-white rounded-2xl border border-indigo-200 shadow-sm overflow-hidden">
-          {/* Form header */}
-          <div
-            className="px-5 py-3.5 flex items-center justify-between"
-            style={{ background: 'linear-gradient(135deg, #6B3019 0%, #A14F2A 100%)' }}
-          >
-            <div>
-              <p className="dash text-sm font-bold text-white">Novo Usuário</p>
-              <p className="dash text-xs mt-0.5" style={{ color: 'rgba(255,255,255,0.5)' }}>Preencha os dados para criar a conta</p>
-            </div>
-            <button
-              onClick={() => { setShowCreate(false); setError(null) }}
-              className="p-1.5 rounded-lg transition-colors cursor-pointer"
-              style={{ background: 'rgba(255,255,255,0.1)' }}
-            >
-              <X className="w-4 h-4 text-white/70" />
-            </button>
-          </div>
-
-          <form onSubmit={createUser} className="px-5 py-4 space-y-3">
-            <div>
-              <label className="dash block text-xs font-semibold text-slate-600 mb-1.5">Nome</label>
-              <input
-                className={inpCls}
-                placeholder="Nome completo"
-                value={newUser.name}
-                onChange={e => setNewUser(p => ({ ...p, name: e.target.value }))}
-                required
-              />
-            </div>
-            <div>
-              <label className="dash block text-xs font-semibold text-slate-600 mb-1.5">E-mail</label>
-              <input
-                className={inpCls}
-                type="email"
-                placeholder="email@exemplo.com"
-                value={newUser.email}
-                onChange={e => setNewUser(p => ({ ...p, email: e.target.value }))}
-                required
-              />
-            </div>
-            <div>
-              <label className="dash block text-xs font-semibold text-slate-600 mb-1.5">Senha</label>
-              <input
-                className={inpCls}
-                type="password"
-                placeholder="Mínimo 6 caracteres"
-                value={newUser.password}
-                onChange={e => setNewUser(p => ({ ...p, password: e.target.value }))}
-                required
-              />
-            </div>
-            <div>
-              <label className="dash block text-xs font-semibold text-slate-600 mb-1.5">Perfil</label>
-              <select
-                className={selCls}
-                value={newUser.role}
-                onChange={e => setNewUser(p => ({ ...p, role: e.target.value }))}
-              >
-                <option value="admin">Admin</option>
-                <option value="analista">Analista</option>
-                <option value="cliente">Cliente</option>
-              </select>
-            </div>
-
-            {error && (
-              <p className="dash text-xs text-red-600 bg-red-50 rounded-xl px-3 py-2 border border-red-100">{error}</p>
-            )}
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="dash w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-70 cursor-pointer"
-              style={{ background: 'linear-gradient(135deg, #A14F2A 0%, #C97A52 100%)', boxShadow: '0 4px 14px rgba(161,79,42,0.28)' }}
-            >
-              {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-              {loading ? 'Criando...' : 'Criar usuário'}
-            </button>
-          </form>
-        </div>
-      )}
-    </div>
+    </section>
   )
 }

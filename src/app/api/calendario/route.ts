@@ -20,6 +20,7 @@ export async function GET(request: Request) {
     .select('*, clients(id, name), processes:processes!calendar_events_process_id_fkey(id, process_types(name, color, renewal_period_months))')
     .gte('event_date', start)
     .lte('event_date', end)
+    .neq('status', 'canceled')
     .order('event_date', { ascending: true })
     .order('event_time', { ascending: true, nullsFirst: true })
 

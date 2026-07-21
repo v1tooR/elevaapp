@@ -1,11 +1,11 @@
 'use client'
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import { Link2, Plus, X, ExternalLink } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import type { ProcessStage } from '@/types/database'
 
 const DOCUMENT_TYPES = [
   { value: 'laudo', label: 'Laudo Médico' },
@@ -17,6 +17,11 @@ const DOCUMENT_TYPES = [
   { value: 'procuracao', label: 'Procuração' },
   { value: 'certidao', label: 'Certidão' },
   { value: 'protocolo', label: 'Protocolo / Despacho' },
+  { value: 'laudo_imesc', label: 'Laudo IMESC' },
+  { value: 'protocolo_sivei', label: 'Protocolo SIVEI' },
+  { value: 'decisao_sefaz', label: 'Decisão da SEFAZ' },
+  { value: 'recurso_ipva', label: 'Recurso de IPVA' },
+  { value: 'ato_dispensa', label: 'Ato de dispensa/reaproveitamento' },
   { value: 'formulario', label: 'Formulário' },
   { value: 'outros', label: 'Outros' },
 ]
@@ -24,15 +29,16 @@ const DOCUMENT_TYPES = [
 interface Props {
   processId: string
   clientId: string
+  stages?: ProcessStage[]
   onUploadComplete?: () => void
 }
 
-export function DocumentUploader({ processId, clientId, onUploadComplete }: Props) {
+export function DocumentUploader({ processId, stages = [], onUploadComplete }: Props) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [form, setForm] = useState({ title: '', url: '', type: '' })
+  const [form, setForm] = useState({ title: '', url: '', type: '', stageId: '' })
 
   const set = (k: string, v: string) => setForm(p => ({ ...p, [k]: v }))
 
@@ -47,30 +53,22 @@ export function DocumentUploader({ processId, clientId, onUploadComplete }: Prop
     if (!form.url.trim() || !isValidDriveUrl(form.url)) { setError('Informe um link válido.'); return }
 
     setLoading(true)
-    const supabase = createClient()
-
-    const { error: insertErr } = await supabase.from('documents').insert({
-      client_id: clientId,
-      process_id: processId,
-      file_name: form.title.trim(),
-      file_url: form.url.trim(),
-      storage_path: null,
-      document_type: form.type || null,
-      status: 'received',
+    const response = await fetch(`/api/processos/${processId}/documents`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title: form.title.trim(),
+        url: form.url.trim(),
+        type: form.type || null,
+        stageId: form.stageId || null,
+      }),
     })
-
-    if (insertErr) { setError(insertErr.message); setLoading(false); return }
-
-    await supabase.from('process_history').insert({
-      process_id: processId,
-      action_type: 'document_uploaded',
-      new_value: form.title.trim(),
-      note: `Link adicionado: ${form.title.trim()}`,
-    })
+    const result = await response.json()
+    if (!response.ok) { setError(result.error ?? 'Não foi possível salvar o documento.'); setLoading(false); return }
 
     setLoading(false)
     setOpen(false)
-    setForm({ title: '', url: '', type: '' })
+    setForm({ title: '', url: '', type: '', stageId: '' })
     onUploadComplete?.()
     router.refresh()
   }
@@ -116,6 +114,17 @@ export function DocumentUploader({ processId, clientId, onUploadComplete }: Prop
             value={form.type}
             onChange={e => set('type', e.target.value)}
           />
+          {stages.length > 0 && (
+            <Select
+              label="Etapa relacionada"
+              options={[...stages]
+                .sort((a, b) => a.sort_order - b.sort_order)
+                .map(stage => ({ value: stage.id, label: stage.label }))}
+              placeholder="Selecione (opcional)"
+              value={form.stageId}
+              onChange={e => set('stageId', e.target.value)}
+            />
+          )}
           {error && <p className="text-xs text-red-600">{error}</p>}
           <div className="flex gap-2">
             <Button type="submit" loading={loading}>Salvar link</Button>

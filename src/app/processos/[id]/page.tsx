@@ -4,13 +4,22 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, FileText, Clock, RefreshCw, Link2, ArrowUpRight, DollarSign, Calendar, ListChecks } from 'lucide-react'
 import { ProcessStatusBadge, PaymentStatusBadge } from '@/components/shared/status-badge'
-import { formatDate, formatDateTime, formatCurrency, HISTORY_ACTION_LABELS } from '@/lib/utils'
+import { formatDate, formatDateTime, formatCurrency, getCustomFieldOptionLabel, HISTORY_ACTION_LABELS } from '@/lib/utils'
 import { EditProcessModal } from '@/components/processos/edit-process-modal'
 import { DocumentUploader } from '@/components/shared/document-uploader'
 import { CnhStagesPanel } from '@/components/processos/cnh-stages-panel'
 import { InitCnhStagesButton } from '@/components/processos/init-cnh-stages-button'
+import { IpvaStagesPanel } from '@/components/processos/ipva-stages-panel'
 import { EligibilityReviewPanel } from '@/components/processos/eligibility-review-panel'
-import { isEligibilityProcess, type EligibilityAnalysis } from '@/lib/eligibility'
+import {
+  analyzeEligibility,
+  isEligibilityProcess,
+  type EligibilityAnalysis,
+  type ImescSeverity,
+  type ImescStatus,
+  type SefazIpvaStatus,
+} from '@/lib/eligibility'
+import type { Document, EligibilityStatus, LegalRuleVersion, ProcessCustomField, ProcessStage } from '@/types/database'
 
 const ACTION_ICONS: Record<string, string> = {
   created: '🟢',
@@ -34,10 +43,11 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
     { data: documents },
     { data: events },
     { data: stages },
+    { data: legalRules },
   ] = await Promise.all([
     supabase.from('processes').select(`
       *,
-      clients(id, name, cpf, phone, email, disability_type, client_type, medical_assessment_status, requires_practical_exam),
+      clients(id, name, cpf, phone, email, state, disability_type, disability_types, disability_severity, client_type, cnh_status, cnh_restrictions, medical_assessment_status, requires_adapted_vehicle, requires_practical_exam, has_medical_report, authorized_drivers),
       process_types(*),
       responsible_user:profiles!responsible_user_id(id, name),
       custom_fields:process_custom_fields(*),
@@ -48,6 +58,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
     supabase.from('documents').select('*').eq('process_id', id).order('created_at', { ascending: false }),
     supabase.from('calendar_events').select('*').eq('process_id', id).order('event_date', { ascending: true }).limit(5),
     supabase.from('process_stages').select('*').eq('process_id', id).order('sort_order'),
+    supabase.from('legal_rule_versions').select('*').eq('process_type_slug', 'processo_ipva').eq('is_active', true).order('effective_from', { ascending: false }),
   ])
 
   if (processError) {
@@ -60,8 +71,45 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
   const client = process.clients as any
   const responsible = process.responsible_user as any
   const financials = Array.isArray(process.financials) ? process.financials[0] : process.financials
-  const customFields = Array.isArray(process.custom_fields) ? process.custom_fields : []
+  const customFields = (Array.isArray(process.custom_fields) ? process.custom_fields : []) as ProcessCustomField[]
+  const processStages = (stages ?? []) as ProcessStage[]
+  const processDocuments = (documents ?? []) as Document[]
   const typeColor = pt?.color ?? '#3B82F6'
+  const customFieldValues = Object.fromEntries(
+    customFields.map(field => [field.field_name, field.field_value ?? '']),
+  ) as Record<string, string>
+  const liveEligibilityAnalysis = isEligibilityProcess(pt?.slug ?? '')
+    ? analyzeEligibility({
+        processTypeSlug: pt.slug,
+        state: process.jurisdiction_state || client?.state,
+        vehicleCondition: process.vehicle_condition,
+        clientType: client?.client_type,
+        disabilityType: client?.disability_type,
+        disabilityTypes: client?.disability_types,
+        disabilitySeverity: client?.disability_severity,
+        cnhStatus: client?.cnh_status,
+        cnhRestrictions: client?.cnh_restrictions,
+        medicalAssessmentStatus: client?.medical_assessment_status,
+        requiresAdaptedVehicle: client?.requires_adapted_vehicle,
+        requiresPracticalExam: client?.requires_practical_exam,
+        hasMedicalReport: client?.has_medical_report,
+        authorizedDrivers: client?.authorized_drivers,
+        imescStatus: (customFieldValues.imesc_status || null) as ImescStatus | null,
+        imescReportIssuedAt: customFieldValues.imesc_data_laudo || null,
+        imescSeverity: (customFieldValues.imesc_grau || null) as ImescSeverity | null,
+        sefazIpvaStatus: (customFieldValues.sefaz_ipva_status || null) as SefazIpvaStatus | null,
+        sefazDecisionNotifiedAt: customFieldValues.sefaz_data_ciencia || null,
+        ipvaAppealFiledAt: customFieldValues.recurso_ipva_protocolado_em || null,
+        ipvaAppealProtocol: customFieldValues.recurso_ipva_protocolo || null,
+      })
+    : null
+  const eligibilityAnalysis = liveEligibilityAnalysis
+    ?? ((process.eligibility_analysis as unknown as EligibilityAnalysis) ?? null)
+  const displayedEligibilityStatus = (
+    process.eligibility_status === 'elegibilidade_confirmada'
+      ? process.eligibility_status
+      : eligibilityAnalysis?.status ?? process.eligibility_status
+  ) as EligibilityStatus | null
 
   return (
     <>
@@ -250,7 +298,9 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                             ? formatCurrency(parseFloat(field.field_value))
                             : field.field_type === 'date' && field.field_value
                               ? formatDate(field.field_value)
-                              : field.field_value ?? '—'}
+                              : field.field_type === 'select' && field.field_value
+                                ? getCustomFieldOptionLabel(pt?.slug ?? '', field.field_name, field.field_value)
+                                : field.field_value ?? '—'}
                       </span>
                     </div>
                   ))}
@@ -307,15 +357,35 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
           {/* ── Right Column ─────────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-5">
 
-            {isEligibilityProcess(pt?.slug ?? '') && process.eligibility_status && profile?.id && (
+            {isEligibilityProcess(pt?.slug ?? '') && displayedEligibilityStatus && profile?.id && (
               <EligibilityReviewPanel
                 processId={process.id}
                 reviewerId={profile.id}
-                status={process.eligibility_status as any}
-                analysis={(process.eligibility_analysis as unknown as EligibilityAnalysis) ?? null}
+                status={displayedEligibilityStatus}
+                analysis={eligibilityAnalysis}
                 reviewNotes={process.eligibility_review_notes}
                 reviewedAt={process.eligibility_reviewed_at}
               />
+            )}
+
+            {pt?.slug === 'processo_ipva' && (process.jurisdiction_state || client?.state)?.toUpperCase() === 'SP' && (
+              <div className="anim anim-1 overflow-hidden rounded-2xl bg-white" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                <div className="flex items-center gap-2.5 border-b border-slate-50 px-5 py-4">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-pink-50">
+                    <ListChecks className="h-3.5 w-3.5 text-pink-600" />
+                  </div>
+                  <div>
+                    <h2 className="dash font-bold text-slate-900">Workflow IMESC/IPVA</h2>
+                    <p className="dash mt-0.5 text-xs text-slate-400">Etapas, prazos, documentos e fontes oficiais sincronizados</p>
+                  </div>
+                </div>
+                <IpvaStagesPanel
+                  processId={process.id}
+                  stages={processStages}
+                  documents={processDocuments}
+                  legalRules={(legalRules ?? []) as LegalRuleVersion[]}
+                />
+              </div>
             )}
 
             {/* CNH Especial stages */}
@@ -343,7 +413,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                 <div className="p-4">
                   {stages && stages.length > 0 ? (
                     <CnhStagesPanel
-                      stages={stages as any}
+                      stages={processStages}
                       processId={process.id}
                       clientId={client?.id ?? ''}
                       clientName={client?.name ?? ''}
@@ -366,7 +436,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                 <p className="text-xs text-slate-400 mt-0.5 dash">{documents?.length ?? 0} arquivo{documents?.length !== 1 ? 's' : ''} enviado{documents?.length !== 1 ? 's' : ''}</p>
               </div>
               <div className="p-4">
-                <DocumentUploader processId={process.id} clientId={client?.id} />
+                <DocumentUploader processId={process.id} clientId={client?.id} stages={processStages} />
               </div>
               {documents && documents.length > 0 && (
                 <div className="border-t border-slate-50">

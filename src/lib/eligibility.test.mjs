@@ -120,6 +120,11 @@ test('IPVA-SP de veículo usado registra a particularidade do ano do pedido', ()
     vehicleCondition: 'usado',
     hasMedicalReport: true,
     cnhStatus: 'comum',
+    imescStatus: 'laudo_disponivel',
+    imescReportIssuedAt: '2026-01-10',
+    imescSeverity: 'moderada',
+    sefazIpvaStatus: 'em_analise',
+    analysisDate: '2026-07-20',
   })
   assert.equal(analysis?.status, 'requer_validacao')
   assert.ok(analysis?.reasons.some(reason => reason.includes('ano do pedido')))
@@ -134,8 +139,105 @@ test('IPVA sem grau funcional permanece pendente', () => {
     vehicleCondition: 'usado',
     hasMedicalReport: true,
     cnhStatus: 'comum',
+    imescStatus: 'laudo_disponivel',
+    imescReportIssuedAt: '2026-01-10',
+    sefazIpvaStatus: 'em_analise',
+    analysisDate: '2026-07-20',
   })
   assert.equal(analysis?.status, 'pendente_informacoes')
+})
+
+test('IPVA-SP sem situação do IMESC pede o controle específico da perícia', () => {
+  const analysis = analyzeEligibility({
+    processTypeSlug: 'processo_ipva',
+    state: 'SP',
+    clientType: 'condutor',
+    disabilityType: 'fisica',
+    vehicleCondition: 'usado',
+    hasMedicalReport: true,
+    cnhStatus: 'comum',
+    sefazIpvaStatus: 'nao_protocolado',
+  })
+  assert.equal(analysis?.status, 'pendente_informacoes')
+  assert.ok(analysis?.missingInformation.some(item => item.includes('situação da perícia')))
+  assert.ok((analysis?.sources.length ?? 0) >= 2)
+})
+
+test('grau leve no IMESC exige revisão humana e não bloqueia automaticamente', () => {
+  const analysis = analyzeEligibility({
+    processTypeSlug: 'processo_ipva',
+    state: 'SP',
+    clientType: 'condutor',
+    disabilityType: 'fisica',
+    vehicleCondition: 'usado',
+    cnhStatus: 'comum',
+    imescStatus: 'laudo_disponivel',
+    imescReportIssuedAt: '2026-01-10',
+    imescSeverity: 'leve',
+    sefazIpvaStatus: 'em_analise',
+    analysisDate: '2026-07-20',
+  })
+  assert.equal(analysis?.status, 'requer_validacao')
+  assert.ok(analysis?.reasons.some(reason => reason.includes('participação social')))
+})
+
+test('laudo IMESC segue a validade geral de cinco anos', () => {
+  const analysis = analyzeEligibility({
+    processTypeSlug: 'processo_ipva',
+    state: 'SP',
+    clientType: 'condutor',
+    disabilityType: 'fisica',
+    vehicleCondition: 'usado',
+    cnhStatus: 'comum',
+    imescStatus: 'laudo_disponivel',
+    imescReportIssuedAt: '2020-07-19',
+    imescSeverity: 'moderada',
+    sefazIpvaStatus: 'em_analise',
+    analysisDate: '2026-07-20',
+  })
+  assert.equal(analysis?.status, 'pendente_informacoes')
+  assert.ok(analysis?.missingInformation.some(item => item.includes('validade geral de 5 anos')))
+})
+
+test('indeferimento de IPVA calcula recurso a partir da ciência da decisão', () => {
+  const analysis = analyzeEligibility({
+    processTypeSlug: 'processo_ipva',
+    state: 'SP',
+    clientType: 'condutor',
+    disabilityType: 'fisica',
+    vehicleCondition: 'usado',
+    cnhStatus: 'comum',
+    imescStatus: 'laudo_disponivel',
+    imescReportIssuedAt: '2026-01-10',
+    imescSeverity: 'moderada',
+    sefazIpvaStatus: 'indeferido',
+    sefazDecisionNotifiedAt: '2026-07-01',
+    analysisDate: '2026-07-20',
+  })
+  assert.equal(analysis?.status, 'provavelmente_nao_elegivel')
+  assert.ok(analysis?.reasons.some(reason => reason.includes('31/07/2026')))
+  assert.ok(analysis?.recommendations.some(item => item.includes('protocolar o recurso')))
+})
+
+test('recurso de IPVA protocolado mantém o caso em validação', () => {
+  const analysis = analyzeEligibility({
+    processTypeSlug: 'processo_ipva',
+    state: 'SP',
+    clientType: 'condutor',
+    disabilityType: 'fisica',
+    vehicleCondition: 'usado',
+    cnhStatus: 'comum',
+    imescStatus: 'laudo_disponivel',
+    imescReportIssuedAt: '2026-01-10',
+    imescSeverity: 'moderada',
+    sefazIpvaStatus: 'indeferido',
+    sefazDecisionNotifiedAt: '2026-07-01',
+    ipvaAppealFiledAt: '2026-07-15',
+    ipvaAppealProtocol: 'SIPET-123',
+    analysisDate: '2026-07-20',
+  })
+  assert.equal(analysis?.status, 'requer_validacao')
+  assert.ok(analysis?.reasons.some(reason => reason.includes('15/07/2026')))
 })
 
 test('benefício de aquisição não é presumido para veículo usado', () => {

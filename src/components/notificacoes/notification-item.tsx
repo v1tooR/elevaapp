@@ -75,7 +75,7 @@ export function NotificationItem({ notification }: { notification: any }) {
           </p>
           <div className="flex items-center gap-2 shrink-0">
             <span className="dash text-[11px] text-slate-400 whitespace-nowrap">
-              {relativeTime(notification.created_at)}
+              {relativeTime(notification.available_at ?? notification.created_at)}
             </span>
             {unread && (
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: cfg.dot }} />

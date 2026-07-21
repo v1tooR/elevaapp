@@ -17,6 +17,8 @@ export function MarkAllReadButton({ profileId }: { profileId: string }) {
       .update({ is_read: true })
       .eq('user_id', profileId)
       .eq('is_read', false)
+      .eq('is_canceled', false)
+      .lte('available_at', new Date().toISOString())
     setLoading(false)
     router.refresh()
   }

@@ -54,7 +54,9 @@ export function Header({ onMenuClick, profile }: HeaderProps) {
       .from('notifications')
       .select('*')
       .eq('user_id', profile.id)
-      .order('created_at', { ascending: false })
+      .eq('is_canceled', false)
+      .lte('available_at', new Date().toISOString())
+      .order('available_at', { ascending: false })
       .limit(8)
     setNotifications(data ?? [])
   }, [profile])
@@ -98,6 +100,8 @@ export function Header({ onMenuClick, profile }: HeaderProps) {
       .update({ is_read: true })
       .eq('user_id', profile.id)
       .eq('is_read', false)
+      .eq('is_canceled', false)
+      .lte('available_at', new Date().toISOString())
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
     setMarkingAll(false)
     router.refresh()
@@ -260,7 +264,7 @@ export function Header({ onMenuClick, profile }: HeaderProps) {
                             {n.title}
                           </p>
                           <span className="text-[10px] text-slate-400 whitespace-nowrap shrink-0 mt-0.5">
-                            {relativeTime(n.created_at)}
+                            {relativeTime(n.available_at ?? n.created_at)}
                           </span>
                         </div>
                         {n.message && (

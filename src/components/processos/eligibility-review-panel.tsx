@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, CheckCircle2, ClipboardCheck, Loader2, RotateCcw, ShieldCheck } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ClipboardCheck, ExternalLink, Loader2, RotateCcw, ShieldCheck } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import type { EligibilityAnalysis } from '@/lib/eligibility'
 import type { EligibilityStatus } from '@/types/database'
@@ -96,6 +96,26 @@ export function EligibilityReviewPanel({ processId, reviewerId, status, analysis
               <div className="rounded-xl border border-blue-200 bg-blue-50 p-3">
                 <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-blue-800"><ClipboardCheck className="h-3.5 w-3.5" /> Critérios observados</p>
                 <ul className="space-y-1">{analysis.reasons.map(item => <li key={item} className="text-[11px] leading-relaxed text-blue-800">• {item}</li>)}</ul>
+              </div>
+            )}
+            {analysis.recommendations.length > 0 && (
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 sm:col-span-2">
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-bold text-emerald-800"><CheckCircle2 className="h-3.5 w-3.5" /> Próximas verificações</p>
+                <ul className="space-y-1">{analysis.recommendations.map(item => <li key={item} className="text-[11px] leading-relaxed text-emerald-800">• {item}</li>)}</ul>
+              </div>
+            )}
+            {analysis.sources?.length > 0 && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 sm:col-span-2">
+                <p className="mb-2 text-xs font-bold text-slate-700">Base oficial consultada</p>
+                <ul className="space-y-1">
+                  {analysis.sources.map(source => (
+                    <li key={source.url}>
+                      <a href={source.url} target="_blank" rel="noreferrer" className="inline-flex items-start gap-1 text-[11px] leading-relaxed text-blue-700 hover:underline">
+                        {source.title}<ExternalLink className="mt-0.5 h-3 w-3 shrink-0" />
+                      </a>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>

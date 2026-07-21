@@ -20,12 +20,14 @@ export default async function MinhaAreaPage() {
     supabase.from('processes')
       .select('*, process_types(name, color, slug)')
       .eq('client_id', clientId)
-      .order('created_at', { ascending: false })
+      .order('available_at', { ascending: false })
       .limit(10),
     supabase.from('notifications')
       .select('*')
       .eq('user_id', profile!.id)
       .eq('is_read', false)
+      .eq('is_canceled', false)
+      .lte('available_at', new Date().toISOString())
       .order('created_at', { ascending: false })
       .limit(5),
   ]) : [{ data: [] }, { data: [] }]

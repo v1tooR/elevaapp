@@ -20,7 +20,9 @@ export default async function ClienteNotificacoesPage({
     .from('notifications')
     .select('*, clients(name), processes(id, process_types(name))')
     .eq('user_id', profile!.id)
-    .order('created_at', { ascending: false })
+    .eq('is_canceled', false)
+    .lte('available_at', new Date().toISOString())
+    .order('available_at', { ascending: false })
     .limit(50)
 
   const notifications = allNotifs ?? []

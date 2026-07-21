@@ -24,9 +24,9 @@ function groupByDate(notifications: any[]) {
   weekStart.setDate(weekStart.getDate() - 6)
 
   return {
-    hoje:   notifications.filter(n => new Date(n.created_at) >= todayStart),
-    semana: notifications.filter(n => new Date(n.created_at) >= weekStart && new Date(n.created_at) < todayStart),
-    antigas:notifications.filter(n => new Date(n.created_at) < weekStart),
+    hoje:   notifications.filter(n => new Date(n.available_at ?? n.created_at) >= todayStart),
+    semana: notifications.filter(n => new Date(n.available_at ?? n.created_at) >= weekStart && new Date(n.available_at ?? n.created_at) < todayStart),
+    antigas:notifications.filter(n => new Date(n.available_at ?? n.created_at) < weekStart),
   }
 }
 
@@ -40,13 +40,16 @@ export default async function NotificacoesPage({ searchParams }: { searchParams:
 
   const todayStart = new Date()
   todayStart.setHours(0, 0, 0, 0)
+  const availableNow = new Date().toISOString()
 
   // Fetch all for stat counts
   const { data: allNotifs } = await supabase
     .from('notifications')
-    .select('id, type, is_read, created_at')
+    .select('id, type, is_read, created_at, available_at')
     .eq('user_id', profile!.id)
-    .order('created_at', { ascending: false })
+    .eq('is_canceled', false)
+    .lte('available_at', availableNow)
+    .order('available_at', { ascending: false })
     .limit(500)
 
   // Fetch filtered for display
@@ -54,7 +57,9 @@ export default async function NotificacoesPage({ searchParams }: { searchParams:
     .from('notifications')
     .select('*, clients(id, name), processes(id, process_types(name))')
     .eq('user_id', profile!.id)
-    .order('created_at', { ascending: false })
+    .eq('is_canceled', false)
+    .lte('available_at', availableNow)
+    .order('available_at', { ascending: false })
     .limit(100)
 
   if (typeFilter) query = (query as any).eq('type', typeFilter)
@@ -62,7 +67,7 @@ export default async function NotificacoesPage({ searchParams }: { searchParams:
 
   const all = allNotifs ?? []
   const unreadCount = all.filter(n => !n.is_read).length
-  const todayCount  = all.filter(n => new Date(n.created_at) >= todayStart).length
+  const todayCount  = all.filter(n => new Date(n.available_at ?? n.created_at) >= todayStart).length
   const typeCounts  = all.reduce((acc: Record<string, number>, n) => {
     acc[n.type] = (acc[n.type] ?? 0) + 1
     return acc

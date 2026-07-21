@@ -1,7 +1,6 @@
 'use client'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import {
   ChevronDown, ChevronUp, AlertCircle, Calendar,
   CheckCircle2, XCircle, Clock, FileCheck, Car,
@@ -10,12 +9,7 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import {
-  syncProcessMacroStatus,
-  handlePericiaReprovada,
-  handleEmissaoConcluida,
-} from '@/lib/cnh-stages'
-import type { ProcessStage, StageStatus } from '@/types/database'
+import type { ProcessStage } from '@/types/database'
 import { formatDate } from '@/lib/utils'
 
 interface Props {
@@ -105,7 +99,7 @@ function isComplete(status: string) {
   return ['concluido', 'aprovado', 'nao_aplicavel'].includes(status)
 }
 
-export function CnhStagesPanel({ stages, processId, clientId, clientName, responsibleUserId }: Props) {
+export function CnhStagesPanel({ stages, processId }: Props) {
   const router = useRouter()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loadingId, setLoadingId] = useState<string | null>(null)
@@ -147,95 +141,22 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
     setLoadingCalId(key)
     setErrors(prev => ({ ...prev, [stage.id]: '' }))
     setCalSuccess(prev => ({ ...prev, [stage.id]: '' }))
-    const supabase = createClient()
-    const eventTitle = `${stage.label} — ${clientName}`
-
     try {
-      // A data da etapa e o evento precisam falhar de forma visível, nunca simular sucesso.
-      const { error: stageError } = await supabase
-        .from('process_stages')
-        .update({ scheduled_date: edit.scheduled_date })
-        .eq('id', stage.id)
-
-      if (stageError) throw stageError
-
-      // Uma etapa representa um único compromisso. "Notificar cliente" compartilha
-      // esse mesmo evento com o cliente, em vez de criar uma cópia para a equipe.
-      const { data: existingEvents, error: lookupError } = await supabase
-        .from('calendar_events')
-        .select('id, visibility')
-        .eq('process_id', processId)
-        .eq('client_id', clientId)
-        .eq('title', eventTitle)
-        .order('created_at', { ascending: true })
-
-      if (lookupError) throw lookupError
-
-      const existingEvent = existingEvents?.[0]
-      const visibility =
-        type === 'client' || existingEvent?.visibility === 'client_visible'
-          ? 'client_visible'
-          : 'admin_only'
-
-      const eventValues = {
-        title:               eventTitle,
-        event_date:          edit.scheduled_date,
-        event_type:          'normal' as const,
-        client_id:           clientId,
-        process_id:          processId,
-        responsible_user_id: responsibleUserId ?? null,
-        visibility,
-        status:              'pending' as const,
-      }
-
-      if (existingEvent) {
-        const { error: eventError } = await supabase
-          .from('calendar_events')
-          .update(eventValues)
-          .eq('id', existingEvent.id)
-
-        if (eventError) throw eventError
-
-        const duplicateIds = existingEvents.slice(1).map(event => event.id)
-        if (duplicateIds.length > 0) {
-          const { error: dedupeError } = await supabase
-            .from('calendar_events')
-            .delete()
-            .in('id', duplicateIds)
-
-          if (dedupeError) throw dedupeError
-        }
-      } else {
-        const { error: eventError } = await supabase
-          .from('calendar_events')
-          .insert(eventValues)
-
-        if (eventError) throw eventError
-      }
-
-      if (type === 'client') {
-        const { data: clientRecord, error: clientError } = await supabase
-          .from('clients')
-          .select('profile_id')
-          .eq('id', clientId)
-          .single()
-
-        if (clientError) throw clientError
-        if (!clientRecord.profile_id) {
-          throw new Error('O cliente ainda não possui acesso ao portal para receber a notificação.')
-        }
-
-        const { error: notificationError } = await supabase.from('notifications').insert({
-          user_id:    clientRecord.profile_id,
-          client_id:  clientId,
-          process_id: processId,
-          title:      `Agendamento — ${stage.label}`,
-          message:    `Você tem ${stage.label.toLowerCase()} agendado para ${formatDate(edit.scheduled_date)}.`,
-          type:       'info' as const,
-        })
-
-        if (notificationError) throw notificationError
-      }
+      const response = await fetch(`/api/processos/${processId}/stages/${stage.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: edit.status,
+          scheduledDate: edit.scheduled_date,
+          attended: edit.attended,
+          result: edit.result || null,
+          notes: edit.notes || null,
+          data: edit.data,
+          notifyClient: type === 'client',
+        }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Não foi possível salvar o agendamento.')
 
       setCalSuccess(prev => ({
         ...prev,
@@ -267,167 +188,57 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
       }))
       return
     }
-    setLoadingId(stage.id)
-    setErrors(prev => ({ ...prev, [stage.id]: '' }))
-    const supabase = createClient()
-
-    const isTerminal = ['concluido', 'aprovado', 'reprovado'].includes(edit.status)
-    const { error: updateErr } = await supabase
-      .from('process_stages')
-      .update({
-        status:         edit.status,
-        scheduled_date: edit.scheduled_date || null,
-        attended:       edit.attended,
-        result:         edit.result || null,
-        notes:          edit.notes || null,
-        data:           edit.data,
-        ...(isTerminal && !stage.completed_at ? { completed_at: new Date().toISOString() } : {}),
-      })
-      .eq('id', stage.id)
-
-    if (updateErr) {
-      setErrors(prev => ({ ...prev, [stage.id]: updateErr.message }))
-      setLoadingId(null)
+    if (
+      stage.stage_key === 'pericia_medica' &&
+      (edit.result === 'reprovado' || edit.status === 'reprovado') &&
+      !edit.data.decision_notified_at
+    ) {
+      setErrors(prev => ({
+        ...prev,
+        [stage.id]: 'Informe a data da ciência da reprovação para calcular o prazo recursal.',
+      }))
       return
     }
-
-    await syncProcessMacroStatus(supabase, processId, stage.stage_key, edit.status as StageStatus)
-
-    if (stage.stage_key === 'pericia_medica' && (edit.result === 'reprovado' || edit.status === 'reprovado')) {
-      await handlePericiaReprovada(supabase, processId)
+    if (
+      stage.stage_key === 'emissao_cnh' &&
+      edit.status === 'concluido' &&
+      !edit.data.vencimento_cnh
+    ) {
+      setErrors(prev => ({
+        ...prev,
+        [stage.id]: 'Informe o vencimento impresso na CNH antes de concluir a emissão.',
+      }))
+      return
     }
-    if (stage.stage_key === 'pericia_medica' && (edit.result === 'aprovado' || edit.status === 'aprovado')) {
-      const requiresPracticalExam = edit.data.requires_practical_exam
-      const requiresAdaptedVehicle = edit.data.requires_adapted_vehicle
-      const restrictions = String(edit.data.restricoes ?? '')
-        .split(',')
-        .map(value => value.trim().toUpperCase())
-        .filter(Boolean)
-
-      await supabase.from('clients').update({
-        medical_assessment_status: restrictions.length > 0 ? 'apto_com_restricoes' : 'apto',
-        requires_practical_exam: typeof requiresPracticalExam === 'boolean' ? requiresPracticalExam : null,
-        requires_adapted_vehicle: typeof requiresAdaptedVehicle === 'boolean' ? requiresAdaptedVehicle : null,
-        cnh_restrictions: restrictions,
-      }).eq('id', clientId)
-
-      if (typeof requiresPracticalExam === 'boolean') {
-        await supabase.from('process_stages').update({
-          status: requiresPracticalExam ? 'pendente' : 'nao_aplicavel',
-          label: 'Exame Prático',
-        }).eq('process_id', processId).eq('stage_key', 'exame_pratico')
-      }
-
-      if (restrictions.length > 0) {
-        const { data: issuanceStage } = await supabase
-          .from('process_stages')
-          .select('id, data')
-          .eq('process_id', processId)
-          .eq('stage_key', 'emissao_cnh')
-          .maybeSingle()
-        if (issuanceStage) {
-          await supabase.from('process_stages').update({
-            data: { ...(issuanceStage.data as Record<string, unknown>), restricoes: restrictions.join(', ') },
-          }).eq('id', issuanceStage.id)
-        }
-      }
-    }
-    if (stage.stage_key === 'emissao_cnh' && edit.status === 'concluido') {
-      const restrictions = String(edit.data.restricoes ?? '')
-        .split(',')
-        .map(value => value.trim().toUpperCase())
-        .filter(Boolean)
-      await supabase.from('clients').update({
-        has_cnh_especial: true,
-        cnh_status: 'com_restricoes',
-        cnh_restrictions: restrictions,
-      }).eq('id', clientId)
-      await handleEmissaoConcluida(supabase, processId)
-    }
-
-    await supabase.from('process_history').insert({
-      process_id:  processId,
-      action_type: 'updated',
-      new_value:   edit.status,
-      note:        `Etapa "${stage.label}" → ${STATUS_LABEL[edit.status] ?? edit.status}`,
-    })
-
-    // ── Auto calendar + notification when scheduled date is set or changed ───
-    const dateChanged =
-      HAS_SCHEDULED_DATE.has(stage.stage_key) &&
-      edit.scheduled_date &&
-      edit.scheduled_date !== (stage.scheduled_date ?? '')
-
-    if (dateChanged) {
-      // Remove eventos client_visible anteriores desta etapa (evita duplicatas)
-      await supabase
-        .from('calendar_events')
-        .delete()
-        .eq('process_id', processId)
-        .eq('client_id', clientId)
-        .eq('visibility', 'client_visible')
-        .ilike('title', `%${stage.label}%`)
-
-      // Cria evento na agenda do cliente
-      await supabase.from('calendar_events').insert({
-        title:               `${stage.label} — ${clientName}`,
-        event_date:          edit.scheduled_date,
-        event_type:          'normal' as const,
-        client_id:           clientId,
-        process_id:          processId,
-        responsible_user_id: responsibleUserId ?? null,
-        visibility:          'client_visible',
-        status:              'pending',
+    setLoadingId(stage.id)
+    setErrors(prev => ({ ...prev, [stage.id]: '' }))
+    try {
+      const response = await fetch(`/api/processos/${processId}/stages/${stage.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: edit.status,
+          scheduledDate: edit.scheduled_date || null,
+          attended: edit.attended,
+          result: edit.result || null,
+          notes: edit.notes || null,
+          data: edit.data,
+          notifyClient: true,
+        }),
       })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Não foi possível salvar a etapa.')
 
-      // Busca profile_id do cliente (pode ser reaproveitado abaixo)
-      const { data: clientRecord } = await supabase
-        .from('clients')
-        .select('profile_id')
-        .eq('id', clientId)
-        .single()
-
-      if (clientRecord?.profile_id) {
-        await supabase.from('notifications').insert({
-          user_id:    clientRecord.profile_id,
-          client_id:  clientId,
-          process_id: processId,
-          title:      `Agendamento confirmado — ${stage.label}`,
-          message:    `Sua ${stage.label.toLowerCase()} está agendada para ${formatDate(edit.scheduled_date)}. Fique atento ao dia e horário.`,
-          type:       'info' as const,
-        })
-      }
+      setActiveId(null)
+      router.refresh()
+    } catch (error) {
+      setErrors(prev => ({
+        ...prev,
+        [stage.id]: error instanceof Error ? error.message : 'Não foi possível salvar a etapa.',
+      }))
+    } finally {
+      setLoadingId(null)
     }
-
-    // ── Status change notification ───────────────────────────────────────────
-    const statusChanged = stage.status !== (edit.status as StageStatus)
-    const alreadyHandled =
-      (stage.stage_key === 'pericia_medica' && edit.result === 'reprovado') ||
-      (stage.stage_key === 'emissao_cnh' && edit.status === 'concluido')
-    if (statusChanged && !alreadyHandled && ['em_andamento', 'aprovado', 'reprovado', 'concluido'].includes(edit.status)) {
-      const { data: clientRecord } = await supabase
-        .from('clients').select('profile_id').eq('id', clientId).single()
-      if (clientRecord?.profile_id) {
-        const msgMap: Record<string, string> = {
-          em_andamento: `A etapa "${stage.label}" entrou em andamento no seu processo CNH Especial.`,
-          aprovado:     `Boa notícia! A etapa "${stage.label}" foi aprovada.`,
-          reprovado:    `A etapa "${stage.label}" não foi aprovada. Entraremos em contato em breve.`,
-          concluido:    `A etapa "${stage.label}" foi concluída com sucesso.`,
-        }
-        await supabase.from('notifications').insert({
-          user_id:    clientRecord.profile_id,
-          client_id:  clientId,
-          process_id: processId,
-          title:      `CNH Especial — ${stage.label}`,
-          message:    msgMap[edit.status] ?? `Etapa "${stage.label}" atualizada.`,
-          type:       edit.status === 'reprovado' ? 'warning' : 'success',
-        })
-      }
-    }
-
-    setLoadingId(null)
-    setActiveId(null)
-    router.refresh()
   }
 
   const sorted = [...stages].sort((a, b) => a.sort_order - b.sort_order)
@@ -861,6 +672,18 @@ export function CnhStagesPanel({ stages, processId, clientId, clientName, respon
                             </div>
                           ))}
                         </div>
+                        {(edit.result === 'reprovado' || edit.status === 'reprovado') && (
+                          <div className="space-y-1.5 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                            <p className="text-xs font-semibold text-amber-900">Data da ciência da reprovação *</p>
+                            <input
+                              type="date"
+                              value={(edit.data.decision_notified_at as string) ?? ''}
+                              onChange={e => updateData(stage, 'decision_notified_at', e.target.value)}
+                              className="block w-full rounded-lg border border-amber-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
+                            />
+                            <p className="text-[10px] text-amber-700">O prazo de 30 dias e os alertas serão calculados a partir desta data.</p>
+                          </div>
+                        )}
                         <div className="space-y-1.5">
                           <p className="text-xs font-semibold text-slate-600">Observações da perícia</p>
                           <textarea

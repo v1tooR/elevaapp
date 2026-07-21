@@ -21,13 +21,15 @@ export default async function CalendarioPage() {
     supabase.from('calendar_events')
       .select('*, clients(id, name), processes:processes!calendar_events_process_id_fkey(id, process_types(name, color))')
       .eq('event_type', 'renewal')
+      .eq('status', 'pending')
       .gte('event_date', today.toISOString().split('T')[0])
       .order('event_date', { ascending: true })
       .limit(5),
     supabase.from('calendar_events')
       .select('id, event_type, status')
       .gte('event_date', start)
-      .lte('event_date', end),
+      .lte('event_date', end)
+      .neq('status', 'canceled'),
   ])
 
   const stats = {

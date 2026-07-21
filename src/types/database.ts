@@ -195,6 +195,7 @@ export interface ProcessStage {
   sort_order: number
   status: StageStatus
   scheduled_date?: string
+  due_date?: string
   attended?: boolean
   result?: string
   data: Record<string, unknown>
@@ -220,6 +221,7 @@ export interface Document {
   id: string
   client_id: string
   process_id?: string
+  process_stage_id?: string
   document_type?: string
   file_name: string
   file_url: string
@@ -259,6 +261,9 @@ export interface Notification {
   message: string
   type: NotificationType
   is_read: boolean
+  source_key?: string
+  available_at: string
+  is_canceled: boolean
   created_at: string
   client?: Client
   process?: Process
@@ -273,6 +278,7 @@ export interface CalendarEvent {
   event_date: string
   event_time?: string
   event_type: EventType
+  source_key?: string
   color?: string | null
   client_id?: string
   process_id?: string
@@ -284,6 +290,21 @@ export interface CalendarEvent {
   client?: Client
   process?: Process
   responsible_user?: Profile
+}
+
+export interface LegalRuleVersion {
+  id: string
+  process_type_slug: string
+  rule_key: string
+  version: string
+  title: string
+  source_url: string
+  effective_from: string
+  effective_to?: string
+  rule_data: Record<string, unknown>
+  is_active: boolean
+  created_at: string
+  updated_at: string
 }
 
 export interface ProcessFinancial {
@@ -362,6 +383,11 @@ export type Database = {
         Row: ProcessFinancial
         Insert: Omit<ProcessFinancial, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<ProcessFinancial, 'id' | 'created_at' | 'updated_at'>>
+      }
+      legal_rule_versions: {
+        Row: LegalRuleVersion
+        Insert: Omit<LegalRuleVersion, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<LegalRuleVersion, 'id' | 'created_at' | 'updated_at'>>
       }
     }
     Views: Record<string, never>
