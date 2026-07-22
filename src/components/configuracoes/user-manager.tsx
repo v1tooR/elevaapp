@@ -91,7 +91,6 @@ interface EditingEmployee {
   id: string
   name: string
   email: string
-  password: string
   role: EmployeeRole
 }
 
@@ -110,14 +109,15 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
   const [editError, setEditError] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [offboarding, setOffboarding] = useState({ replacementProfileId: '', reason: '' })
   const [newUser, setNewUser] = useState({
     email: '',
     name: '',
-    password: '',
     role: 'analista' as EmployeeRole,
   })
 
   const employees = profiles.filter(profile => profile.role !== 'cliente')
+  const activeEmployees = employees.filter(profile => profile.is_active)
   const clients = profiles.filter(profile => profile.role === 'cliente')
   const visibleProfiles = activeView === 'funcionarios' ? employees : clients
   const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR')
@@ -182,7 +182,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
       }
 
       setShowCreate(false)
-      setNewUser({ email: '', name: '', password: '', role: 'analista' })
+      setNewUser({ email: '', name: '', role: 'analista' })
       router.refresh()
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Não foi possível criar o funcionário.')
@@ -198,11 +198,12 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
       id: profile.id,
       name: profile.name,
       email: profile.email,
-      password: '',
       role: (roleOverrides[profile.id] ?? profile.role) as EmployeeRole,
     })
+    setOffboarding({ replacementProfileId: '', reason: '' })
     setEditError(null)
     setConfirmDelete(false)
+    setOffboarding({ replacementProfileId: '', reason: '' })
   }
 
   const closeEditor = () => {
@@ -251,7 +252,11 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
       const response = await fetch('/api/usuarios', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: editingUser.id }),
+        body: JSON.stringify({
+          id: editingUser.id,
+          replacementProfileId: offboarding.replacementProfileId,
+          reason: offboarding.reason,
+        }),
       })
 
       if (!response.ok) {
@@ -280,7 +285,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
               Usuários e acessos
             </h2>
             <p className="dash text-xs text-muted-foreground">
-              {employees.length} funcionário{employees.length !== 1 ? 's' : ''} e {clients.length}{' '}
+              {activeEmployees.length} funcionário{activeEmployees.length !== 1 ? 's' : ''} ativo{activeEmployees.length !== 1 ? 's' : ''} e {clients.length}{' '}
               cliente{clients.length !== 1 ? 's' : ''} com acesso
             </p>
           </div>
@@ -320,7 +325,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                 <BriefcaseBusiness className="h-4 w-4" aria-hidden="true" />
                 <span>Funcionários</span>
                 <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] leading-none text-secondary-foreground">
-                  {employees.length}
+                  {activeEmployees.length}
                 </span>
               </button>
               <button
@@ -369,7 +374,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
               <div>
                 <h3 className="dash text-sm font-bold text-foreground">Cadastrar funcionário</h3>
                 <p className="dash mt-0.5 text-xs text-muted-foreground">
-                  A conta será criada pronta para acessar o sistema.
+                  Um convite será enviado por e-mail. No primeiro acesso, o funcionário definirá a senha e ativará o MFA.
                 </p>
               </div>
               <ShieldCheck className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
@@ -401,21 +406,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                   required
                 />
               </div>
-              <div>
-                <label htmlFor="employee-password" className="dash mb-1.5 block text-xs font-semibold text-foreground">Senha provisória</label>
-                <input
-                  id="employee-password"
-                  type="password"
-                  value={newUser.password}
-                  onChange={event => setNewUser(current => ({ ...current, password: event.target.value }))}
-                  className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
-                  placeholder="Mínimo de 6 caracteres"
-                  autoComplete="new-password"
-                  minLength={6}
-                  required
-                />
-              </div>
-              <fieldset>
+              <fieldset className="md:col-span-2">
                 <legend className="dash mb-1.5 block text-xs font-semibold text-foreground">Função</legend>
                 <div className="grid grid-cols-2 gap-2">
                   {EMPLOYEE_ROLE_OPTIONS.map(option => (
@@ -461,7 +452,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                 className="dash inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               >
                 {creating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
-                {creating ? 'Criando conta...' : 'Criar funcionário'}
+                {creating ? 'Enviando convite...' : 'Enviar convite'}
               </button>
             </div>
           </form>
@@ -506,6 +497,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
               const roleConfig = ROLE_CFG[effectiveRole]
               const isEditableEmployee =
                 canManageEmployees &&
+                profile.is_active &&
                 profile.id !== currentProfileId &&
                 (profile.role === 'admin' || profile.role === 'analista')
 
@@ -647,22 +639,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                   <p className="dash mt-1 text-[10px] text-muted-foreground">Este também será o novo e-mail usado no login.</p>
                 </div>
 
-                <div>
-                  <label htmlFor="edit-employee-password" className="dash mb-1.5 block text-xs font-semibold text-foreground">Nova senha</label>
-                  <input
-                    id="edit-employee-password"
-                    type="password"
-                    value={editingUser.password}
-                    onChange={event => setEditingUser(current => current ? { ...current, password: event.target.value } : current)}
-                    className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
-                    placeholder="Mínimo de 6 caracteres"
-                    autoComplete="new-password"
-                    minLength={6}
-                  />
-                  <p className="dash mt-1 text-[10px] text-muted-foreground">Deixe em branco para manter a senha atual.</p>
-                </div>
-
-                <div>
+                <div className="sm:col-span-2">
                   <label htmlFor="edit-employee-role" className="dash mb-1.5 block text-xs font-semibold text-foreground">Função</label>
                   <div className="relative">
                     <select
@@ -691,17 +668,43 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                   <div className="flex items-start gap-3">
                     <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
                     <div>
-                      <p className="dash text-xs font-bold text-destructive">Excluir este funcionário definitivamente?</p>
+                      <p className="dash text-xs font-bold text-destructive">Desligar este funcionário?</p>
                       <p className="dash mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                        O acesso será removido imediatamente. Processos e eventos existentes continuarão no histórico e ficarão sem responsável quando necessário.
+                        O acesso e as sessões serão revogados. A autoria permanecerá no histórico e os itens em aberto serão transferidos.
                       </p>
                     </div>
+                  </div>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <label className="dash text-xs font-semibold text-foreground">
+                      Transferir operação para
+                      <select
+                        value={offboarding.replacementProfileId}
+                        onChange={event => setOffboarding(current => ({ ...current, replacementProfileId: event.target.value }))}
+                        className="mt-1.5 block w-full rounded-lg border border-input bg-card px-3 py-2 text-xs"
+                        required
+                      >
+                        <option value="">Selecione o responsável</option>
+                        {activeEmployees.filter(item => item.id !== editingUser.id).map(item => (
+                          <option key={item.id} value={item.id}>{item.name} — {ROLE_CFG[item.role].label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="dash text-xs font-semibold text-foreground">
+                      Motivo do desligamento
+                      <textarea
+                        value={offboarding.reason}
+                        onChange={event => setOffboarding(current => ({ ...current, reason: event.target.value }))}
+                        className="mt-1.5 block min-h-20 w-full rounded-lg border border-input bg-card px-3 py-2 text-xs"
+                        maxLength={500}
+                        placeholder="Registro interno opcional"
+                      />
+                    </label>
                   </div>
                   <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                     <button
                       type="button"
                       onClick={() => setConfirmDelete(false)}
-                      disabled={deleting}
+                      disabled={deleting || !offboarding.replacementProfileId}
                       className="dash rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
                     >
                       Manter funcionário
@@ -713,7 +716,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                       className="dash inline-flex items-center justify-center gap-2 rounded-lg bg-destructive px-3 py-2 text-xs font-bold text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-60"
                     >
                       {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}
-                      {deleting ? 'Excluindo...' : 'Confirmar exclusão'}
+                      {deleting ? 'Desligando...' : 'Confirmar desligamento'}
                     </button>
                   </div>
                 </div>
@@ -727,7 +730,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                   className="dash inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-40"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
-                  Excluir funcionário
+                  Desligar funcionário
                 </button>
                 <div className="flex flex-col-reverse gap-2 sm:flex-row">
                   <button

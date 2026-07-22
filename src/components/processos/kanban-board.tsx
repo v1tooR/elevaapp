@@ -1,7 +1,6 @@
 'use client'
 import { useState } from 'react'
 import Link from 'next/link'
-import { createClient } from '@/lib/supabase/client'
 import { ArrowUpRight, GripVertical } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
@@ -61,15 +60,16 @@ export function KanbanBoard({ initialProcesses }: Props) {
     setUpdating(id)
     setError(null)
 
-    const supabase = createClient()
-    const { error: err } = await supabase
-      .from('processes')
-      .update({ status: newStatus })
-      .eq('id', id)
+    const response = await fetch(`/api/processos/${id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus }),
+    })
 
-    if (err) {
+    if (!response.ok) {
+      const result = await response.json().catch(() => ({}))
       setProcesses(prev => prev.map(p => p.id === id ? { ...p, status: oldStatus } : p))
-      setError('Erro ao mover: ' + err.message)
+      setError(result.error ?? 'Não foi possível mover o processo.')
     }
     setUpdating(null)
   }

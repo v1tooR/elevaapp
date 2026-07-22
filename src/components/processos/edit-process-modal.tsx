@@ -15,10 +15,27 @@ import { calculateProcessRenewalDate } from '@/lib/process-workflow'
 import type { Process } from '@/types/database'
 
 const STATUS_OPTIONS = Object.entries(PROCESS_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))
+const ACTION_OWNER_OPTIONS = [
+  { value: '', label: 'Não definido' },
+  { value: 'equipe', label: 'Equipe Eleva' },
+  { value: 'cliente', label: 'Cliente' },
+  { value: 'orgao', label: 'Órgão público' },
+  { value: 'terceiro', label: 'Terceiro' },
+]
 
 type Tab = 'info' | 'campos' | 'financeiro'
 
-export function EditProcessModal({ process, isSuperAdmin = false }: { process: Process & { process_types?: any; custom_fields?: any[]; financials?: any }; isSuperAdmin?: boolean }) {
+export function EditProcessModal({
+  process,
+  isSuperAdmin = false,
+  canAssign = false,
+  staff = [],
+}: {
+  process: Process & { process_types?: any; custom_fields?: any[]; financials?: any }
+  isSuperAdmin?: boolean
+  canAssign?: boolean
+  staff?: Array<{ id: string; name: string }>
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('info')
@@ -29,6 +46,11 @@ export function EditProcessModal({ process, isSuperAdmin = false }: { process: P
     protocol: process.protocol ?? '',
     status: process.status,
     observations: process.observations ?? '',
+    next_action: process.next_action ?? '',
+    action_owner: process.action_owner ?? '',
+    action_due_date: process.action_due_date ?? '',
+    blocked_reason: process.blocked_reason ?? '',
+    responsible_user_id: process.responsible_user_id ?? '',
   })
 
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>(() => {
@@ -68,8 +90,12 @@ export function EditProcessModal({ process, isSuperAdmin = false }: { process: P
 
     const { error: err } = await supabase.from('processes').update({
       protocol: form.protocol || null,
-      status: form.status as any,
       observations: form.observations || null,
+      next_action: form.next_action || null,
+      action_owner: form.action_owner || null,
+      action_due_date: form.action_due_date || null,
+      blocked_reason: form.blocked_reason || null,
+      ...(canAssign ? { responsible_user_id: form.responsible_user_id || null } : {}),
     }).eq('id', process.id)
 
     if (err) { setError(err.message); setLoading(false); return }
@@ -142,12 +168,17 @@ export function EditProcessModal({ process, isSuperAdmin = false }: { process: P
     }
 
     if (oldStatus !== form.status) {
-      await supabase.from('process_history').insert({
-        process_id: process.id,
-        action_type: 'status_changed',
-        old_value: oldStatus,
-        new_value: form.status,
+      const statusResponse = await fetch(`/api/processos/${process.id}/status`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: form.status }),
       })
+      if (!statusResponse.ok) {
+        const result = await statusResponse.json().catch(() => ({}))
+        setError(result.error ?? 'Não foi possível atualizar o status do processo.')
+        setLoading(false)
+        return
+      }
     } else {
       await supabase.from('process_history').insert({
         process_id: process.id,
@@ -257,8 +288,22 @@ export function EditProcessModal({ process, isSuperAdmin = false }: { process: P
                   <div className="grid grid-cols-2 gap-4">
                     <Select label="Status" options={STATUS_OPTIONS} value={form.status} onChange={e => setForm(p => ({ ...p, status: e.target.value as any }))} />
                     <Input label="Protocolo" value={form.protocol} onChange={e => setForm(p => ({ ...p, protocol: e.target.value }))} placeholder="Nº do protocolo" />
+                    {canAssign && (
+                      <div className="col-span-2">
+                        <Select label="Responsável" options={staff.map(item => ({ value: item.id, label: item.name }))} placeholder="Sem responsável" value={form.responsible_user_id} onChange={e => setForm(p => ({ ...p, responsible_user_id: e.target.value }))} />
+                      </div>
+                    )}
                     <div className="col-span-2">
-                      <Textarea label="Observações" value={form.observations} onChange={e => setForm(p => ({ ...p, observations: e.target.value }))} rows={3} />
+                      <Input label="Próxima ação" value={form.next_action} onChange={e => setForm(p => ({ ...p, next_action: e.target.value }))} placeholder="Ex.: agendar exame prático" />
+                    </div>
+                    <Select label="Quem deve agir" options={ACTION_OWNER_OPTIONS} value={form.action_owner} onChange={e => setForm(p => ({ ...p, action_owner: e.target.value as typeof form.action_owner }))} />
+                    <Input label="Prazo da próxima ação" type="date" value={form.action_due_date} onChange={e => setForm(p => ({ ...p, action_due_date: e.target.value }))} />
+                    <div className="col-span-2">
+                      <Textarea label="Bloqueio atual" value={form.blocked_reason} onChange={e => setForm(p => ({ ...p, blocked_reason: e.target.value }))} rows={2} placeholder="Deixe vazio quando não houver bloqueio" />
+                    </div>
+                    <div className="col-span-2">
+                      <Textarea label="Observação interna fixa" value={form.observations} onChange={e => setForm(p => ({ ...p, observations: e.target.value }))} rows={3} />
+                      <p className="mt-1 text-[11px] text-amber-700">Visível somente para a equipe. Use “Mensagem para o cliente” no processo para atualizar o cliente.</p>
                     </div>
                   </div>
                 )}

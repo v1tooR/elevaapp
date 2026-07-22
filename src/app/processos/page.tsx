@@ -4,7 +4,7 @@ import {
   Accessibility, ArrowRight, BadgeDollarSign, Car, CarFront,
   CheckCircle2, Clock, FileBadge2, FolderKanban, FolderOpen,
   IdCard, Layers3, Plus, ReceiptText, RotateCcw, Stethoscope, TrendingUp,
-  AlertTriangle, ListChecks,
+  AlertTriangle, ListChecks, ListFilter,
   type LucideIcon,
 } from 'lucide-react'
 import { ProcessesStatusChart } from '@/components/processos/processes-status-chart'
@@ -184,6 +184,12 @@ export default async function ProcessosHubPage() {
               </div>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
+              <Link
+                href="/processos/lista"
+                className="dash flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:border-white/40 hover:bg-white/20"
+              >
+                <ListFilter className="h-4 w-4" /> Lista geral
+              </Link>
               <Link
                 href="/processos/ipva-operacao"
                 className="dash flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:border-white/40 hover:bg-white/20"

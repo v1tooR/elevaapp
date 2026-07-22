@@ -1,5 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { getClientPortalDocuments } from '@/lib/client-portal'
 import { DocumentStatusBadge } from '@/components/shared/status-badge'
 import { formatDate } from '@/lib/utils'
 import {
@@ -46,20 +45,7 @@ export default async function ClienteDocumentosPage({
 }) {
   const { filtro = 'todos' } = await searchParams
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('id').eq('auth_user_id', user!.id).single()
-  const { data: client }  = await supabase.from('clients').select('id').eq('profile_id', profile!.id).single()
-
-  if (!client) redirect('/minha-area')
-
-  const { data: allDocs } = await supabase
-    .from('documents')
-    .select('*, processes(id, process_types(name))')
-    .eq('client_id', client.id)
-    .order('created_at', { ascending: false })
-
-  const docs = allDocs ?? []
+  const docs = await getClientPortalDocuments()
 
   const counts = {
     todos:      docs.length,

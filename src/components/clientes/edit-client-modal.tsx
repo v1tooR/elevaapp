@@ -70,7 +70,7 @@ export function EditClientModal({ client }: { client: Client }) {
       ...clientEligibilityPayload(eligi),
     }).eq('id', client.id)
 
-    if (err) { setError(err.message); setLoading(false); return }
+    if (err) { setError(err.code === '23505' ? 'Já existe outro cliente cadastrado com este CPF.' : err.message); setLoading(false); return }
     setOpen(false)
     router.refresh()
   }

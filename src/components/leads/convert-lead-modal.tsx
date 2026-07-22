@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { UserPlus, X, AlertCircle, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import type { Lead, ClientType } from '@/types/database'
+import type { Lead } from '@/types/database'
 
 export function ConvertLeadModal({ lead }: { lead: Lead }) {
   const router = useRouter()
@@ -19,47 +19,17 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
 
     const supabase = createClient()
 
-    const clientType: ClientType = lead.is_driver ? 'condutor' : 'nao_condutor'
+    const { data: clientId, error: clientErr } = await supabase.rpc('convert_lead_to_client', {
+      p_lead_id: lead.id,
+    })
 
-    const { data: newClient, error: clientErr } = await supabase
-      .from('clients')
-      .insert({
-        name: lead.name,
-        phone: lead.phone ?? null,
-        client_type: clientType,
-        disability_type: lead.disability_type ?? null,
-        disability_types: lead.disability_type ? [lead.disability_type] : [],
-        has_cnh_especial: lead.has_cnh_especial ?? false,
-        cnh_status: lead.cnh_status ?? (lead.has_cnh_especial ? 'com_restricoes' : lead.is_driver ? null : 'nao_possui'),
-        medical_assessment_status: lead.medical_assessment_status ?? 'nao_realizada',
-        requires_practical_exam: lead.requires_practical_exam ?? null,
-        has_medical_report: lead.has_medical_report ?? false,
-        is_active: true,
-      })
-      .select('id')
-      .single()
-
-    if (clientErr || !newClient) {
+    if (clientErr || !clientId) {
       setError('Erro ao criar cliente: ' + (clientErr?.message ?? 'Erro desconhecido'))
       setLoading(false)
       return
     }
 
-    const { error: leadErr } = await supabase
-      .from('leads')
-      .update({
-        status: 'convertido',
-        converted_client_id: newClient.id,
-      })
-      .eq('id', lead.id)
-
-    if (leadErr) {
-      setError('Cliente criado, mas erro ao atualizar lead: ' + leadErr.message)
-      setLoading(false)
-      return
-    }
-
-    router.push(`/clientes/${newClient.id}`)
+    router.push(`/clientes/${clientId}`)
   }
 
   return (

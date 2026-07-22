@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { getClientPortalProcesses } from '@/lib/client-portal'
 import { ProcessStatusBadge } from '@/components/shared/status-badge'
 import { formatDate } from '@/lib/utils'
 import { FolderOpen, ArrowLeft, ChevronRight, Clock, CheckCircle2, AlertCircle, LayoutGrid } from 'lucide-react'
@@ -17,24 +17,7 @@ export default async function ClienteProcessosPage({
 }) {
   const { filtro = 'todos' } = await searchParams
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('id').eq('auth_user_id', user!.id).single()
-  const { data: client }  = await supabase.from('clients').select('id').eq('profile_id', profile!.id).single()
-
-  const { data: allProcesses } = client ? await supabase
-    .from('processes')
-    .select('*, process_types(name, color, slug)')
-    .eq('client_id', client.id)
-    .order('created_at', { ascending: false }) : { data: [] }
-
-  const processes = allProcesses ?? []
-
-  // Fetch stages for CNH processes (single query, grouped in JS)
-  const cnhIds = processes.filter((p: any) => p.process_types?.slug === 'cnh_especial').map((p: any) => p.id)
-  const { data: cnhStagesRaw } = cnhIds.length > 0
-    ? await supabase.from('process_stages').select('process_id, stage_key, label, sort_order, status').in('process_id', cnhIds).order('sort_order')
-    : { data: [] }
+  const { processes, stages: cnhStagesRaw } = await getClientPortalProcesses()
 
   const stagesByProcess: Record<string, { sort_order: number; label: string; status: string }[]> = {}
   for (const s of cnhStagesRaw ?? []) {

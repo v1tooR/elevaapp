@@ -1,5 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
-import { notFound, redirect } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
   ArrowLeft, FileText, CheckCircle2, XCircle, Clock, Calendar,
@@ -14,6 +13,7 @@ import {
   inferAppealStatus,
 } from '@/lib/cnh-medical-workflow'
 import { getOperationalWorkflowDefinition, hasOperationalWorkflow } from '@/lib/operational-workflows'
+import { getClientPortalProcess } from '@/lib/client-portal'
 
 // ─── Friendly labels for CNH stage keys ─────────────────────────────────────
 
@@ -113,41 +113,9 @@ export default async function ClienteProcessoDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('id, role').eq('auth_user_id', user!.id).single()
-  const { data: client } = await supabase.from('clients').select('id').eq('profile_id', profile!.id).single()
-
-  if (!client) redirect('/minha-area')
-
-  const [
-    { data: process },
-    { data: history },
-    { data: documents },
-    { data: events },
-    { data: rawStages },
-  ] = await Promise.all([
-    supabase.from('processes').select(`
-      *,
-      process_types(id, name, slug, color),
-      custom_fields:process_custom_fields(*)
-    `).eq('id', id).eq('client_id', client.id).single(),
-    supabase.from('process_history')
-      .select('id, action_type, old_value, new_value, note, created_at')
-      .eq('process_id', id)
-      .order('created_at', { ascending: false })
-      .limit(15),
-    supabase.from('documents').select('*').eq('process_id', id).order('created_at', { ascending: false }),
-    supabase.from('calendar_events').select('*')
-      .eq('process_id', id)
-      .eq('visibility', 'client_visible')
-      .gte('event_date', new Date().toISOString().split('T')[0])
-      .order('event_date', { ascending: true })
-      .limit(5),
-    supabase.from('process_stages').select('*').eq('process_id', id).order('sort_order'),
-  ])
-
-  if (!process) notFound()
+  const portalData = await getClientPortalProcess(id)
+  if (!portalData) notFound()
+  const { client, process, history, documents, events, stages: rawStages } = portalData
 
   const pt = process.process_types as any
   const isCnh = pt?.slug === 'cnh_especial'
@@ -452,11 +420,6 @@ export default async function ClienteProcessoDetailPage({
                           </div>
                         )}
 
-                        {isCurrent && stage.notes && (
-                          <p className="text-xs text-slate-500 mt-1.5 italic border-l-2 border-amber-200 pl-2">
-                            {stage.notes}
-                          </p>
-                        )}
                       </div>
                     </div>
                   )
@@ -584,7 +547,7 @@ export default async function ClienteProcessoDetailPage({
                   <h2 className="dash font-bold text-slate-900 text-sm">Documentos</h2>
                   <p className="text-xs text-slate-400 mt-0.5">Envie documentos relacionados ao seu processo</p>
                 </div>
-                <DocumentUploader processId={process.id} clientId={client.id} />
+                <DocumentUploader processId={process.id} clientId={client.id} portalMode />
                 {documents && documents.length > 0 ? (
                   <div className="divide-y divide-slate-50">
                     {documents.map((doc: any) => (
@@ -679,7 +642,7 @@ export default async function ClienteProcessoDetailPage({
                 <h2 className="dash font-bold text-slate-900 text-sm">Documentos do Processo</h2>
                 <p className="text-xs text-slate-400 mt-0.5">Envie os documentos solicitados pela equipe</p>
               </div>
-              <DocumentUploader processId={process.id} clientId={client.id} />
+              <DocumentUploader processId={process.id} clientId={client.id} portalMode />
               {documents && documents.length > 0 ? (
                 <div className="divide-y divide-slate-50">
                   {documents.map((doc: any) => (

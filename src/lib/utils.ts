@@ -111,6 +111,7 @@ export const HISTORY_ACTION_LABELS: Record<string, string> = {
   document_approved: 'Documento aprovado',
   document_rejected: 'Documento reprovado',
   observation_added: 'Observação adicionada',
+  client_message: 'Mensagem enviada ao cliente',
   field_changed: 'Campo atualizado',
   completed: 'Processo concluído',
   archived: 'Processo arquivado',

@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { getProfile } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { ArrowLeft, FileText, Clock, RefreshCw, Link2, ArrowUpRight, DollarSign, Calendar, ListChecks } from 'lucide-react'
+import { ArrowLeft, FileText, Clock, RefreshCw, Link2, ArrowUpRight, DollarSign, Calendar, ListChecks, AlertTriangle, CircleArrowRight, UserRound } from 'lucide-react'
 import { ProcessStatusBadge, PaymentStatusBadge } from '@/components/shared/status-badge'
 import { formatDate, formatDateTime, formatCurrency, getCustomFieldOptionLabel, HISTORY_ACTION_LABELS } from '@/lib/utils'
 import { EditProcessModal } from '@/components/processos/edit-process-modal'
@@ -11,8 +11,10 @@ import { CnhStagesPanel } from '@/components/processos/cnh-stages-panel'
 import { InitCnhStagesButton } from '@/components/processos/init-cnh-stages-button'
 import { IpvaStagesPanel } from '@/components/processos/ipva-stages-panel'
 import { OperationalStagesPanel } from '@/components/processos/operational-stages-panel'
+import { ProcessCommunicationForm } from '@/components/processos/process-communication-form'
 import { EligibilityReviewPanel } from '@/components/processos/eligibility-review-panel'
 import { hasOperationalWorkflow } from '@/lib/operational-workflows'
+import { getProcessOperationalSummary, type OperationalProcessSummary, type OperationalStageSummary } from '@/lib/staff-operations'
 import {
   analyzeEligibility,
   isEligibilityProcess,
@@ -46,6 +48,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
     { data: events },
     { data: stages },
     { data: legalRules },
+    { data: staffProfiles },
   ] = await Promise.all([
     supabase.from('processes').select(`
       *,
@@ -61,6 +64,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
     supabase.from('calendar_events').select('*').eq('process_id', id).order('event_date', { ascending: true }).limit(5),
     supabase.from('process_stages').select('*').eq('process_id', id).order('sort_order'),
     supabase.from('legal_rule_versions').select('*').eq('process_type_slug', 'processo_ipva').eq('is_active', true).order('effective_from', { ascending: false }),
+    supabase.from('profiles').select('id, name').in('role', ['super_admin', 'admin', 'analista']).eq('is_active', true).order('name'),
   ])
 
   if (processError) {
@@ -115,6 +119,25 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
       ? process.eligibility_status
       : eligibilityAnalysis?.status ?? process.eligibility_status
   ) as EligibilityStatus | null
+  const operational = getProcessOperationalSummary({
+    process: {
+      ...process,
+      clients: client ?? null,
+      process_types: pt ?? null,
+      responsible_user: responsible ?? null,
+    } as OperationalProcessSummary,
+    stages: processStages as unknown as OperationalStageSummary[],
+    lastActivityAt: history?.[0]?.created_at ?? null,
+  })
+  const actionOwnerLabels: Record<string, string> = {
+    equipe: 'Equipe Eleva',
+    cliente: 'Cliente',
+    orgao: 'Órgão público',
+    terceiro: 'Terceiro',
+  }
+  const lastClientUpdate = process.last_client_update_at
+    ?? history?.find(item => item.client_visible)?.created_at
+    ?? null
 
   return (
     <>
@@ -152,7 +175,12 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
             <Link href="/processos" className="back-btn flex items-center gap-1.5 text-primary-foreground/75 hover:text-white text-xs font-medium px-3 py-1.5 rounded-lg">
               <ArrowLeft className="w-3.5 h-3.5" /> Voltar a Processos
             </Link>
-            <EditProcessModal process={sanitizedProcess as any} isSuperAdmin={isSuperAdmin} />
+            <EditProcessModal
+              process={sanitizedProcess as any}
+              isSuperAdmin={isSuperAdmin}
+              canAssign={profile?.role === 'super_admin' || profile?.role === 'admin'}
+              staff={(staffProfiles ?? []) as Array<{ id: string; name: string }>}
+            />
           </div>
 
           {/* Process info */}
@@ -217,6 +245,31 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
           </div>
         </div>
 
+        <section className="anim anim-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-5 py-3">
+            <h2 className="dash text-sm font-bold text-slate-900">Resumo operacional</h2>
+            <p className="mt-0.5 text-xs text-slate-500">O ponto atual do caso e o que precisa acontecer em seguida.</p>
+          </div>
+          <div className="grid gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-4">
+            {[
+              { label: 'Etapa atual', value: operational.currentStage?.label ?? 'Sem etapa aberta', icon: ListChecks },
+              { label: 'Próxima ação', value: operational.nextAction, icon: CircleArrowRight },
+              { label: 'Quem deve agir', value: actionOwnerLabels[operational.actor] ?? operational.actor, icon: UserRound },
+              { label: 'Prazo', value: operational.dueDate ? formatDate(operational.dueDate) : 'Sem prazo definido', icon: Calendar },
+              { label: 'Responsável', value: responsible?.name ?? 'Não atribuído', icon: UserRound },
+              { label: 'Bloqueio', value: operational.blocker ?? 'Nenhum bloqueio registrado', icon: AlertTriangle },
+              { label: 'Última atualização ao cliente', value: lastClientUpdate ? formatDateTime(lastClientUpdate) : 'Ainda não enviada', icon: Clock },
+            ].map(item => (
+              <div key={item.label} className="min-h-24 bg-white p-4">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                  <item.icon className="h-3.5 w-3.5" /> {item.label}
+                </div>
+                <p className="mt-2 text-sm font-semibold leading-snug text-slate-900">{item.value}</p>
+              </div>
+            ))}
+          </div>
+        </section>
+
         {/* ── Content Grid ─────────────────────────────────────────── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
 
@@ -275,10 +328,13 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
               </div>
             </div>
 
-            {/* Observations */}
+            {/* Internal observations */}
             {process.observations && (
-              <div className="anim anim-2 bg-white rounded-2xl p-5" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                <h2 className="dash font-bold text-slate-900 mb-3 text-sm">Observações</h2>
+              <div className="anim anim-2 rounded-2xl border border-amber-200 bg-amber-50/60 p-5 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <h2 className="dash text-sm font-bold text-slate-900">Observação interna</h2>
+                  <span className="rounded-full bg-amber-100 px-2 py-1 text-[10px] font-semibold text-amber-800">Somente equipe</span>
+                </div>
                 <p className="text-sm text-slate-600 whitespace-pre-wrap leading-relaxed dash">{process.observations}</p>
               </div>
             )}
@@ -491,6 +547,14 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
               )}
             </div>
 
+            <div className="anim anim-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4">
+                <h2 className="dash font-bold text-slate-900">Registrar comunicação</h2>
+                <p className="mt-0.5 text-xs text-slate-400">Escolha explicitamente se o conteúdo é interno ou será enviado ao cliente.</p>
+              </div>
+              <ProcessCommunicationForm processId={process.id} />
+            </div>
+
             {/* History Timeline */}
             <div className="anim anim-3 bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
               <div className="px-5 py-4 border-b border-slate-50">
@@ -523,6 +587,9 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                           <p className="text-sm font-semibold text-slate-900 dash">
                             {HISTORY_ACTION_LABELS[h.action_type] ?? h.action_type}
                           </p>
+                          <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold ${h.client_visible ? 'bg-blue-50 text-blue-700' : 'bg-amber-50 text-amber-700'}`}>
+                            {h.client_visible ? 'Visível ao cliente' : 'Somente equipe'}
+                          </span>
                           {h.old_value && h.new_value && (
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-xs bg-slate-100 text-slate-500 px-2 py-0.5 rounded-lg dash">{h.old_value}</span>

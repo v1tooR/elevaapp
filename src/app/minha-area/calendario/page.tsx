@@ -1,5 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
-import { redirect } from 'next/navigation'
+import { getClientPortalEvents } from '@/lib/client-portal'
 import {
   CalendarDays, ArrowLeft, Clock, Tag, ChevronRight,
   CalendarCheck, CalendarX, LayoutGrid,
@@ -29,25 +28,13 @@ export default async function ClienteCalendarioPage({
 }) {
   const { filtro = 'proximos' } = await searchParams
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase.from('profiles').select('id').eq('auth_user_id', user!.id).single()
-  const { data: client }  = await supabase.from('clients').select('id').eq('profile_id', profile!.id).single()
-
-  if (!client) redirect('/minha-area')
-
-  const { data: allEvents } = await supabase
-    .from('calendar_events')
-    .select('*, processes:processes!calendar_events_process_id_fkey(id, process_types(name, color))')
-    .eq('client_id', client.id)
-    .eq('visibility', 'client_visible')
-    .order('event_date', { ascending: true })
+  const allEvents = await getClientPortalEvents()
 
   const today = new Date()
   today.setHours(0, 0, 0, 0)
   const todayStr = today.toISOString().split('T')[0]
 
-  const events   = allEvents ?? []
+  const events   = allEvents
   const upcoming = events.filter((e: any) => e.event_date >= todayStr)
   const past     = events.filter((e: any) => e.event_date <  todayStr).reverse()
 

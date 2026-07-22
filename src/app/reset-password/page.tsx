@@ -37,8 +37,15 @@ export default function ResetPasswordPage() {
       return
     }
 
+    await supabase.rpc('complete_password_setup')
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('role, mfa_required')
+      .eq('auth_user_id', (await supabase.auth.getUser()).data.user?.id ?? '')
+      .maybeSingle()
+
     setSuccess(true)
-    setTimeout(() => router.push('/dashboard'), 2500)
+    setTimeout(() => router.push(profile?.role !== 'cliente' && profile?.mfa_required ? '/mfa/setup' : profile?.role === 'cliente' ? '/minha-area' : '/dashboard'), 1800)
   }
 
   return (

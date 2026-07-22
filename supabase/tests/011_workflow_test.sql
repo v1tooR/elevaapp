@@ -1,6 +1,6 @@
 BEGIN;
 
-SELECT plan(19);
+SELECT plan(48);
 
 SELECT has_table('public', 'legal_rule_versions', 'legal_rule_versions existe');
 SELECT has_column('public', 'process_stages', 'due_date', 'process_stages possui due_date');
@@ -13,6 +13,35 @@ SELECT has_index('public', 'calendar_events', 'uq_calendar_events_process_source
 SELECT has_function('public', 'sync_ipva_workflow', ARRAY['uuid'], 'RPC de IPVA existe');
 SELECT has_function('public', 'save_process_stage', ARRAY['uuid','text','date','boolean','text','text','jsonb','boolean'], 'RPC de etapa existe');
 SELECT has_function('public', 'add_process_document', ARRAY['uuid','text','text','text','uuid'], 'RPC de documento existe');
+SELECT has_column('public', 'documents', 'visibility', 'documentos possuem visibilidade explícita');
+SELECT has_column('public', 'process_history', 'client_visible', 'histórico possui visibilidade explícita');
+SELECT has_column('public', 'process_custom_fields', 'client_visible', 'campos personalizados possuem visibilidade explícita');
+SELECT has_function('public', 'add_staff_process_document', ARRAY['uuid','text','text','text','uuid','text'], 'RPC segura de documento da equipe existe');
+SELECT has_function('public', 'add_client_process_document', ARRAY['uuid','text','text','text','uuid'], 'RPC segura de documento do cliente existe');
+SELECT has_function('public', 'transition_process_status', ARRAY['uuid','text','text'], 'RPC atômica de status existe');
+SELECT has_column('public', 'clients', 'cpf_normalized', 'CPF normalizado existe');
+SELECT has_index('public', 'clients', 'uq_clients_cpf_normalized', 'CPF normalizado possui unicidade');
+SELECT has_column('public', 'profiles', 'must_change_password', 'perfil controla primeiro acesso');
+SELECT has_column('public', 'profiles', 'mfa_required', 'perfil controla exigência de MFA');
+SELECT has_column('public', 'processes', 'next_action', 'processo registra próxima ação');
+SELECT has_column('public', 'processes', 'action_owner', 'processo registra quem deve agir');
+SELECT has_column('public', 'processes', 'action_due_date', 'processo registra prazo operacional');
+SELECT has_column('public', 'processes', 'blocked_reason', 'processo registra bloqueio');
+SELECT has_column('public', 'processes', 'last_client_update_at', 'processo registra última comunicação ao cliente');
+SELECT has_column('public', 'documents', 'requested_at', 'documento registra solicitação');
+SELECT has_column('public', 'documents', 'review_responsible_id', 'documento registra revisor responsável');
+SELECT has_table('public', 'saved_filters', 'filtros salvos existem');
+SELECT has_table('public', 'employee_offboardings', 'auditoria de desligamento existe');
+SELECT has_function('public', 'offboard_employee', ARRAY['uuid','uuid','uuid','text'], 'RPC de desligamento seguro existe');
+SELECT has_function('public', 'add_process_communication', ARRAY['uuid','text','text'], 'RPC de comunicação existe');
+SELECT has_function('public', 'create_process_atomic', ARRAY['uuid','uuid','text','text','uuid','text','text','text','text','jsonb','jsonb','jsonb','jsonb'], 'RPC transacional de processo existe');
+SELECT has_function('public', 'convert_lead_to_client', ARRAY['uuid'], 'RPC transacional de lead existe');
+SELECT has_function('public', 'update_document_workflow', ARRAY['uuid','text','text','uuid','text'], 'RPC de revisão documental existe');
+SELECT has_function('public', 'complete_password_setup', ARRAY[]::TEXT[], 'RPC de primeiro acesso existe');
+SELECT has_function('public', 'mark_mfa_enrolled', ARRAY[]::TEXT[], 'RPC de confirmação MFA existe');
+SELECT has_function('public', 'add_staff_process_document', ARRAY['uuid','text','text','text','uuid','text','boolean'], 'RPC documental registra solicitação');
+SELECT ok(public.document_url_is_allowed('https://drive.google.com/file/d/test/view'), 'link oficial do Drive é aceito');
+SELECT isnt(public.document_url_is_allowed('https://drive.google.com.evil.test/file'), TRUE, 'domínio semelhante ao Drive é rejeitado');
 SELECT results_eq(
   $$ SELECT renewal_period_months FROM public.process_types WHERE slug = 'processo_ipva' $$,
   ARRAY[NULL::INTEGER],
@@ -100,7 +129,7 @@ BEGIN
   PERFORM public.add_process_document(
     (SELECT value FROM workflow_fixture WHERE key = 'ipva_process'),
     'Laudo de teste',
-    'https://example.test/laudo',
+    'https://drive.google.com/file/d/laudo-teste/view',
     'laudo_imesc',
     v_stage_id
   );

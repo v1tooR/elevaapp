@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Users, Target, FolderOpen, FileText,
-  Calendar, Bell, Settings, LogOut, Banknote, X, ChevronRight
+  Calendar, Bell, Settings, LogOut, Banknote, X, ChevronRight, ListTodo, ListFilter
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ElevaIcon } from '@/components/brand/eleva-icon'
@@ -19,9 +19,11 @@ interface SidebarProps {
 
 const adminNav = [
   { href: '/dashboard',    label: 'Dashboard',    icon: LayoutDashboard, group: 'main'    },
+  { href: '/rotina',       label: 'Minha rotina', icon: ListTodo,        group: 'main'    },
   { href: '/clientes',     label: 'Clientes',     icon: Users,           group: 'main'    },
   { href: '/leads',        label: 'Leads',        icon: Target,          group: 'main'    },
   { href: '/processos',    label: 'Processos',    icon: FolderOpen,      group: 'main'    },
+  { href: '/processos/lista', label: 'Lista geral', icon: ListFilter,    group: 'main'    },
   { href: '/documentos',   label: 'Documentos',   icon: FileText,        group: 'main'    },
   { href: '/calendario',   label: 'Calendário',   icon: Calendar,        group: 'comms'   },
   { href: '/notificacoes', label: 'Notificações', icon: Bell,            group: 'comms',  badge: true },

@@ -1,43 +1,18 @@
-import { createClient } from '@/lib/supabase/server'
+import { getClientPortalHome } from '@/lib/client-portal'
 import { ProcessStatusBadge } from '@/components/shared/status-badge'
 import { formatDate, formatCPF, formatPhone } from '@/lib/utils'
 import { FolderOpen, FileText, Bell, Phone, Mail, User, ChevronRight, ArrowRight, CheckCircle2, Clock } from 'lucide-react'
 import Link from 'next/link'
 
 export default async function MinhaAreaPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-
-  const { data: profile } = await supabase
-    .from('profiles').select('*').eq('auth_user_id', user!.id).single()
-
-  const { data: client } = await supabase
-    .from('clients').select('*').eq('profile_id', profile!.id).single()
-
-  const clientId = client?.id
-
-  const [{ data: processes }, { data: notifications }] = clientId ? await Promise.all([
-    supabase.from('processes')
-      .select('*, process_types(name, color, slug)')
-      .eq('client_id', clientId)
-      .order('available_at', { ascending: false })
-      .limit(10),
-    supabase.from('notifications')
-      .select('*')
-      .eq('user_id', profile!.id)
-      .eq('is_read', false)
-      .eq('is_canceled', false)
-      .lte('available_at', new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .limit(5),
-  ]) : [{ data: [] }, { data: [] }]
+  const { profile, client, processes, notifications, counts } = await getClientPortalHome()
 
   const firstName = profile?.name?.split(' ')[0] ?? 'Cliente'
   const initials = profile?.name?.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase() ?? '?'
-  const totalProcesses = processes?.length ?? 0
-  const concluded = (processes ?? []).filter((p: any) => p.status === 'concluido').length
-  const unreadNotifs = notifications?.length ?? 0
-  const inProgress = (processes ?? []).filter((p: any) => p.status !== 'concluido' && p.status !== 'cancelado').length
+  const totalProcesses = counts.total
+  const concluded = counts.concluded
+  const unreadNotifs = counts.unread
+  const inProgress = counts.inProgress
 
   return (
     <>

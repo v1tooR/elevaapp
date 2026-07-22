@@ -37,6 +37,7 @@ export type HistoryActionType =
   | 'archived'
   | 'cancelled'
   | 'updated'
+  | 'client_message'
 
 // --- Leads ---
 export type LeadStatus = 'novo' | 'em_atendimento' | 'convertido' | 'perdido'
@@ -81,6 +82,13 @@ export interface Profile {
   phone?: string
   role: UserRole
   is_active: boolean
+  must_change_password?: boolean
+  mfa_required?: boolean
+  mfa_enrolled_at?: string
+  invited_at?: string
+  deactivated_at?: string
+  deactivated_by?: string
+  offboarding_note?: string
   created_at: string
   updated_at: string
 }
@@ -90,6 +98,7 @@ export interface Client {
   profile_id?: string
   name: string
   cpf?: string
+  cpf_normalized?: string
   rg?: string
   birth_date?: string
   phone?: string
@@ -176,6 +185,11 @@ export interface Process {
   started_at?: string
   completed_at?: string
   observations?: string
+  next_action?: string
+  action_owner?: 'equipe' | 'cliente' | 'orgao' | 'terceiro'
+  action_due_date?: string
+  blocked_reason?: string
+  last_client_update_at?: string
   jurisdiction_state?: string
   vehicle_condition?: VehicleCondition
   eligibility_status?: EligibilityStatus
@@ -221,6 +235,7 @@ export interface ProcessCustomField {
   field_type: 'text' | 'number' | 'date' | 'boolean' | 'select' | 'currency'
   field_value?: string
   sort_order: number
+  client_visible?: boolean
   created_at: string
   updated_at: string
 }
@@ -237,6 +252,10 @@ export interface Document {
   file_size?: number
   mime_type?: string
   status: DocumentStatus
+  visibility?: 'admin_only' | 'client_visible'
+  requested_at?: string
+  requested_by?: string
+  review_responsible_id?: string
   uploaded_by?: string
   reviewed_by?: string
   rejection_reason?: string
@@ -246,6 +265,7 @@ export interface Document {
   process?: Process
   uploader?: Profile
   reviewer?: Profile
+  review_responsible?: Profile
 }
 
 export interface ProcessHistory {
@@ -256,6 +276,7 @@ export interface ProcessHistory {
   old_value?: string
   new_value?: string
   note?: string
+  client_visible?: boolean
   created_at: string
   changer?: Profile
 }

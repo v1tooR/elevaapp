@@ -1,8 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   ArrowRight,
   Check,
@@ -26,19 +26,21 @@ const PROCESS_STEPS = [
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [error, setError] = useState(() => {
-    if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search)
-      if (params.get('error') === 'link_invalido') {
-        return 'Link inválido ou expirado. Solicite um novo link de redefinição.'
-      }
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    const errParam = searchParams.get('error')
+    if (errParam === 'link_invalido') {
+      setError('Link inválido ou expirado. Solicite um novo link de redefinição.')
+    } else if (errParam === 'acesso_inativo') {
+      setError('Este acesso está inativo. Entre em contato com a equipe responsável.')
     }
-    return ''
-  })
+  }, [searchParams])
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -61,11 +63,37 @@ export default function LoginPage() {
 
     const { data: profile } = await supabase
       .from('profiles')
-      .select('role')
+      .select('role, is_active, must_change_password, mfa_required')
       .eq('auth_user_id', data.user.id)
       .single()
 
-    router.push(profile?.role === 'cliente' ? '/minha-area' : '/dashboard')
+    if (!profile?.is_active) {
+      await supabase.auth.signOut()
+      setError('Este acesso está inativo. Entre em contato com a equipe responsável.')
+      setLoading(false)
+      return
+    }
+
+    if (profile.role !== 'cliente' && profile.must_change_password) {
+      router.push('/reset-password?first_access=1')
+      router.refresh()
+      return
+    }
+
+    if (profile.role !== 'cliente' && profile.mfa_required) {
+      const [{ data: assurance }, { data: factors }] = await Promise.all([
+        supabase.auth.mfa.getAuthenticatorAssuranceLevel(),
+        supabase.auth.mfa.listFactors(),
+      ])
+      if (assurance?.currentLevel !== 'aal2') {
+        const hasVerifiedFactor = factors?.totp.some(factor => factor.status === 'verified') ?? false
+        router.push(hasVerifiedFactor ? '/mfa/verify' : '/mfa/setup')
+        router.refresh()
+        return
+      }
+    }
+
+    router.push(profile.role === 'cliente' ? '/minha-area' : '/dashboard')
     router.refresh()
   }
 

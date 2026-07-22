@@ -75,7 +75,7 @@ export default function NovoClientePage() {
     }).select().single()
 
     if (err) {
-      setError('Erro ao cadastrar cliente: ' + err.message)
+      setError(err.code === '23505' ? 'Já existe um cliente cadastrado com este CPF.' : 'Erro ao cadastrar cliente: ' + err.message)
       setLoading(false)
       return
     }

@@ -1,368 +1,147 @@
+import Link from 'next/link'
+import { ArrowUpRight, FileSearch, FileText, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { DocumentStatusBadge } from '@/components/shared/status-badge'
 import { DocumentActions } from '@/components/documentos/document-actions'
-import { DocFilters } from '@/components/documentos/doc-filters'
 import { formatDate } from '@/lib/utils'
-import { FileText, Link2, ArrowUpRight, Plus } from 'lucide-react'
-import Link from 'next/link'
+import type { Document, Profile } from '@/types/database'
 
+const PAGE_SIZE = 25
 const DOC_TYPE_LABELS: Record<string, string> = {
-  laudo:       'Laudo Médico',
-  rg:          'RG / CNH',
-  cpf:         'CPF',
-  residencia:  'Comp. Residência',
-  nota_fiscal: 'Nota Fiscal',
-  contrato:    'Contrato',
-  procuracao:  'Procuração',
-  certidao:    'Certidão',
-  protocolo:   'Protocolo',
-  formulario:  'Formulário',
-  outros:      'Outros',
+  laudo: 'Laudo Médico', rg: 'RG / CNH', cpf: 'CPF', residencia: 'Comp. Residência',
+  nota_fiscal: 'Nota Fiscal', contrato: 'Contrato', procuracao: 'Procuração',
+  certidao: 'Certidão', protocolo: 'Protocolo', formulario: 'Formulário', outros: 'Outros',
+}
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Pendente', received: 'Recebido', under_review: 'Em revisão', approved: 'Aprovado',
+  rejected: 'Reprovado', resend_required: 'Reenvio solicitado',
 }
 
-const DOC_TYPES_OPTIONS = Object.entries(DOC_TYPE_LABELS).map(([v, l]) => ({ value: v, label: l }))
-
-const DOC_TYPE_COLORS: Record<string, string> = {
-  laudo:       '#8B5CF6',
-  rg:          '#3B82F6',
-  cpf:         '#06B6D4',
-  residencia:  '#10B981',
-  nota_fiscal: '#F59E0B',
-  contrato:    '#F97316',
-  procuracao:  '#EC4899',
-  certidao:    '#6366F1',
-  protocolo:   '#0EA5E9',
-  formulario:  '#14B8A6',
-  outros:      '#94A3B8',
+interface SearchParams {
+  q?: string
+  status?: string
+  type?: string
+  client_id?: string
+  reviewer?: string
+  visibility?: string
+  requested?: string
+  page?: string
 }
-
-const STATUS_UI: Record<string, { pill: string; active: string; dot: string; label: string }> = {
-  received:        { dot: '#3B82F6', label: 'Recebido',    pill: 'bg-blue-50 text-blue-700 border-blue-200',       active: 'bg-blue-600 text-white border-blue-600' },
-  under_review:    { dot: '#F59E0B', label: 'Em Revisão',  pill: 'bg-amber-50 text-amber-700 border-amber-200',    active: 'bg-amber-500 text-white border-amber-500' },
-  approved:        { dot: '#10B981', label: 'Aprovado',    pill: 'bg-emerald-50 text-emerald-700 border-emerald-200', active: 'bg-emerald-600 text-white border-emerald-600' },
-  rejected:        { dot: '#EF4444', label: 'Reprovado',   pill: 'bg-red-50 text-red-700 border-red-200',          active: 'bg-red-600 text-white border-red-600' },
-  resend_required: { dot: '#F97316', label: 'Reenvio',     pill: 'bg-orange-50 text-orange-700 border-orange-200', active: 'bg-orange-500 text-white border-orange-500' },
-}
-
-interface SearchParams { status?: string; type?: string; client_id?: string }
 
 export default async function DocumentosPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams
-  const statusFilter  = params.status    ?? ''
-  const typeFilter    = params.type      ?? ''
-  const clientFilter  = params.client_id ?? ''
-
+  const page = Math.max(1, Number(params.page) || 1)
   const supabase = await createClient()
 
-  const [{ data: allDocs }, { data: clients }] = await Promise.all([
-    supabase.from('documents').select('id, status'),
+  const [
+    { data: clients },
+    { data: reviewerRows },
+    { count: totalCount },
+    { count: receivedCount },
+    { count: reviewCount },
+    { count: approvedCount },
+    { count: rejectedCount },
+  ] = await Promise.all([
     supabase.from('clients').select('id, name').eq('is_active', true).order('name'),
+    supabase.from('profiles').select('id, name').in('role', ['super_admin', 'admin', 'analista']).eq('is_active', true).order('name'),
+    supabase.from('documents').select('id', { count: 'exact', head: true }),
+    supabase.from('documents').select('id', { count: 'exact', head: true }).eq('status', 'received'),
+    supabase.from('documents').select('id', { count: 'exact', head: true }).eq('status', 'under_review'),
+    supabase.from('documents').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
+    supabase.from('documents').select('id', { count: 'exact', head: true }).eq('status', 'rejected'),
   ])
 
   let query = supabase
     .from('documents')
-    .select('*, clients(id, name), processes(id, process_types(name))')
+    .select(`
+      *,
+      clients(id, name),
+      processes(id, process_types(name)),
+      review_responsible:profiles!documents_review_responsible_id_fkey(id, name)
+    `, { count: 'exact' })
     .order('created_at', { ascending: false })
 
-  if (statusFilter)  query = query.eq('status', statusFilter)
-  if (typeFilter)    query = query.eq('document_type', typeFilter)
-  if (clientFilter)  query = query.eq('client_id', clientFilter)
+  const cleanSearch = (params.q ?? '').trim().replace(/[,()%]/g, ' ')
+  if (cleanSearch) query = query.or(`file_name.ilike.%${cleanSearch}%,document_type.ilike.%${cleanSearch}%`)
+  if (params.status) query = query.eq('status', params.status)
+  if (params.type) query = query.eq('document_type', params.type)
+  if (params.client_id) query = query.eq('client_id', params.client_id)
+  if (params.reviewer === 'none') query = query.is('review_responsible_id', null)
+  else if (params.reviewer) query = query.eq('review_responsible_id', params.reviewer)
+  if (params.visibility) query = query.eq('visibility', params.visibility)
+  if (params.requested === 'yes') query = query.not('requested_at', 'is', null)
+  if (params.requested === 'no') query = query.is('requested_at', null)
 
-  const { data: documents } = await query
+  const from = (page - 1) * PAGE_SIZE
+  const { data: documents, count: filteredCount, error } = await query.range(from, from + PAGE_SIZE - 1)
+  if (error) throw new Error('Não foi possível carregar a central de documentos.')
 
-  const counts = {
-    total:        allDocs?.length ?? 0,
-    received:     allDocs?.filter(d => d.status === 'received').length ?? 0,
-    under_review: allDocs?.filter(d => d.status === 'under_review').length ?? 0,
-    approved:     allDocs?.filter(d => d.status === 'approved').length ?? 0,
-    rejected:     allDocs?.filter(d => d.status === 'rejected').length ?? 0,
+  const pageCount = Math.max(1, Math.ceil((filteredCount ?? 0) / PAGE_SIZE))
+  const currentPage = Math.min(page, pageCount)
+  const reviewers = (reviewerRows ?? []) as Pick<Profile, 'id' | 'name'>[]
+  const currentParams = Object.fromEntries(Object.entries(params).filter(([, value]) => value)) as Record<string, string>
+  const href = (overrides: Record<string, string>) => {
+    const values = { ...currentParams, ...overrides }
+    const search = new URLSearchParams()
+    for (const [key, value] of Object.entries(values)) if (value) search.set(key, value)
+    return `/documentos${search.size ? `?${search.toString()}` : ''}`
   }
 
-  const activeStatusLabel = statusFilter ? (STATUS_UI[statusFilter]?.label ?? statusFilter) : null
-
-  const quickStatuses = ['received', 'under_review', 'approved', 'rejected', 'resend_required']
-
-  const buildHref = (overrides: Record<string, string>) => {
-    const vals = { status: statusFilter, type: typeFilter, client_id: clientFilter, ...overrides }
-    const p = new URLSearchParams()
-    Object.entries(vals).forEach(([k, v]) => { if (v) p.set(k, v) })
-    return `/documentos?${p.toString()}`
-  }
-
-  const hasFilters = !!(statusFilter || typeFilter || clientFilter)
+  const statCards = [
+    ['Todos', totalCount ?? 0, ''], ['Recebidos', receivedCount ?? 0, 'received'],
+    ['Em revisão', reviewCount ?? 0, 'under_review'], ['Aprovados', approvedCount ?? 0, 'approved'],
+    ['Reprovados', rejectedCount ?? 0, 'rejected'],
+  ] as const
 
   return (
-    <>
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .anim   { animation: slideUp 0.4s ease-out both; }
-        .anim-1 { animation-delay: 0.05s; }
-        .anim-2 { animation-delay: 0.10s; }
-        .anim-3 { animation-delay: 0.15s; }
-        .doc-row { transition: background 0.12s; }
-        .doc-row:hover { background: #F8FAFC; }
-        .doc-row:hover .doc-name { color: #2563EB; }
-        .stat-chip { transition: all 0.15s; }
-        .stat-chip:hover { background: rgba(255,255,255,0.2); }
-        .pill { transition: all 0.15s; }
-      `}</style>
-
-      <div className="space-y-5">
-
-        {/* ── Banner ──────────────────────────────────────────────── */}
-        <div
-          className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
-        >
-          <div className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-[0.07]"
-            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
-          <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
-            style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
-
-          <div className="relative px-6 pt-6 pb-4">
-            <div className="flex items-center justify-between gap-4 mb-5">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-                  <FileText className="w-6 h-6 text-primary-foreground/75" />
-                </div>
-                <div>
-                  <h1 className="dash text-white text-2xl lg:text-3xl font-bold leading-tight">Documentos</h1>
-                  <p className="dash text-primary-foreground/65 text-sm mt-0.5">
-                    {counts.total} documento{counts.total !== 1 ? 's' : ''}
-                    {activeStatusLabel && <> · <span className="text-white/90">{activeStatusLabel}</span></>}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Stat chips */}
-            <div className="flex flex-wrap gap-2">
-              {[
-                { label: 'Total',      value: counts.total,        href: buildHref({ status: '' }), active: !statusFilter },
-                { label: 'Recebidos',  value: counts.received,     href: buildHref({ status: 'received' }),     active: statusFilter === 'received',     dot: '#3B82F6' },
-                { label: 'Em Revisão', value: counts.under_review, href: buildHref({ status: 'under_review' }), active: statusFilter === 'under_review', dot: '#F59E0B' },
-                { label: 'Aprovados',  value: counts.approved,     href: buildHref({ status: 'approved' }),     active: statusFilter === 'approved',     dot: '#10B981' },
-                { label: 'Reprovados', value: counts.rejected,     href: buildHref({ status: 'rejected' }),     active: statusFilter === 'rejected',     dot: '#EF4444' },
-              ].map(chip => (
-                <Link
-                  key={chip.label}
-                  href={chip.href}
-                  className="stat-chip flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold dash"
-                  style={chip.active
-                    ? { background: 'rgba(255,255,255,0.18)', border: '1px solid rgba(255,255,255,0.3)', color: '#fff' }
-                    : { background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.65)' }
-                  }
-                >
-                  {chip.dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: chip.dot }} />}
-                  <span>{chip.label}</span>
-                  <span
-                    className="px-1.5 py-0.5 rounded-md text-[10px] font-bold"
-                    style={{ background: chip.active ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)', color: chip.active ? '#fff' : 'rgba(255,255,255,0.7)' }}
-                  >
-                    {chip.value}
-                  </span>
-                </Link>
-              ))}
-            </div>
-          </div>
+    <div className="space-y-5">
+      <section className="eleva-gradient-deep overflow-hidden rounded-2xl p-6 lg:p-8">
+        <div className="flex items-center gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/10"><FileSearch className="h-6 w-6 text-white" /></div>
+          <div><h1 className="dash text-3xl font-bold text-white">Central de documentos</h1><p className="dash mt-1 text-sm text-white/60">Busca, revisão, responsabilidade e visibilidade em um único lugar.</p></div>
         </div>
-
-        {/* ── Filtros ─────────────────────────────────────────────── */}
-        <div
-          className="anim anim-1 bg-white rounded-2xl p-4"
-          style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-        >
-          {/* Status pills */}
-          <div className="flex flex-wrap gap-2 mb-3">
-            <Link
-              href={buildHref({ status: '' })}
-              className={`pill dash text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${!statusFilter ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'}`}
-            >
-              Todos
-            </Link>
-            {quickStatuses.map(s => {
-              const c = STATUS_UI[s]
-              if (!c) return null
-              return (
-                <Link
-                  key={s}
-                  href={buildHref({ status: s })}
-                  className={`pill dash text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${statusFilter === s ? c.active : c.pill}`}
-                >
-                  <span
-                    className="w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: statusFilter === s ? 'white' : c.dot, opacity: statusFilter === s ? 0.8 : 1 }}
-                  />
-                  {c.label}
-                </Link>
-              )
-            })}
-          </div>
-
-          {/* Type + client selects */}
-          <div className="flex gap-3 flex-wrap items-center">
-            <DocFilters
-              clients={(clients ?? []) as { id: string; name: string }[]}
-              docTypes={DOC_TYPES_OPTIONS}
-              typeFilter={typeFilter}
-              clientFilter={clientFilter}
-              statusFilter={statusFilter}
-            />
-            {hasFilters && (
-              <Link
-                href="/documentos"
-                className="px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors dash shrink-0"
-              >
-                Limpar filtros
-              </Link>
-            )}
-          </div>
+        <div className="mt-5 flex flex-wrap gap-2">
+          {statCards.map(([label, count, status]) => <Link key={label} href={href({ status, page: '' })} className={`rounded-xl border px-3 py-2 text-xs font-semibold ${params.status === status || (!params.status && !status) ? 'border-white/30 bg-white/20 text-white' : 'border-white/10 bg-white/5 text-white/65'}`}>{label} <span className="ml-1 rounded-md bg-white/10 px-1.5 py-0.5">{count}</span></Link>)}
         </div>
+      </section>
 
-        {/* ── Tabela ──────────────────────────────────────────────── */}
-        <div
-          className="anim anim-2 bg-white rounded-2xl overflow-hidden"
-          style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-        >
-          {!documents || documents.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4">
-              <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center">
-                <Link2 className="w-7 h-7 text-slate-300" />
-              </div>
-              <div className="text-center">
-                <p className="dash font-semibold text-slate-700">Nenhum documento encontrado</p>
-                <p className="text-sm text-slate-400 mt-1 dash">
-                  {hasFilters ? 'Tente ajustar os filtros acima' : 'Acesse um processo e adicione links do Drive'}
-                </p>
-              </div>
-              {hasFilters && (
-                <Link
-                  href="/documentos"
-                  className="flex items-center gap-2 px-4 py-2 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors dash"
-                >
-                  Limpar filtros
-                </Link>
-              )}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #F1F5F9', background: '#FAFBFC' }}>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider">Documento</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Tipo</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Cliente</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden lg:table-cell">Processo</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden lg:table-cell">Data</th>
-                    <th className="px-5 py-3.5" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {(documents as any[]).map(doc => {
-                    const typeColor = DOC_TYPE_COLORS[doc.document_type] ?? '#94A3B8'
-                    return (
-                      <tr key={doc.id} className="doc-row border-b border-slate-50 last:border-0">
-                        {/* Nome */}
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-3">
-                            <div
-                              className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center"
-                              style={{ backgroundColor: `${typeColor}18` }}
-                            >
-                              <FileText className="w-4 h-4" style={{ color: typeColor }} />
-                            </div>
-                            <a
-                              href={doc.file_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="doc-name dash font-semibold text-slate-900 transition-colors truncate max-w-[160px] flex items-center gap-1.5"
-                              title={doc.file_name}
-                            >
-                              <span className="truncate">{doc.file_name}</span>
-                              <ArrowUpRight className="w-3 h-3 shrink-0 opacity-40 group-hover:opacity-100" />
-                            </a>
-                          </div>
-                        </td>
+      <section className="eleva-surface p-4">
+        <form method="get" className="grid gap-3 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+          <label className="relative lg:col-span-2"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input name="q" defaultValue={params.q} placeholder="Nome ou tipo do documento" className="w-full rounded-xl border border-input py-2.5 pl-9 pr-3 text-sm" /></label>
+          <select name="status" defaultValue={params.status} className="rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todos os status</option>{Object.entries(STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          <select name="type" defaultValue={params.type} className="rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todos os tipos</option>{Object.entries(DOC_TYPE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          <select name="client_id" defaultValue={params.client_id} className="rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todos os clientes</option>{(clients ?? []).map(client => <option key={client.id} value={client.id}>{client.name}</option>)}</select>
+          <select name="reviewer" defaultValue={params.reviewer} className="rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todos os revisores</option><option value="none">Sem revisor</option>{reviewers.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
+          <select name="visibility" defaultValue={params.visibility} className="rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Toda visibilidade</option><option value="admin_only">Somente equipe</option><option value="client_visible">Visível ao cliente</option></select>
+          <select name="requested" defaultValue={params.requested} className="rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Solicitados ou não</option><option value="yes">Documento solicitado</option><option value="no">Não solicitado</option></select>
+          <div className="flex gap-2 xl:col-span-7"><button className="rounded-xl bg-primary px-4 py-2 text-xs font-bold text-white">Aplicar filtros</button><Link href="/documentos" className="rounded-xl border border-border px-4 py-2 text-xs font-semibold">Limpar</Link></div>
+        </form>
+      </section>
 
-                        {/* Tipo */}
-                        <td className="px-5 py-4 hidden md:table-cell">
-                          {doc.document_type ? (
-                            <span
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold dash"
-                              style={{ backgroundColor: `${typeColor}15`, color: typeColor }}
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: typeColor }} />
-                              {DOC_TYPE_LABELS[doc.document_type] ?? doc.document_type}
-                            </span>
-                          ) : (
-                            <span className="text-slate-300 dash text-xs">—</span>
-                          )}
-                        </td>
-
-                        {/* Cliente */}
-                        <td className="px-5 py-4 hidden md:table-cell">
-                          {doc.clients ? (
-                            <Link
-                              href={`/clientes/${doc.clients.id}`}
-                              className="dash text-sm font-medium text-slate-700 hover:text-blue-600 transition-colors flex items-center gap-1"
-                            >
-                              {doc.clients.name}
-                            </Link>
-                          ) : (
-                            <span className="text-slate-300 dash text-xs">—</span>
-                          )}
-                        </td>
-
-                        {/* Processo */}
-                        <td className="px-5 py-4 hidden lg:table-cell">
-                          {doc.processes?.process_types?.name ? (
-                            <Link
-                              href={`/processos/${doc.process_id}`}
-                              className="dash text-xs text-slate-500 hover:text-blue-600 transition-colors flex items-center gap-1"
-                            >
-                              {doc.processes.process_types.name}
-                              <ArrowUpRight className="w-3 h-3 opacity-50" />
-                            </Link>
-                          ) : (
-                            <span className="text-slate-300 dash text-xs">—</span>
-                          )}
-                        </td>
-
-                        {/* Status */}
-                        <td className="px-5 py-4">
-                          <DocumentStatusBadge status={doc.status} />
-                        </td>
-
-                        {/* Data */}
-                        <td className="px-5 py-4 hidden lg:table-cell">
-                          <span className="dash text-xs text-slate-400">{formatDate(doc.created_at)}</span>
-                        </td>
-
-                        {/* Ações */}
-                        <td className="px-5 py-4 text-right">
-                          <DocumentActions document={doc} />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Footer info */}
-        {documents && documents.length > 0 && (
-          <p className="text-center text-xs text-slate-400 dash pb-2">
-            Exibindo <span className="font-semibold text-slate-600">{documents.length}</span> documento{documents.length !== 1 ? 's' : ''}
-            {hasFilters && ' (filtrado)'}
-          </p>
+      <section className="eleva-surface overflow-hidden">
+        {!documents?.length ? (
+          <div className="py-20 text-center"><FileText className="mx-auto h-10 w-10 text-muted-foreground/30" /><p className="mt-3 text-sm font-semibold text-foreground">Nenhum documento encontrado</p><p className="mt-1 text-xs text-muted-foreground">Ajuste os filtros ou adicione um documento dentro do processo.</p></div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-300 text-sm">
+              <thead className="border-b border-border bg-muted/40"><tr>{['Documento', 'Cliente / processo', 'Status', 'Solicitado', 'Revisor', 'Visibilidade', 'Recebido em', 'Ações'].map(label => <th key={label} className="px-5 py-3 text-left text-xs font-semibold text-muted-foreground">{label}</th>)}</tr></thead>
+              <tbody className="divide-y divide-border">{(documents as unknown as Array<Document & { clients?: { id: string; name: string }; processes?: { id: string; process_types?: { name: string } }; review_responsible?: { id: string; name: string } }>).map(doc => (
+                <tr key={doc.id} className="align-top hover:bg-muted/20">
+                  <td className="px-5 py-4"><a href={doc.file_url} target="_blank" rel="noopener noreferrer" className="inline-flex max-w-60 items-center gap-1 font-semibold text-primary hover:underline"><span className="truncate">{doc.file_name}</span><ArrowUpRight className="h-3.5 w-3.5 shrink-0" /></a><p className="mt-1 text-[11px] text-muted-foreground">{DOC_TYPE_LABELS[doc.document_type ?? ''] ?? doc.document_type ?? 'Sem tipo'}</p></td>
+                  <td className="px-5 py-4"><Link href={`/clientes/${doc.clients?.id}`} className="font-semibold text-foreground hover:text-primary">{doc.clients?.name ?? 'Cliente não informado'}</Link>{doc.process_id && <Link href={`/processos/${doc.process_id}`} className="mt-1 block text-xs text-muted-foreground hover:text-primary">{doc.processes?.process_types?.name ?? 'Abrir processo'}</Link>}</td>
+                  <td className="px-5 py-4"><DocumentStatusBadge status={doc.status} /></td>
+                  <td className="px-5 py-4 text-xs text-muted-foreground">{doc.requested_at ? <><span className="font-semibold text-amber-700">Sim</span><br />{formatDate(doc.requested_at)}</> : 'Não'}</td>
+                  <td className="px-5 py-4 text-xs text-muted-foreground">{doc.review_responsible?.name ?? 'Não definido'}</td>
+                  <td className="px-5 py-4"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${doc.visibility === 'client_visible' ? 'bg-blue-50 text-blue-700' : 'bg-slate-100 text-slate-600'}`}>{doc.visibility === 'client_visible' ? 'Cliente' : 'Somente equipe'}</span></td>
+                  <td className="px-5 py-4 text-xs text-muted-foreground">{formatDate(doc.created_at)}</td>
+                  <td className="px-5 py-4"><DocumentActions document={doc} reviewers={reviewers} /></td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
         )}
-      </div>
-    </>
+        <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-muted-foreground"><span>{filteredCount ?? 0} resultado{filteredCount === 1 ? '' : 's'} · página {currentPage} de {pageCount}</span><div className="flex gap-2"><Link aria-disabled={currentPage <= 1} href={href({ page: String(Math.max(1, currentPage - 1)) })} className={`rounded-lg border px-3 py-1.5 ${currentPage <= 1 ? 'pointer-events-none opacity-40' : ''}`}>Anterior</Link><Link aria-disabled={currentPage >= pageCount} href={href({ page: String(Math.min(pageCount, currentPage + 1)) })} className={`rounded-lg border px-3 py-1.5 ${currentPage >= pageCount ? 'pointer-events-none opacity-40' : ''}`}>Próxima</Link></div></div>
+      </section>
+    </div>
   )
 }

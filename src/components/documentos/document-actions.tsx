@@ -1,145 +1,85 @@
 'use client'
+
 import { useState } from 'react'
-import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
-import { CheckCircle, XCircle, RefreshCw, X } from 'lucide-react'
+import { CheckCircle, Loader2, RefreshCw, Save, XCircle } from 'lucide-react'
+import type { Document, DocumentStatus, Profile } from '@/types/database'
 
-type DocStatus = 'pending' | 'received' | 'under_review' | 'approved' | 'rejected' | 'resend_required'
+interface Props {
+  document: Document
+  reviewers: Pick<Profile, 'id' | 'name'>[]
+}
 
-export function DocumentActions({ document }: { document: any }) {
+export function DocumentActions({ document, reviewers }: Props) {
   const router = useRouter()
-  const [loading, setLoading] = useState<DocStatus | null>(null)
-  const [showRejectModal, setShowRejectModal] = useState(false)
-  const [rejectionReason, setRejectionReason] = useState('')
+  const [open, setOpen] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
+  const [form, setForm] = useState({
+    status: document.status,
+    visibility: document.visibility ?? 'admin_only',
+    reviewResponsibleId: document.review_responsible_id ?? '',
+    rejectionReason: document.rejection_reason ?? '',
+  })
 
-  const updateStatus = async (status: DocStatus, extra: Record<string, any> = {}) => {
-    setLoading(status)
-    const supabase = createClient()
-    await supabase.from('documents').update({ status, ...extra }).eq('id', document.id)
-
-    if (document.process_id) {
-      const actionMap: Record<DocStatus, string> = {
-        approved: 'document_approved', rejected: 'document_rejected',
-        resend_required: 'document_rejected', pending: 'updated',
-        received: 'document_uploaded', under_review: 'updated',
-      }
-      await supabase.from('process_history').insert({
-        process_id: document.process_id,
-        action_type: actionMap[status] ?? 'updated',
-        new_value: status,
-        note: extra.rejection_reason ? `Reprovado: ${extra.rejection_reason}` : undefined,
-      })
+  async function save(status: DocumentStatus = form.status) {
+    setLoading(true)
+    setError('')
+    const response = await fetch(`/api/documentos/${document.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        status,
+        visibility: form.visibility,
+        reviewResponsibleId: form.reviewResponsibleId || null,
+        rejectionReason: form.rejectionReason || null,
+      }),
+    })
+    const result = await response.json().catch(() => ({}))
+    setLoading(false)
+    if (!response.ok) {
+      setError(result.error ?? 'Não foi possível atualizar o documento.')
+      return
     }
-
-    setLoading(null)
+    setOpen(false)
     router.refresh()
   }
 
-  if (document.status === 'approved' || document.status === 'rejected') {
+  if (!open) {
     return (
-      <span className="text-xs text-slate-400 dash">
-        {document.status === 'approved'
-          ? <span className="text-emerald-600 font-semibold">Aprovado</span>
-          : <span className="text-red-500 font-semibold" title={document.rejection_reason ?? ''}>Reprovado</span>
-        }
-      </span>
+      <button type="button" onClick={() => setOpen(true)} className="rounded-lg border border-border px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/5">
+        Revisar
+      </button>
     )
   }
 
   return (
-    <>
-      {showRejectModal && createPortal(
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: 'rgba(0,0,0,0.55)' }}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden"
-            style={{ animation: 'modalIn 0.18s ease-out both' }}
-          >
-            <style>{`@keyframes modalIn { from { opacity:0; transform: scale(0.96) translateY(6px); } to { opacity:1; transform: scale(1) translateY(0); } }`}</style>
-
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4"
-              style={{ background: 'linear-gradient(135deg, #450a0a, #991b1b)', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-              <div>
-                <h3 className="dash text-white font-bold">Reprovar Documento</h3>
-                <p className="dash text-red-300/70 text-xs mt-0.5 truncate max-w-55">{document.file_name}</p>
-              </div>
-              <button
-                onClick={() => setShowRejectModal(false)}
-                className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/70 hover:text-white transition-all"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-5 space-y-4">
-              <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-slate-700 dash">Motivo da reprovação</label>
-                <textarea
-                  value={rejectionReason}
-                  onChange={e => setRejectionReason(e.target.value)}
-                  rows={3}
-                  className="block w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm bg-slate-50 focus:bg-white focus:border-red-400 focus:outline-none transition-all dash resize-none"
-                  placeholder="Descreva o motivo (opcional)..."
-                  autoFocus
-                />
-              </div>
-              <div className="flex gap-2.5">
-                <button
-                  onClick={() => {
-                    setShowRejectModal(false)
-                    updateStatus('rejected', { rejection_reason: rejectionReason || null })
-                  }}
-                  className="flex-1 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold py-2.5 rounded-xl transition-colors dash"
-                >
-                  Confirmar Reprovação
-                </button>
-                <button
-                  onClick={() => setShowRejectModal(false)}
-                  className="px-4 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors dash"
-                >
-                  Cancelar
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      , document.body)}
-
-      <div className="flex items-center justify-end gap-1">
-        <button
-          onClick={() => updateStatus('approved')}
-          disabled={loading !== null}
-          title="Aprovar"
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-emerald-600 hover:bg-emerald-50 hover:text-emerald-700 transition-all disabled:opacity-40 cursor-pointer"
-        >
-          {loading === 'approved'
-            ? <span className="w-3.5 h-3.5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
-            : <CheckCircle className="w-4 h-4" />}
-        </button>
-        <button
-          onClick={() => setShowRejectModal(true)}
-          disabled={loading !== null}
-          title="Reprovar"
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:bg-red-50 hover:text-red-600 transition-all disabled:opacity-40 cursor-pointer"
-        >
-          <XCircle className="w-4 h-4" />
-        </button>
-        <button
-          onClick={() => updateStatus('resend_required')}
-          disabled={loading !== null}
-          title="Solicitar reenvio"
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-amber-500 hover:bg-amber-50 hover:text-amber-600 transition-all disabled:opacity-40 cursor-pointer"
-        >
-          {loading === 'resend_required'
-            ? <span className="w-3.5 h-3.5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
-            : <RefreshCw className="w-4 h-4" />}
-        </button>
+    <div className="min-w-64 space-y-2 rounded-xl border border-border bg-card p-3 text-left shadow-lg">
+      <select value={form.status} onChange={event => setForm(current => ({ ...current, status: event.target.value as DocumentStatus }))} className="w-full rounded-lg border border-input px-2 py-1.5 text-xs">
+        <option value="pending">Pendente</option>
+        <option value="received">Recebido</option>
+        <option value="under_review">Em revisão</option>
+        <option value="approved">Aprovado</option>
+        <option value="rejected">Reprovado</option>
+        <option value="resend_required">Reenvio solicitado</option>
+      </select>
+      <select value={form.reviewResponsibleId} onChange={event => setForm(current => ({ ...current, reviewResponsibleId: event.target.value }))} className="w-full rounded-lg border border-input px-2 py-1.5 text-xs">
+        <option value="">Sem revisor definido</option>
+        {reviewers.map(reviewer => <option key={reviewer.id} value={reviewer.id}>{reviewer.name}</option>)}
+      </select>
+      <select value={form.visibility} onChange={event => setForm(current => ({ ...current, visibility: event.target.value as typeof form.visibility }))} className="w-full rounded-lg border border-input px-2 py-1.5 text-xs">
+        <option value="admin_only">Somente equipe</option>
+        <option value="client_visible">Visível ao cliente</option>
+      </select>
+      <textarea value={form.rejectionReason} onChange={event => setForm(current => ({ ...current, rejectionReason: event.target.value }))} placeholder="Motivo de rejeição ou reenvio" className="min-h-16 w-full rounded-lg border border-input px-2 py-1.5 text-xs" maxLength={1000} />
+      {error && <p className="text-[11px] text-red-600">{error}</p>}
+      <div className="flex flex-wrap justify-end gap-1">
+        <button type="button" onClick={() => save('approved')} disabled={loading} title="Aprovar" className="rounded-lg p-2 text-emerald-600 hover:bg-emerald-50"><CheckCircle className="h-4 w-4" /></button>
+        <button type="button" onClick={() => save('rejected')} disabled={loading} title="Reprovar" className="rounded-lg p-2 text-red-600 hover:bg-red-50"><XCircle className="h-4 w-4" /></button>
+        <button type="button" onClick={() => save('resend_required')} disabled={loading} title="Solicitar reenvio" className="rounded-lg p-2 text-amber-600 hover:bg-amber-50"><RefreshCw className="h-4 w-4" /></button>
+        <button type="button" onClick={() => save()} disabled={loading} title="Salvar fluxo" className="rounded-lg p-2 text-primary hover:bg-primary/5">{loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}</button>
+        <button type="button" onClick={() => setOpen(false)} disabled={loading} className="rounded-lg p-2 text-muted-foreground hover:bg-muted"><span className="sr-only">Fechar</span>×</button>
       </div>
-    </>
+    </div>
   )
 }

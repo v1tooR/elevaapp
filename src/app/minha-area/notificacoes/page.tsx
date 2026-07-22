@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { getClientPortalNotifications } from '@/lib/client-portal'
 import { Bell, ArrowLeft, LayoutGrid, MailOpen } from 'lucide-react'
 import Link from 'next/link'
 import { MarkAllReadButton } from '@/components/notificacoes/mark-all-read'
@@ -11,21 +11,7 @@ export default async function ClienteNotificacoesPage({
 }) {
   const { filtro = 'todas' } = await searchParams
 
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  const { data: profile } = await supabase
-    .from('profiles').select('id').eq('auth_user_id', user!.id).single()
-
-  const { data: allNotifs } = await supabase
-    .from('notifications')
-    .select('*, clients(name), processes(id, process_types(name))')
-    .eq('user_id', profile!.id)
-    .eq('is_canceled', false)
-    .lte('available_at', new Date().toISOString())
-    .order('available_at', { ascending: false })
-    .limit(50)
-
-  const notifications = allNotifs ?? []
+  const { profile, notifications } = await getClientPortalNotifications()
   const unread = notifications.filter((n: any) => !n.is_read)
   const read   = notifications.filter((n: any) => n.is_read)
 

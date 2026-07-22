@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --no-warnings --experimental-strip-types --test src/lib/eligibility.test.mjs src/lib/gov-access.test.mjs src/lib/process-workflow.test.mjs src/lib/cnh-medical-workflow.test.mjs src/lib/operational-workflows.test.mjs",
+    "test": "node --no-warnings --experimental-strip-types --test src/lib/eligibility.test.mjs src/lib/gov-access.test.mjs src/lib/process-workflow.test.mjs src/lib/cnh-medical-workflow.test.mjs src/lib/operational-workflows.test.mjs src/lib/document-security.test.mjs",
     "test:db": "supabase test db"
   },
   "dependencies": {

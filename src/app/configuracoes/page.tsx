@@ -22,7 +22,7 @@ export default async function ConfiguracoesPage() {
   const profs = (profiles ?? []) as Profile[]
   const activeTypes = pts.filter(processType => processType.is_active).length
   const totalUsers = profs.length
-  const activeUsers = profs.filter(profile => profile.role !== 'cliente').length
+  const activeUsers = profs.filter(profile => profile.role !== 'cliente' && profile.is_active).length
 
   const chips = [
     { label: 'Tipos de processo', value: String(pts.length),    bg: 'rgba(99,102,241,0.15)',  color: '#a5b4fc' },

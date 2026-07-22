@@ -8,9 +8,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select } from '@/components/ui/select'
 import { PROCESS_TYPE_CUSTOM_FIELDS, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
-import { syncProcessFinancial } from '@/lib/sync-process-financial'
-import { createCnhProcessStages } from '@/lib/cnh-stages'
-import { hasOperationalWorkflow } from '@/lib/operational-workflows'
+import { getCnhStageTemplates } from '@/lib/cnh-stages'
+import { buildOperationalStageRows } from '@/lib/operational-workflows'
 import {
   analyzeEligibility,
   isEligibilityProcess,
@@ -176,124 +175,77 @@ function NovoProcessoForm() {
       setError('Selecione o cliente e o tipo de processo.')
       return
     }
+    if (selectedTypeSlug === 'cnh_especial' && selectedClient?.client_type !== 'condutor') {
+      setError('A CNH Especial exige que o cliente esteja cadastrado como condutor.')
+      return
+    }
 
     setLoading(true)
     setError('')
 
     const supabase = createClient()
-    const selectedProcessType = processTypes.find(t => t.id === form.process_type_id)
-
-    const { data: process, error: procErr } = await supabase.from('processes').insert({
-      client_id: form.client_id,
-      process_type_id: form.process_type_id,
-      protocol: form.protocol || null,
-      status: form.status as any,
-      responsible_user_id: form.responsible_user_id || null,
-      observations: form.observations || null,
-      jurisdiction_state: form.jurisdiction_state || selectedClient?.state || null,
-      vehicle_condition: selectedTypeSlug === 'cnh_especial' ? null : form.vehicle_condition || null,
-      eligibility_status: eligibilityAnalysis?.status ?? null,
-      eligibility_analysis: eligibilityAnalysis ?? null,
-    }).select().single()
-
-    if (procErr || !process) {
-      setError('Erro ao criar processo: ' + (procErr?.message ?? 'Erro desconhecido'))
-      setLoading(false)
-      return
-    }
-
     const customFieldInserts = customFields
       .filter(f => customFieldValues[f.field_name])
       .map((f, idx) => ({
-        process_id: process.id,
         field_name: f.field_name,
         field_label: f.field_label,
         field_type: f.field_type,
         field_value: customFieldValues[f.field_name],
         sort_order: idx,
+        client_visible: false,
       }))
-
-    if (customFieldInserts.length > 0) {
-      const { error: customFieldsError } = await supabase.from('process_custom_fields').insert(customFieldInserts)
-      if (customFieldsError) {
-        setError('Processo criado, mas não foi possível salvar os campos específicos: ' + customFieldsError.message)
-        setLoading(false)
-        return
-      }
-    }
-
-    if (
-      selectedTypeSlug === 'processo_ipva' &&
-      (form.jurisdiction_state || selectedClient?.state)?.toUpperCase() === 'SP'
-    ) {
-      const workflowResponse = await fetch(`/api/processos/${process.id}/workflow`, { method: 'POST' })
-      const workflowResult = await workflowResponse.json()
-      if (!workflowResponse.ok) {
-        setError('Processo criado, mas não foi possível inicializar o workflow IMESC/IPVA: ' + (workflowResult.error ?? 'Erro desconhecido'))
-        setLoading(false)
-        return
-      }
-    }
-
-    if (hasOperationalWorkflow(selectedTypeSlug)) {
-      const workflowResponse = await fetch(`/api/processos/${process.id}/operational-workflow`, { method: 'POST' })
-      const workflowResult = await workflowResponse.json()
-      if (!workflowResponse.ok) {
-        setError('Processo criado, mas não foi possível inicializar as etapas operacionais: ' + (workflowResult.error ?? 'Erro desconhecido'))
-        setLoading(false)
-        return
-      }
-    }
-
-    if (isSuperAdmin && (form.service_value || form.payment_method || form.financial_notes)) {
-      const serviceValue = form.service_value ? parseCurrency(form.service_value) : null
-      const financeEntryId = serviceValue ? await syncProcessFinancial(supabase, {
-        processId: process.id,
-        clientId: form.client_id,
-        processTypeName: selectedProcessType?.name ?? 'Processo',
-        processTypeSlug: selectedProcessType?.slug ?? '',
-        serviceValue,
-        paymentStatus: form.payment_status,
-        expectedPaymentDate: form.expected_payment_date || null,
-      }) : null
-
-      await supabase.from('process_financials').insert({
-        process_id: process.id,
-        service_value: serviceValue,
-        payment_method: form.payment_method as any || null,
-        payment_status: form.payment_status as any,
-        expected_payment_date: form.expected_payment_date || null,
-        financial_notes: form.financial_notes || null,
-        finance_entry_id: financeEntryId,
-      })
-    }
-
-    await supabase.from('process_history').insert({
-      process_id: process.id,
-      action_type: 'created',
-      new_value: form.status,
-      note: 'Processo criado',
-    })
-
-    // CNH Especial: populate process stages based on client's disability
-    if (selectedTypeSlug === 'cnh_especial' && selectedClient?.client_type === 'condutor') {
-      try {
-        await createCnhProcessStages(supabase, process.id, {
+    const cnhStages = selectedTypeSlug === 'cnh_especial'
+      ? getCnhStageTemplates({
           clientType: selectedClient.client_type,
           medicalAssessmentStatus: selectedClient.medical_assessment_status,
           requiresPracticalExam: selectedClient.requires_practical_exam,
         })
-      } catch (stageErr: unknown) {
-        // Process created; stages failed — still redirect but warn
-        console.error('cnh-stages error:', stageErr)
-        const message = stageErr instanceof Error ? stageErr.message : 'Erro desconhecido'
-        setError('Processo criado, mas houve um erro ao criar as etapas: ' + message)
-        setLoading(false)
-        return
-      }
+      : null
+    const stageRows = cnhStages
+      ? cnhStages.map(stage => ({
+          stage_key: stage.stage_key,
+          label: stage.label,
+          sort_order: stage.sort_order,
+          status: stage.status ?? 'pendente',
+          data: stage.data,
+        }))
+      : buildOperationalStageRows('', selectedTypeSlug).map(({ process_id: _processId, ...stage }) => {
+          void _processId
+          return stage
+        })
+    const financial = isSuperAdmin && (form.service_value || form.payment_method || form.financial_notes)
+      ? {
+          service_value: form.service_value ? parseCurrency(form.service_value) : null,
+          payment_method: form.payment_method || null,
+          payment_status: form.payment_status,
+          expected_payment_date: form.expected_payment_date || null,
+          financial_notes: form.financial_notes || null,
+        }
+      : null
+
+    const { data: processId, error: procErr } = await supabase.rpc('create_process_atomic', {
+      p_client_id: form.client_id,
+      p_process_type_id: form.process_type_id,
+      p_protocol: form.protocol || null,
+      p_status: form.status,
+      p_responsible_user_id: form.responsible_user_id || null,
+      p_observations: form.observations || null,
+      p_jurisdiction_state: form.jurisdiction_state || selectedClient?.state || null,
+      p_vehicle_condition: selectedTypeSlug === 'cnh_especial' ? null : form.vehicle_condition || null,
+      p_eligibility_status: eligibilityAnalysis?.status ?? null,
+      p_eligibility_analysis: eligibilityAnalysis ?? null,
+      p_custom_fields: customFieldInserts,
+      p_stages: stageRows,
+      p_financial: financial,
+    })
+
+    if (procErr || !processId) {
+      setError('Erro ao criar processo: ' + (procErr?.message ?? 'Erro desconhecido'))
+      setLoading(false)
+      return
     }
 
-    router.push(`/processos/${process.id}`)
+    router.push(`/processos/${processId}`)
   }
 
   const clientOptions = clients.map(c => ({ value: c.id, label: c.name }))
