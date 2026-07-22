@@ -9,8 +9,20 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { MedicalRequirementsEditor } from '@/components/processos/medical-requirements-editor'
 import type { ProcessStage } from '@/types/database'
 import { formatDate } from '@/lib/utils'
+import {
+  APPEAL_STATUS_LABELS,
+  APPEAL_STATUS_OPTIONS,
+  getMedicalRequirements,
+  getMedicalRequirementsSummary,
+  inferAppealStatus,
+  isMedicalStage,
+  validateAppealWorkflow,
+  type AppealStatus,
+  type MedicalRequirement,
+} from '@/lib/cnh-medical-workflow'
 
 interface Props {
   stages: ProcessStage[]
@@ -72,37 +84,6 @@ const CHECKLIST_LABELS: Record<string, string> = {
   email:                'E-mail',
 }
 
-const MEDICAL_FOLLOW_UP_OPTIONS = [
-  { value: 'complementary_exam_requested', label: 'Exame complementar solicitado' },
-  { value: 'complementary_exam_completed', label: 'Exame realizado — aguardando retorno' },
-  { value: 'follow_up_scheduled', label: 'Retorno médico agendado' },
-  { value: 'decision_pending', label: 'Aguardando conclusão médica' },
-] as const
-
-function getMedicalFollowUpSummary(stage?: ProcessStage) {
-  if (!stage || stage.stage_key !== 'pericia_medica') return null
-
-  const data = (stage.data ?? {}) as Record<string, unknown>
-  const status = data.medical_follow_up_status
-  const examName = typeof data.complementary_exam_name === 'string'
-    ? data.complementary_exam_name.trim()
-    : ''
-  const followUpDate = typeof data.follow_up_date === 'string' ? data.follow_up_date : ''
-
-  if (status === 'complementary_exam_requested') {
-    return `Aguardando ${examName || 'exame complementar'}`
-  }
-  if (status === 'complementary_exam_completed') {
-    return `${examName || 'Exame complementar'} realizado — aguardando retorno médico`
-  }
-  if (status === 'follow_up_scheduled') {
-    return followUpDate ? `Retorno médico em ${formatDate(followUpDate)}` : 'Retorno médico agendado'
-  }
-  if (status === 'decision_pending') return 'Aguardando conclusão médica'
-
-  return null
-}
-
 const STAGE_ICONS: Record<string, React.ElementType> = {
   checklist_documentos:   ClipboardList,
   agendamento_poupatempo: Calendar,
@@ -116,6 +97,12 @@ const STAGE_ICONS: Record<string, React.ElementType> = {
 
 function initEdit(stage: ProcessStage): EditState {
   const data = { ...(stage.data as Record<string, unknown>) }
+  if (isMedicalStage(stage.stage_key)) {
+    data.medical_requirements = getMedicalRequirements(stage)
+  }
+  if (stage.stage_key === 'recurso_junta_medica') {
+    data.appeal_status = inferAppealStatus(stage)
+  }
   return {
     status:         stage.status,
     scheduled_date: stage.scheduled_date ?? '',
@@ -234,16 +221,50 @@ export function CnhStagesPanel({ stages, processId }: Props) {
       }))
       return
     }
+    const medicalRequirements = Array.isArray(edit.data.medical_requirements)
+      ? edit.data.medical_requirements as MedicalRequirement[]
+      : []
+    const invalidMedicalRequirement = medicalRequirements.find(requirement => (
+      !requirement.title.trim() ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(requirement.requested_at) ||
+      (['concluida', 'cancelada'].includes(requirement.status) && !requirement.result.trim())
+    ))
+    if (isMedicalStage(stage.stage_key) && invalidMedicalRequirement) {
+      setErrors(prev => ({
+        ...prev,
+        [stage.id]: !invalidMedicalRequirement.title.trim()
+          ? 'Informe qual exame ou exigência médica foi solicitado.'
+          : !invalidMedicalRequirement.requested_at
+            ? 'Informe a data da solicitação médica.'
+            : 'Informe o resultado ou motivo para encerrar a exigência médica.',
+      }))
+      return
+    }
+    const hasOpenMedicalRequirement = medicalRequirements.some(requirement => (
+      !['concluida', 'cancelada'].includes(requirement.status)
+    ))
     if (
-      stage.stage_key === 'pericia_medica' &&
-      edit.data.medical_follow_up_status === 'complementary_exam_requested' &&
-      !(typeof edit.data.complementary_exam_name === 'string' && edit.data.complementary_exam_name.trim())
+      isMedicalStage(stage.stage_key) &&
+      hasOpenMedicalRequirement &&
+      (['aprovado', 'reprovado'].includes(edit.status) || ['aprovado', 'reprovado'].includes(edit.result))
     ) {
       setErrors(prev => ({
         ...prev,
-        [stage.id]: 'Informe qual exame complementar foi solicitado.',
+        [stage.id]: 'Conclua ou cancele todas as exigências médicas antes de registrar o resultado definitivo.',
       }))
       return
+    }
+    if (stage.stage_key === 'recurso_junta_medica') {
+      const appealError = validateAppealWorkflow({
+        data: edit.data,
+        scheduledDate: edit.scheduled_date || null,
+        result: edit.result || null,
+        stageStatus: edit.status,
+      })
+      if (appealError) {
+        setErrors(prev => ({ ...prev, [stage.id]: appealError }))
+        return
+      }
     }
     if (
       stage.stage_key === 'emissao_cnh' &&
@@ -291,7 +312,7 @@ export function CnhStagesPanel({ stages, processId }: Props) {
   const doneCount = sorted.filter(s => isResolved(s.status)).length
   const pct = sorted.length > 0 ? Math.round((doneCount / sorted.length) * 100) : 0
   const currentStage = sorted.find(s => s.status === 'em_andamento') ?? sorted.find(s => s.status === 'pendente')
-  const currentStageDetail = getMedicalFollowUpSummary(currentStage)
+  const currentStageDetail = currentStage ? getMedicalRequirementsSummary(currentStage) : null
 
   return (
     <div className="space-y-5">
@@ -428,7 +449,8 @@ export function CnhStagesPanel({ stages, processId }: Props) {
           const isLast = idx === sorted.length - 1
           const done = isComplete(stage.status)
           const Icon = STAGE_ICONS[stage.stage_key] ?? Clock
-          const medicalFollowUpSummary = getMedicalFollowUpSummary(stage)
+          const medicalFollowUpSummary = getMedicalRequirementsSummary(stage)
+          const appealStatus = stage.stage_key === 'recurso_junta_medica' ? inferAppealStatus(stage) : null
 
           return (
             <div key={stage.id} className="relative">
@@ -489,6 +511,9 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                       )}
                       {medicalFollowUpSummary && (
                         <p className="text-[10px] font-semibold text-amber-700">{medicalFollowUpSummary}</p>
+                      )}
+                      {appealStatus && (
+                        <p className="text-[10px] font-semibold text-sky-700">{APPEAL_STATUS_LABELS[appealStatus]}</p>
                       )}
                     </div>
                   </div>
@@ -670,7 +695,14 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                                   const cur = prev[stage.id] ?? initEdit(stage)
                                   return {
                                     ...prev,
-                                    [stage.id]: { ...cur, result: newResult, status: newResult || cur.status },
+                                    [stage.id]: {
+                                      ...cur,
+                                      result: newResult,
+                                      status: newResult || cur.status,
+                                      data: stage.stage_key === 'recurso_junta_medica' && newResult
+                                        ? { ...cur.data, appeal_status: 'concluido' }
+                                        : cur.data,
+                                    },
                                   }
                                 })
                               }}
@@ -693,49 +725,16 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                       </div>
                     )}
 
+                    {isMedicalStage(stage.stage_key) && (
+                      <MedicalRequirementsEditor
+                        requirements={(edit.data.medical_requirements as MedicalRequirement[]) ?? []}
+                        onChange={requirements => updateData(stage, 'medical_requirements', requirements)}
+                      />
+                    )}
+
                     {/* pericia_medica: observacoes */}
                     {stage.stage_key === 'pericia_medica' && (
                       <div className="space-y-3">
-                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-3">
-                          <div className="space-y-1.5">
-                            <p className="text-xs font-semibold text-amber-900">Situação após o atendimento</p>
-                            <select
-                              value={(edit.data.medical_follow_up_status as string) ?? ''}
-                              onChange={e => updateData(stage, 'medical_follow_up_status', e.target.value || null)}
-                              className="block w-full rounded-lg border border-amber-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
-                            >
-                              <option value="">Sem pendência complementar registrada</option>
-                              {MEDICAL_FOLLOW_UP_OPTIONS.map(option => (
-                                <option key={option.value} value={option.value}>{option.label}</option>
-                              ))}
-                            </select>
-                          </div>
-
-                          {['complementary_exam_requested', 'complementary_exam_completed'].includes(String(edit.data.medical_follow_up_status ?? '')) && (
-                            <div className="space-y-1.5">
-                              <p className="text-xs font-semibold text-amber-900">Exame complementar</p>
-                              <input
-                                type="text"
-                                value={(edit.data.complementary_exam_name as string) ?? ''}
-                                onChange={e => updateData(stage, 'complementary_exam_name', e.target.value)}
-                                placeholder="Ex.: tomografia da coluna"
-                                className="block w-full rounded-lg border border-amber-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
-                              />
-                            </div>
-                          )}
-
-                          {edit.data.medical_follow_up_status === 'follow_up_scheduled' && (
-                            <div className="space-y-1.5">
-                              <p className="text-xs font-semibold text-amber-900">Data do retorno</p>
-                              <input
-                                type="date"
-                                value={(edit.data.follow_up_date as string) ?? ''}
-                                onChange={e => updateData(stage, 'follow_up_date', e.target.value)}
-                                className="block w-full rounded-lg border border-amber-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
-                              />
-                            </div>
-                          )}
-                        </div>
                         <div className="space-y-1.5">
                           <p className="text-xs font-semibold text-slate-600">Restrições determinadas</p>
                           <input
@@ -794,7 +793,24 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                     {/* recurso_junta_medica */}
                     {stage.stage_key === 'recurso_junta_medica' && (
                       <div className="space-y-3">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <div className="space-y-1.5 rounded-xl border border-sky-200 bg-sky-50 p-3">
+                          <p className="text-xs font-semibold text-sky-900">Situação operacional do recurso</p>
+                          <select
+                            value={(edit.data.appeal_status as AppealStatus) ?? inferAppealStatus(stage)}
+                            onChange={event => {
+                              updateData(stage, 'appeal_status', event.target.value)
+                              if (event.target.value !== 'concluido') updateEdit(stage, 'status', 'em_andamento')
+                            }}
+                            className="block w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:outline-none"
+                          >
+                            {APPEAL_STATUS_OPTIONS.map(option => (
+                              <option key={option.value} value={option.value}>{option.label}</option>
+                            ))}
+                          </select>
+                          <p className="text-[10px] text-sky-700">Use esta situação para acompanhar o caminho entre o cadastro no SEI e o resultado da junta.</p>
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="space-y-1.5">
                             <p className="text-xs font-semibold text-slate-600">E-mail do cadastro SEI</p>
                             <input
@@ -812,6 +828,15 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                               value={(edit.data.protocolo as string) ?? ''}
                               onChange={e => updateData(stage, 'protocolo', e.target.value)}
                               placeholder="Nº do protocolo SEI"
+                              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-semibold text-slate-600">Data do protocolo</p>
+                            <input
+                              type="date"
+                              value={(edit.data.appeal_filed_at as string) ?? ''}
+                              onChange={e => updateData(stage, 'appeal_filed_at', e.target.value)}
                               className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
                             />
                           </div>

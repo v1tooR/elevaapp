@@ -8,6 +8,12 @@ import {
 import { ProcessStatusBadge } from '@/components/shared/status-badge'
 import { DocumentUploader } from '@/components/shared/document-uploader'
 import { formatDate, formatDateTime, formatCurrency, HISTORY_ACTION_LABELS } from '@/lib/utils'
+import {
+  APPEAL_STATUS_LABELS,
+  getOpenMedicalRequirements,
+  inferAppealStatus,
+} from '@/lib/cnh-medical-workflow'
+import { getOperationalWorkflowDefinition, hasOperationalWorkflow } from '@/lib/operational-workflows'
 
 // ─── Friendly labels for CNH stage keys ─────────────────────────────────────
 
@@ -40,49 +46,63 @@ const STAGE_STATUS_LABEL: Record<string, string> = {
 }
 
 type MedicalFollowUpStage = {
+  id: string
   stage_key?: string
+  scheduled_date?: string | null
+  result?: string | null
+  updated_at?: string | null
   data?: Record<string, unknown> | null
 }
 
 function getMedicalFollowUpCopy(stage?: MedicalFollowUpStage | null) {
-  if (!stage || stage.stage_key !== 'pericia_medica') return null
+  if (!stage || !['pericia_medica', 'recurso_junta_medica'].includes(stage.stage_key ?? '')) return null
+  const openRequirements = getOpenMedicalRequirements({ ...stage, stage_key: stage.stage_key ?? '' })
+  if (openRequirements.length === 0) return null
 
-  const data = (stage.data ?? {}) as Record<string, unknown>
-  const status = data.medical_follow_up_status
-  const examName = typeof data.complementary_exam_name === 'string' && data.complementary_exam_name.trim()
-    ? data.complementary_exam_name.trim()
-    : 'exame complementar'
+  const first = openRequirements[0]
+  const isExam = first.type === 'exame_complementar'
+  const title = openRequirements.length > 1
+    ? `${openRequirements.length} solicitações médicas em aberto`
+    : first.status === 'aguardando_retorno'
+      ? 'Aguardando retorno médico'
+      : `Aguardando ${first.title || (isExam ? 'exame complementar' : 'exigência médica')}`
 
-  if (status === 'complementary_exam_requested') {
-    return {
-      title: `Aguardando ${examName}`,
-      desc: 'A avaliação médica ainda não foi concluída porque foi solicitado um exame complementar.',
-      tip: 'Realize o exame e envie o resultado para a equipe organizar o retorno médico.',
-    }
+  return {
+    title,
+    desc: isExam
+      ? 'A avaliação médica ainda não foi concluída porque existe um exame complementar em aberto.'
+      : 'A avaliação médica ainda não foi concluída porque existe uma nova exigência em aberto.',
+    tip: first.follow_up_date
+      ? `Retorno médico previsto para ${formatDate(first.follow_up_date)}.`
+      : 'Siga as orientações enviadas pela equipe e encaminhe o resultado assim que estiver disponível.',
   }
-  if (status === 'complementary_exam_completed') {
-    return {
-      title: 'Aguardando retorno médico',
-      desc: `${examName} realizado; falta a conclusão da avaliação médica.`,
-      tip: 'Envie o resultado para a equipe confirmar o retorno.',
-    }
-  }
-  if (status === 'follow_up_scheduled') {
-    return {
-      title: 'Retorno médico agendado',
-      desc: 'O exame complementar será reavaliado no retorno médico.',
-      tip: 'Leve o resultado do exame e os documentos solicitados.',
-    }
-  }
-  if (status === 'decision_pending') {
-    return {
-      title: 'Aguardando conclusão médica',
-      desc: 'A equipe aguarda o resultado definitivo da avaliação.',
-      tip: 'A próxima etapa será definida somente após a conclusão médica.',
-    }
-  }
+}
 
-  return null
+function getAppealCopy(stage?: MedicalFollowUpStage | null) {
+  if (!stage || stage.stage_key !== 'recurso_junta_medica') return null
+  const status = inferAppealStatus({ ...stage, stage_key: stage.stage_key })
+
+  const descriptions = {
+    cadastro_sei_pendente: 'A equipe está organizando o cadastro necessário para apresentar o recurso.',
+    recurso_em_preparacao: 'O recurso médico está sendo preparado para envio pelo SEI.',
+    recurso_protocolado: 'O recurso já foi enviado e recebeu protocolo.',
+    aguardando_agendamento: 'O recurso foi protocolado e aguarda a definição da data da Junta Médica.',
+    junta_agendada: 'A Junta Médica com três profissionais já tem uma data definida.',
+    aguardando_resultado: 'A Junta Médica foi realizada e o resultado ainda não foi concluído.',
+    concluido: 'A análise do recurso pela Junta Médica foi concluída.',
+  } as const
+
+  return {
+    title: APPEAL_STATUS_LABELS[status],
+    desc: descriptions[status],
+    tip: status === 'cadastro_sei_pendente'
+      ? 'Se for necessário autenticar em um portal, a equipe entrará em contato para que você mesmo realize o acesso.'
+      : 'A equipe acompanhará o andamento e avisará quando houver mudança.',
+  }
+}
+
+function getStageOperationalCopy(stage?: MedicalFollowUpStage | null) {
+  return getMedicalFollowUpCopy(stage) ?? getAppealCopy(stage)
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
@@ -131,17 +151,19 @@ export default async function ClienteProcessoDetailPage({
 
   const pt = process.process_types as any
   const isCnh = pt?.slug === 'cnh_especial'
-  const stages = isCnh ? (rawStages ?? []) : []
+  const isOperational = hasOperationalWorkflow(pt?.slug ?? '')
+  const operationalWorkflow = getOperationalWorkflowDefinition(pt?.slug ?? '')
+  const stages = isCnh || isOperational ? (rawStages ?? []) : []
   const color: string = pt?.color ?? '#A14F2A'
 
-  // CNH-specific computed values
+  // Valores de andamento dos workflows estruturados
   const sortedStages = [...stages].sort((a: any, b: any) => a.sort_order - b.sort_order)
   const doneStatuses = new Set(['concluido', 'aprovado', 'nao_aplicavel'])
   const resolvedStatuses = new Set([...doneStatuses, 'reprovado'])
   const doneCount = sortedStages.filter((s: any) => resolvedStatuses.has(s.status)).length
   const currentStage: any = sortedStages.find((s: any) => s.status === 'em_andamento')
     ?? sortedStages.find((s: any) => s.status === 'pendente')
-  const currentStageFollowUp = getMedicalFollowUpCopy(currentStage)
+  const currentStageFollowUp = getStageOperationalCopy(currentStage)
   const isAllDone = !currentStage && stages.length > 0
 
   // Missing docs from checklist stage
@@ -368,7 +390,7 @@ export default async function ClienteProcessoDetailPage({
                   const opacity = isPastCurrent && !isNa ? 0.5 : 1
 
                   const friendly = STAGE_FRIENDLY[stage.stage_key]
-                  const medicalFollowUp = getMedicalFollowUpCopy(stage)
+                  const medicalFollowUp = getStageOperationalCopy(stage)
 
                   return (
                     <div key={stage.id} className="flex gap-3 relative" style={{ opacity }}>
@@ -521,6 +543,39 @@ export default async function ClienteProcessoDetailPage({
 
             {/* Right: documents + history */}
             <div className="lg:col-span-2 space-y-4">
+              {isOperational && sortedStages.length > 0 && (
+                <div
+                  className="bg-white rounded-2xl overflow-hidden"
+                  style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+                >
+                  <div className="p-5 border-b border-slate-100">
+                    <h2 className="dash font-bold text-slate-900 text-sm">Andamento do processo</h2>
+                    <p className="text-xs text-slate-400 mt-0.5">{operationalWorkflow?.title}</p>
+                  </div>
+                  <div className="p-5 space-y-3">
+                    {sortedStages.map((stage: any, index: number) => {
+                      const resolved = resolvedStatuses.has(stage.status)
+                      return (
+                        <div key={stage.id} className="flex items-start gap-3">
+                          <div className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${resolved ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                            {resolved ? <CheckCircle2 className="h-3.5 w-3.5" /> : index + 1}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-slate-800">{stage.label}</p>
+                              <span className="shrink-0 text-[10px] font-semibold text-slate-500">{STAGE_STATUS_LABEL[stage.status] ?? stage.status}</span>
+                            </div>
+                            {stage.scheduled_date && (
+                              <p className="mt-0.5 flex items-center gap-1 text-xs text-amber-700"><Calendar className="h-3 w-3" />{formatDate(stage.scheduled_date)}</p>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div
                 className="bg-white rounded-2xl overflow-hidden"
                 style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}

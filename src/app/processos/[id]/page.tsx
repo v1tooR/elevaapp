@@ -10,7 +10,9 @@ import { DocumentUploader } from '@/components/shared/document-uploader'
 import { CnhStagesPanel } from '@/components/processos/cnh-stages-panel'
 import { InitCnhStagesButton } from '@/components/processos/init-cnh-stages-button'
 import { IpvaStagesPanel } from '@/components/processos/ipva-stages-panel'
+import { OperationalStagesPanel } from '@/components/processos/operational-stages-panel'
 import { EligibilityReviewPanel } from '@/components/processos/eligibility-review-panel'
+import { hasOperationalWorkflow } from '@/lib/operational-workflows'
 import {
   analyzeEligibility,
   isEligibilityProcess,
@@ -429,6 +431,26 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                     />
                   )}
                 </div>
+              </div>
+            )}
+
+            {hasOperationalWorkflow(pt?.slug ?? '') && (
+              <div className="anim anim-1 overflow-hidden rounded-2xl bg-white" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
+                <div className="flex items-center gap-2.5 border-b border-slate-50 px-5 py-4">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-50">
+                    <ListChecks className="h-3.5 w-3.5 text-sky-600" />
+                  </div>
+                  <div>
+                    <h2 className="dash font-bold text-slate-900">Etapas operacionais</h2>
+                    <p className="dash mt-0.5 text-xs text-slate-400">Checklist, protocolos, decisões e comunicação do processo</p>
+                  </div>
+                </div>
+                <OperationalStagesPanel
+                  processId={process.id}
+                  processTypeSlug={pt.slug}
+                  stages={processStages}
+                  jurisdictionState={process.jurisdiction_state || client?.state || null}
+                />
               </div>
             )}
 

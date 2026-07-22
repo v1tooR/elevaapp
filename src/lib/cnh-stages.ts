@@ -36,9 +36,7 @@ const STAGE_PERICIA: StageTemplate = {
     restricoes: '',
     requires_practical_exam: null,
     requires_adapted_vehicle: null,
-    medical_follow_up_status: null,
-    complementary_exam_name: '',
-    follow_up_date: '',
+    medical_requirements: [],
   },
 }
 

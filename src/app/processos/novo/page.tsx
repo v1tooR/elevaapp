@@ -10,6 +10,7 @@ import { PROCESS_TYPE_CUSTOM_FIELDS, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { syncProcessFinancial } from '@/lib/sync-process-financial'
 import { createCnhProcessStages } from '@/lib/cnh-stages'
+import { hasOperationalWorkflow } from '@/lib/operational-workflows'
 import {
   analyzeEligibility,
   isEligibilityProcess,
@@ -229,6 +230,16 @@ function NovoProcessoForm() {
       const workflowResult = await workflowResponse.json()
       if (!workflowResponse.ok) {
         setError('Processo criado, mas não foi possível inicializar o workflow IMESC/IPVA: ' + (workflowResult.error ?? 'Erro desconhecido'))
+        setLoading(false)
+        return
+      }
+    }
+
+    if (hasOperationalWorkflow(selectedTypeSlug)) {
+      const workflowResponse = await fetch(`/api/processos/${process.id}/operational-workflow`, { method: 'POST' })
+      const workflowResult = await workflowResponse.json()
+      if (!workflowResponse.ok) {
+        setError('Processo criado, mas não foi possível inicializar as etapas operacionais: ' + (workflowResult.error ?? 'Erro desconhecido'))
         setLoading(false)
         return
       }
