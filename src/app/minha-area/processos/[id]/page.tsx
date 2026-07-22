@@ -25,7 +25,7 @@ const STAGE_FRIENDLY: Record<string, { title: string; desc: string; tip: string 
 const CHECKLIST_FRIENDLY: Record<string, string> = {
   cnh:                  'CNH atual',
   laudo_medico:         'Laudo Médico',
-  senha_gov:            'Senha Gov.br',
+  acesso_gov_validado:  'Acesso Gov.br validado com o cliente',
   comprovante_endereco: 'Comprovante de Endereço',
   email:                'E-mail confirmado',
 }
@@ -37,6 +37,52 @@ const STAGE_STATUS_LABEL: Record<string, string> = {
   aprovado:      'Aprovado',
   reprovado:     'Não aprovado',
   nao_aplicavel: 'Não aplicável',
+}
+
+type MedicalFollowUpStage = {
+  stage_key?: string
+  data?: Record<string, unknown> | null
+}
+
+function getMedicalFollowUpCopy(stage?: MedicalFollowUpStage | null) {
+  if (!stage || stage.stage_key !== 'pericia_medica') return null
+
+  const data = (stage.data ?? {}) as Record<string, unknown>
+  const status = data.medical_follow_up_status
+  const examName = typeof data.complementary_exam_name === 'string' && data.complementary_exam_name.trim()
+    ? data.complementary_exam_name.trim()
+    : 'exame complementar'
+
+  if (status === 'complementary_exam_requested') {
+    return {
+      title: `Aguardando ${examName}`,
+      desc: 'A avaliação médica ainda não foi concluída porque foi solicitado um exame complementar.',
+      tip: 'Realize o exame e envie o resultado para a equipe organizar o retorno médico.',
+    }
+  }
+  if (status === 'complementary_exam_completed') {
+    return {
+      title: 'Aguardando retorno médico',
+      desc: `${examName} realizado; falta a conclusão da avaliação médica.`,
+      tip: 'Envie o resultado para a equipe confirmar o retorno.',
+    }
+  }
+  if (status === 'follow_up_scheduled') {
+    return {
+      title: 'Retorno médico agendado',
+      desc: 'O exame complementar será reavaliado no retorno médico.',
+      tip: 'Leve o resultado do exame e os documentos solicitados.',
+    }
+  }
+  if (status === 'decision_pending') {
+    return {
+      title: 'Aguardando conclusão médica',
+      desc: 'A equipe aguarda o resultado definitivo da avaliação.',
+      tip: 'A próxima etapa será definida somente após a conclusão médica.',
+    }
+  }
+
+  return null
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────
@@ -91,9 +137,11 @@ export default async function ClienteProcessoDetailPage({
   // CNH-specific computed values
   const sortedStages = [...stages].sort((a: any, b: any) => a.sort_order - b.sort_order)
   const doneStatuses = new Set(['concluido', 'aprovado', 'nao_aplicavel'])
-  const doneCount = sortedStages.filter((s: any) => doneStatuses.has(s.status)).length
+  const resolvedStatuses = new Set([...doneStatuses, 'reprovado'])
+  const doneCount = sortedStages.filter((s: any) => resolvedStatuses.has(s.status)).length
   const currentStage: any = sortedStages.find((s: any) => s.status === 'em_andamento')
     ?? sortedStages.find((s: any) => s.status === 'pendente')
+  const currentStageFollowUp = getMedicalFollowUpCopy(currentStage)
   const isAllDone = !currentStage && stages.length > 0
 
   // Missing docs from checklist stage
@@ -106,7 +154,7 @@ export default async function ClienteProcessoDetailPage({
   const hasMissingDocs = isCnh && (missingChecklist.length > 0 || pendingDocs.length > 0)
 
   const customFields = Array.isArray(process.custom_fields)
-    ? (process.custom_fields as any[]).filter(f => !['senha_gov', 'gov_password'].includes(f.field_name))
+    ? (process.custom_fields as any[]).filter(f => !['senha_gov', 'gov_password', 'senha_sei', 'senha_email', 'senha_portal'].includes(f.field_name))
     : []
 
   return (
@@ -218,15 +266,15 @@ export default async function ClienteProcessoDetailPage({
                       Etapa {Math.min(doneCount + 1, stages.length)} de {stages.length}
                     </p>
                     <h2 className="dash text-lg font-bold text-slate-900 leading-tight">
-                      {STAGE_FRIENDLY[currentStage?.stage_key]?.title ?? currentStage?.label ?? '–'}
+                      {currentStageFollowUp?.title ?? STAGE_FRIENDLY[currentStage?.stage_key]?.title ?? currentStage?.label ?? '–'}
                     </h2>
                     <p className="text-sm text-slate-500 mt-0.5">
-                      {STAGE_FRIENDLY[currentStage?.stage_key]?.desc ?? ''}
+                      {currentStageFollowUp?.desc ?? STAGE_FRIENDLY[currentStage?.stage_key]?.desc ?? ''}
                     </p>
                     {currentStage?.scheduled_date && (
                       <div className="flex items-center gap-1.5 mt-2 text-xs font-semibold" style={{ color: '#A14F2A' }}>
                         <Calendar className="w-3.5 h-3.5" />
-                        Data agendada: {formatDate(currentStage.scheduled_date)}
+                        {currentStage.attended ? 'Atendimento em' : 'Data agendada'}: {formatDate(currentStage.scheduled_date)}
                       </div>
                     )}
                     {events && events.length > 0 && !currentStage?.scheduled_date && (
@@ -236,7 +284,7 @@ export default async function ClienteProcessoDetailPage({
                       </div>
                     )}
                     <p className="text-xs text-slate-400 mt-2 italic">
-                      {STAGE_FRIENDLY[currentStage?.stage_key]?.tip ?? ''}
+                      {currentStageFollowUp?.tip ?? STAGE_FRIENDLY[currentStage?.stage_key]?.tip ?? ''}
                     </p>
                   </div>
                 </div>
@@ -320,6 +368,7 @@ export default async function ClienteProcessoDetailPage({
                   const opacity = isPastCurrent && !isNa ? 0.5 : 1
 
                   const friendly = STAGE_FRIENDLY[stage.stage_key]
+                  const medicalFollowUp = getMedicalFollowUpCopy(stage)
 
                   return (
                     <div key={stage.id} className="flex gap-3 relative" style={{ opacity }}>
@@ -349,10 +398,10 @@ export default async function ClienteProcessoDetailPage({
                         <div className="flex items-start justify-between gap-2 flex-wrap">
                           <div>
                             <p className={`dash text-sm font-semibold leading-snug ${isCurrent ? 'text-slate-900' : isDone ? 'text-slate-700' : 'text-slate-500'}`}>
-                              {friendly?.title ?? stage.label}
+                              {(isCurrent ? medicalFollowUp?.title : null) ?? friendly?.title ?? stage.label}
                             </p>
-                            {isCurrent && friendly?.desc && (
-                              <p className="text-xs text-slate-500 mt-0.5">{friendly.desc}</p>
+                            {isCurrent && (medicalFollowUp?.desc || friendly?.desc) && (
+                              <p className="text-xs text-slate-500 mt-0.5">{medicalFollowUp?.desc ?? friendly?.desc}</p>
                             )}
                           </div>
                           <span

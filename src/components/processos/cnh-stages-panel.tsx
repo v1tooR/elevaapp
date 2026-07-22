@@ -61,15 +61,46 @@ const STATUS_OPTIONS_BY_KEY: Record<string, string[]> = {
 const HAS_SCHEDULED_DATE = new Set([
   'agendamento_poupatempo', 'pericia_medica', 'recurso_junta_medica', 'exame_pratico',
 ])
-const HAS_ATTENDED = new Set(['agendamento_poupatempo', 'pericia_medica', 'exame_pratico'])
+const HAS_ATTENDED = new Set(['agendamento_poupatempo', 'pericia_medica', 'recurso_junta_medica', 'exame_pratico'])
 
-const CHECKLIST_FIELDS = ['cnh', 'laudo_medico', 'senha_gov', 'comprovante_endereco', 'email'] as const
+const CHECKLIST_FIELDS = ['cnh', 'laudo_medico', 'acesso_gov_validado', 'comprovante_endereco', 'email'] as const
 const CHECKLIST_LABELS: Record<string, string> = {
   cnh:                  'CNH atual',
   laudo_medico:         'Laudo Médico',
-  senha_gov:            'Senha Gov.br',
+  acesso_gov_validado:  'Acesso Gov.br validado com o cliente',
   comprovante_endereco: 'Comprovante de Endereço',
   email:                'E-mail',
+}
+
+const MEDICAL_FOLLOW_UP_OPTIONS = [
+  { value: 'complementary_exam_requested', label: 'Exame complementar solicitado' },
+  { value: 'complementary_exam_completed', label: 'Exame realizado — aguardando retorno' },
+  { value: 'follow_up_scheduled', label: 'Retorno médico agendado' },
+  { value: 'decision_pending', label: 'Aguardando conclusão médica' },
+] as const
+
+function getMedicalFollowUpSummary(stage?: ProcessStage) {
+  if (!stage || stage.stage_key !== 'pericia_medica') return null
+
+  const data = (stage.data ?? {}) as Record<string, unknown>
+  const status = data.medical_follow_up_status
+  const examName = typeof data.complementary_exam_name === 'string'
+    ? data.complementary_exam_name.trim()
+    : ''
+  const followUpDate = typeof data.follow_up_date === 'string' ? data.follow_up_date : ''
+
+  if (status === 'complementary_exam_requested') {
+    return `Aguardando ${examName || 'exame complementar'}`
+  }
+  if (status === 'complementary_exam_completed') {
+    return `${examName || 'Exame complementar'} realizado — aguardando retorno médico`
+  }
+  if (status === 'follow_up_scheduled') {
+    return followUpDate ? `Retorno médico em ${formatDate(followUpDate)}` : 'Retorno médico agendado'
+  }
+  if (status === 'decision_pending') return 'Aguardando conclusão médica'
+
+  return null
 }
 
 const STAGE_ICONS: Record<string, React.ElementType> = {
@@ -97,6 +128,10 @@ function initEdit(stage: ProcessStage): EditState {
 
 function isComplete(status: string) {
   return ['concluido', 'aprovado', 'nao_aplicavel'].includes(status)
+}
+
+function isResolved(status: string) {
+  return isComplete(status) || status === 'reprovado'
 }
 
 export function CnhStagesPanel({ stages, processId }: Props) {
@@ -178,13 +213,13 @@ export function CnhStagesPanel({ stages, processId }: Props) {
   const saveStage = async (stage: ProcessStage) => {
     const edit = getEdit(stage)
     if (
-      stage.stage_key === 'pericia_medica' &&
+      ['pericia_medica', 'recurso_junta_medica'].includes(stage.stage_key) &&
       (edit.result === 'aprovado' || edit.status === 'aprovado') &&
       typeof edit.data.requires_practical_exam !== 'boolean'
     ) {
       setErrors(prev => ({
         ...prev,
-        [stage.id]: 'Informe se o exame prático foi determinado antes de aprovar a perícia.',
+        [stage.id]: 'Informe se o exame prático foi determinado antes de registrar a aprovação médica.',
       }))
       return
     }
@@ -196,6 +231,17 @@ export function CnhStagesPanel({ stages, processId }: Props) {
       setErrors(prev => ({
         ...prev,
         [stage.id]: 'Informe a data da ciência da reprovação para calcular o prazo recursal.',
+      }))
+      return
+    }
+    if (
+      stage.stage_key === 'pericia_medica' &&
+      edit.data.medical_follow_up_status === 'complementary_exam_requested' &&
+      !(typeof edit.data.complementary_exam_name === 'string' && edit.data.complementary_exam_name.trim())
+    ) {
+      setErrors(prev => ({
+        ...prev,
+        [stage.id]: 'Informe qual exame complementar foi solicitado.',
       }))
       return
     }
@@ -242,9 +288,10 @@ export function CnhStagesPanel({ stages, processId }: Props) {
   }
 
   const sorted = [...stages].sort((a, b) => a.sort_order - b.sort_order)
-  const doneCount = sorted.filter(s => isComplete(s.status)).length
+  const doneCount = sorted.filter(s => isResolved(s.status)).length
   const pct = sorted.length > 0 ? Math.round((doneCount / sorted.length) * 100) : 0
   const currentStage = sorted.find(s => s.status === 'em_andamento') ?? sorted.find(s => s.status === 'pendente')
+  const currentStageDetail = getMedicalFollowUpSummary(currentStage)
 
   return (
     <div className="space-y-5">
@@ -353,9 +400,12 @@ export function CnhStagesPanel({ stages, processId }: Props) {
         {currentStage && pct < 100 && (
           <div className="mt-4 flex items-center gap-2 bg-white/5 rounded-xl px-3 py-2.5 border border-white/10">
             <div className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse shrink-0" />
-            <p className="text-xs text-white/70">
-              Em andamento: <span className="font-semibold text-white/90">{currentStage.label}</span>
-            </p>
+            <div>
+              <p className="text-xs text-white/70">
+                Em andamento: <span className="font-semibold text-white/90">{currentStage.label}</span>
+              </p>
+              {currentStageDetail && <p className="mt-0.5 text-[11px] font-medium text-amber-200">{currentStageDetail}</p>}
+            </div>
           </div>
         )}
         {pct === 100 && (
@@ -378,6 +428,7 @@ export function CnhStagesPanel({ stages, processId }: Props) {
           const isLast = idx === sorted.length - 1
           const done = isComplete(stage.status)
           const Icon = STAGE_ICONS[stage.stage_key] ?? Clock
+          const medicalFollowUpSummary = getMedicalFollowUpSummary(stage)
 
           return (
             <div key={stage.id} className="relative">
@@ -435,6 +486,9 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                         <p className="text-[10px] text-slate-400 truncate max-w-30" title={stage.notes}>
                           {stage.notes}
                         </p>
+                      )}
+                      {medicalFollowUpSummary && (
+                        <p className="text-[10px] font-semibold text-amber-700">{medicalFollowUpSummary}</p>
                       )}
                     </div>
                   </div>
@@ -642,6 +696,46 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                     {/* pericia_medica: observacoes */}
                     {stage.stage_key === 'pericia_medica' && (
                       <div className="space-y-3">
+                        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-3">
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-semibold text-amber-900">Situação após o atendimento</p>
+                            <select
+                              value={(edit.data.medical_follow_up_status as string) ?? ''}
+                              onChange={e => updateData(stage, 'medical_follow_up_status', e.target.value || null)}
+                              className="block w-full rounded-lg border border-amber-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
+                            >
+                              <option value="">Sem pendência complementar registrada</option>
+                              {MEDICAL_FOLLOW_UP_OPTIONS.map(option => (
+                                <option key={option.value} value={option.value}>{option.label}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          {['complementary_exam_requested', 'complementary_exam_completed'].includes(String(edit.data.medical_follow_up_status ?? '')) && (
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-semibold text-amber-900">Exame complementar</p>
+                              <input
+                                type="text"
+                                value={(edit.data.complementary_exam_name as string) ?? ''}
+                                onChange={e => updateData(stage, 'complementary_exam_name', e.target.value)}
+                                placeholder="Ex.: tomografia da coluna"
+                                className="block w-full rounded-lg border border-amber-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
+                              />
+                            </div>
+                          )}
+
+                          {edit.data.medical_follow_up_status === 'follow_up_scheduled' && (
+                            <div className="space-y-1.5">
+                              <p className="text-xs font-semibold text-amber-900">Data do retorno</p>
+                              <input
+                                type="date"
+                                value={(edit.data.follow_up_date as string) ?? ''}
+                                onChange={e => updateData(stage, 'follow_up_date', e.target.value)}
+                                className="block w-full rounded-lg border border-amber-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
+                              />
+                            </div>
+                          )}
+                        </div>
                         <div className="space-y-1.5">
                           <p className="text-xs font-semibold text-slate-600">Restrições determinadas</p>
                           <input
@@ -699,26 +793,58 @@ export function CnhStagesPanel({ stages, processId }: Props) {
 
                     {/* recurso_junta_medica */}
                     {stage.stage_key === 'recurso_junta_medica' && (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="space-y-1.5">
-                          <p className="text-xs font-semibold text-slate-600">Cadastro SEI</p>
-                          <input
-                            type="text"
-                            value={(edit.data.cadastro_sei as string) ?? ''}
-                            onChange={e => updateData(stage, 'cadastro_sei', e.target.value)}
-                            placeholder="Nº SEI"
-                            className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
-                          />
+                      <div className="space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-semibold text-slate-600">E-mail do cadastro SEI</p>
+                            <input
+                              type="email"
+                              value={(edit.data.cadastro_sei as string) ?? ''}
+                              onChange={e => updateData(stage, 'cadastro_sei', e.target.value)}
+                              placeholder="email@exemplo.com"
+                              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
+                            />
+                          </div>
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-semibold text-slate-600">Protocolo</p>
+                            <input
+                              type="text"
+                              value={(edit.data.protocolo as string) ?? ''}
+                              onChange={e => updateData(stage, 'protocolo', e.target.value)}
+                              placeholder="Nº do protocolo SEI"
+                              className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
+                            />
+                          </div>
                         </div>
                         <div className="space-y-1.5">
-                          <p className="text-xs font-semibold text-slate-600">Protocolo</p>
+                          <p className="text-xs font-semibold text-slate-600">Restrições determinadas pela junta</p>
                           <input
                             type="text"
-                            value={(edit.data.protocolo as string) ?? ''}
-                            onChange={e => updateData(stage, 'protocolo', e.target.value)}
-                            placeholder="Nº protocolo"
+                            value={(edit.data.restricoes as string) ?? ''}
+                            onChange={e => updateData(stage, 'restricoes', e.target.value)}
+                            placeholder="Códigos registrados, ex.: A, D, F"
                             className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
                           />
+                          <p className="text-[10px] text-slate-400">Copie os códigos do resultado; não os deduza pela deficiência.</p>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {[
+                            { key: 'requires_practical_exam', label: 'Exame prático determinado?' },
+                            { key: 'requires_adapted_vehicle', label: 'Veículo adaptado determinado?' },
+                          ].map(field => (
+                            <div key={field.key} className="space-y-1.5">
+                              <p className="text-xs font-semibold text-slate-600">{field.label}</p>
+                              <select
+                                value={typeof edit.data[field.key] === 'boolean' ? String(edit.data[field.key]) : ''}
+                                onChange={e => updateData(stage, field.key, e.target.value === '' ? null : e.target.value === 'true')}
+                                className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
+                              >
+                                <option value="">Aguardando definição</option>
+                                <option value="true">Sim</option>
+                                <option value="false">Não</option>
+                              </select>
+                            </div>
+                          ))}
                         </div>
                       </div>
                     )}
@@ -752,21 +878,25 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                         {edit.data.modalidade === 'veiculo_proprio' && (
                           <div className="space-y-1.5">
                             <p className="text-xs font-semibold text-slate-600">Checklist veículo próprio</p>
-                            {Object.entries({
-                              cadastro_sei:             'Cadastro SEI',
-                              anexo_renach:             'Anexo RENACH',
-                              anexo_cnh:                'Anexo CNH',
-                              comprovante_pagamento_35: 'Comprovante Pag. R$35',
-                              crlv:                     'CRLV do veículo',
-                            }).map(([key, label]) => {
+                            {[
+                              { key: 'cadastro_sei', label: 'Cadastro SEI' },
+                              { key: 'anexo_renach', label: 'RENACH' },
+                              { key: 'anexo_cnh', label: 'CNH' },
+                              { key: 'comprovante_pagamento_exame', legacyKey: 'comprovante_pagamento_35', label: 'Comprovante de pagamento do exame' },
+                              { key: 'crlv', label: 'CRLV do veículo' },
+                              { key: 'comprovante_endereco', label: 'Comprovante de endereço' },
+                            ].map(({ key, legacyKey, label }) => {
                               const checklist = (edit.data.checklist_veiculo_proprio as Record<string, boolean>) ?? {}
-                              const checked = !!checklist[key]
+                              const checked = !!(checklist[key] || (legacyKey && checklist[legacyKey]))
                               return (
                                 <label key={key} className="flex items-center gap-3 p-2.5 bg-white rounded-xl border border-slate-200 cursor-pointer hover:border-amber-200 transition-colors">
                                   <input
                                     type="checkbox"
                                     checked={checked}
-                                    onChange={e => updateNestedData(stage, 'checklist_veiculo_proprio', key, e.target.checked)}
+                                    onChange={e => {
+                                      updateNestedData(stage, 'checklist_veiculo_proprio', key, e.target.checked)
+                                      if (legacyKey) updateNestedData(stage, 'checklist_veiculo_proprio', legacyKey, false)
+                                    }}
                                     className="w-4 h-4 rounded text-amber-600 shrink-0"
                                   />
                                   <span className="text-sm text-slate-700">{label}</span>

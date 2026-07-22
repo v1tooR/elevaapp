@@ -7,10 +7,12 @@ import { MaskedInput } from '@/components/ui/masked-input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import Link from 'next/link'
-import { ArrowLeft, User, MapPin, Lock, AlertCircle, KeyRound, Eye, EyeOff, RefreshCw, Stethoscope } from 'lucide-react'
+import { ArrowLeft, User, MapPin, Lock, AlertCircle, KeyRound, Eye, EyeOff, RefreshCw, Stethoscope, ShieldCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ClientEligibilityFields } from '@/components/clientes/client-eligibility-fields'
 import { EMPTY_CLIENT_ELIGIBILITY, clientEligibilityPayload, type ClientEligibilityFormValue } from '@/lib/client-eligibility'
+import { GovAccessFields } from '@/components/clientes/gov-access-fields'
+import { EMPTY_GOV_ACCESS, govAccessPayload, type GovAccessFormValue } from '@/lib/gov-access'
 
 const CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!'
 
@@ -31,8 +33,9 @@ export default function NovoClientePage() {
   const [error, setError] = useState('')
   const [form, setForm] = useState({
     name: '', cpf: '', rg: '', birth_date: '', phone: '', email: '',
-    address: '', city: '', state: '', gov_password_reference: '', internal_notes: ''
+    address: '', city: '', state: '', internal_notes: ''
   })
+  const [govAccess, setGovAccess] = useState<GovAccessFormValue>(EMPTY_GOV_ACCESS)
   const [criarAcesso, setCriarAcesso] = useState(false)
   const [portalEmail, setPortalEmail] = useState('')
   const [portalPassword, setPortalPassword] = useState('')
@@ -66,8 +69,8 @@ export default function NovoClientePage() {
       address: form.address || null,
       city: form.city || null,
       state: form.state || null,
-      gov_password_reference: form.gov_password_reference || null,
       internal_notes: form.internal_notes || null,
+      ...govAccessPayload(govAccess),
       ...clientEligibilityPayload(eligi),
     }).select().single()
 
@@ -204,13 +207,6 @@ export default function NovoClientePage() {
               </div>
             </div>
             <div className="space-y-4">
-              <Input
-                label="Referência Senha Gov.br"
-                value={form.gov_password_reference}
-                onChange={e => update('gov_password_reference', e.target.value)}
-                placeholder="Referência ou dica (nunca a senha real)"
-                helperText="Use apenas referências. Nunca armazene senhas reais."
-              />
               <Textarea
                 label="Observações internas"
                 value={form.internal_notes}
@@ -219,6 +215,19 @@ export default function NovoClientePage() {
                 rows={3}
               />
             </div>
+          </div>
+
+          <div className="anim anim-4 rounded-2xl p-6" style={sectionCard}>
+            <div className="mb-5 flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-50">
+                <ShieldCheck className="h-4 w-4 text-blue-600" />
+              </div>
+              <div>
+                <h2 className="dash text-sm font-bold text-slate-900">Acesso assistido ao Gov.br</h2>
+                <p className="dash text-[11px] text-slate-400">Controle operacional sem armazenar credenciais</p>
+              </div>
+            </div>
+            <GovAccessFields value={govAccess} onChange={setGovAccess} />
           </div>
 
           {/* ── Elegibilidade ─────────────────────────────────────── */}
@@ -243,8 +252,8 @@ export default function NovoClientePage() {
                   <KeyRound className="w-4 h-4 text-indigo-500" />
                 </div>
                 <div>
-                  <h2 className="dash font-bold text-slate-900 text-sm">Acesso ao Portal</h2>
-                  <p className="text-[11px] text-slate-400 dash">Criar login para o cliente acompanhar processos</p>
+                  <h2 className="dash font-bold text-slate-900 text-sm">Portal do cliente Eleva</h2>
+                  <p className="text-[11px] text-slate-400 dash">Login exclusivo para o cliente acompanhar os processos</p>
                 </div>
               </div>
               <button
@@ -305,7 +314,7 @@ export default function NovoClientePage() {
                     </button>
                   </div>
                   {portalPassword && showPw && (
-                    <p className="mt-1.5 text-[11px] text-amber-600 dash">Anote esta senha para compartilhar com o cliente.</p>
+                    <p className="mt-1.5 text-[11px] text-amber-600 dash">Senha temporária exclusiva do Eleva. Nunca reutilize a senha Gov.br.</p>
                   )}
                 </div>
               </div>

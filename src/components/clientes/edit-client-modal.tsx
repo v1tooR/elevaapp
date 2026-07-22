@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Edit, X, User, MapPin, Lock, AlertCircle, Stethoscope } from 'lucide-react'
+import { Edit, X, User, MapPin, Lock, AlertCircle, Stethoscope, ShieldCheck } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { MaskedInput } from '@/components/ui/masked-input'
 import { Button } from '@/components/ui/button'
@@ -11,14 +11,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { ClientEligibilityFields } from '@/components/clientes/client-eligibility-fields'
 import { clientEligibilityFromRecord, clientEligibilityPayload } from '@/lib/client-eligibility'
 import type { Client } from '@/types/database'
+import { GovAccessFields } from '@/components/clientes/gov-access-fields'
+import { govAccessFromRecord, govAccessPayload } from '@/lib/gov-access'
 
 const BRAZIL_STATES = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']
 
-type Tab = 'pessoal' | 'endereco' | 'interno' | 'elegibilidade'
+type Tab = 'pessoal' | 'endereco' | 'acesso' | 'interno' | 'elegibilidade'
 
 const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'pessoal',       label: 'Dados Pessoais', icon: <User className="w-3.5 h-3.5" /> },
   { key: 'endereco',      label: 'Endereço',        icon: <MapPin className="w-3.5 h-3.5" /> },
+  { key: 'acesso',        label: 'Gov.br',          icon: <ShieldCheck className="w-3.5 h-3.5" /> },
   { key: 'interno',       label: 'Interno',         icon: <Lock className="w-3.5 h-3.5" /> },
   { key: 'elegibilidade', label: 'Elegibilidade',   icon: <Stethoscope className="w-3.5 h-3.5" /> },
 ]
@@ -39,9 +42,9 @@ export function EditClientModal({ client }: { client: Client }) {
     address: client.address ?? '',
     city: client.city ?? '',
     state: client.state ?? '',
-    gov_password_reference: client.gov_password_reference ?? '',
     internal_notes: client.internal_notes ?? '',
   })
+  const [govAccess, setGovAccess] = useState(() => govAccessFromRecord(client))
 
   const [eligi, setEligi] = useState(() => clientEligibilityFromRecord(client))
 
@@ -62,8 +65,8 @@ export function EditClientModal({ client }: { client: Client }) {
       address: form.address || null,
       city: form.city || null,
       state: form.state || null,
-      gov_password_reference: form.gov_password_reference || null,
       internal_notes: form.internal_notes || null,
+      ...govAccessPayload(govAccess),
       ...clientEligibilityPayload(eligi),
     }).eq('id', client.id)
 
@@ -174,13 +177,6 @@ export function EditClientModal({ client }: { client: Client }) {
 
                 {tab === 'interno' && (
                   <div className="space-y-4">
-                    <Input
-                      label="Referência Gov.br"
-                      value={form.gov_password_reference}
-                      onChange={e => update('gov_password_reference', e.target.value)}
-                      placeholder="Referência ou dica (nunca a senha real)"
-                      helperText="Nunca armazene senhas reais."
-                    />
                     <Textarea
                       label="Observações internas"
                       value={form.internal_notes}
@@ -189,6 +185,10 @@ export function EditClientModal({ client }: { client: Client }) {
                       rows={4}
                     />
                   </div>
+                )}
+
+                {tab === 'acesso' && (
+                  <GovAccessFields value={govAccess} onChange={setGovAccess} compact />
                 )}
 
                 {tab === 'elegibilidade' && (

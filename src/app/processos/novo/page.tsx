@@ -21,7 +21,7 @@ import { EligibilityAnalysisCard } from '@/components/processos/eligibility-anal
 import type { VehicleCondition } from '@/types/database'
 import Link from 'next/link'
 import {
-  ArrowLeft, Sparkles, TrendingUp, Link2, Check,
+  ArrowLeft, TrendingUp, Link2, Check,
   Layers, Settings, DollarSign, AlertCircle, ChevronRight,
 } from 'lucide-react'
 
@@ -55,7 +55,6 @@ function NovoProcessoForm() {
   const [selectedTypeName, setSelectedTypeName] = useState('')
   const [selectedTypeColor, setSelectedTypeColor] = useState('')
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({})
-  const [clientGovPassword, setClientGovPassword] = useState('')
 
   const [form, setForm] = useState({
     client_id: preClientId,
@@ -77,7 +76,7 @@ function NovoProcessoForm() {
     const supabase = createClient()
     Promise.all([
       supabase.from('process_types').select('*').eq('is_active', true).neq('slug', 'resumo').order('name'),
-      supabase.from('clients').select('id, name, state, gov_password_reference, client_type, disability_type, disability_types, disability_severity, cnh_status, cnh_restrictions, medical_assessment_status, requires_adapted_vehicle, requires_practical_exam, has_medical_report, authorized_drivers').eq('is_active', true).order('name'),
+      supabase.from('clients').select('id, name, state, client_type, disability_type, disability_types, disability_severity, cnh_status, cnh_restrictions, medical_assessment_status, requires_adapted_vehicle, requires_practical_exam, has_medical_report, authorized_drivers').eq('is_active', true).order('name'),
       supabase.from('profiles').select('id, name').in('role', ['admin', 'analista', 'super_admin']).order('name'),
       supabase.auth.getUser(),
     ]).then(async ([{ data: pt }, { data: cl }, { data: pf }, { data: { user } }]) => {
@@ -93,7 +92,6 @@ function NovoProcessoForm() {
       // Pre-select client
       if (preClientId && cl) {
         const found = cl.find((c: any) => c.id === preClientId)
-        if (found?.gov_password_reference) setClientGovPassword(found.gov_password_reference)
         if (found?.state) setForm(prev => ({ ...prev, jurisdiction_state: prev.jurisdiction_state || found.state }))
       }
 
@@ -108,29 +106,18 @@ function NovoProcessoForm() {
         setSelectedTypeSlug(typeToFind.slug)
         setSelectedTypeName(typeToFind.name)
         setSelectedTypeColor(typeToFind.color ?? '#3B82F6')
-        const fields = PROCESS_TYPE_CUSTOM_FIELDS[typeToFind.slug] ?? []
-        const govPass = (cl ?? []).find((c: any) => c.id === preClientId)?.gov_password_reference ?? ''
-        const hasSenha = fields.some((f: any) => f.field_name === 'senha_gov')
-        if (hasSenha && govPass) setCustomFieldValues({ senha_gov: govPass })
+        setCustomFieldValues({})
       }
     })
   }, [preClientId, preTypeId, preTypeSlug])
 
   const handleClientChange = (clientId: string) => {
     const found = clients.find((c: any) => c.id === clientId)
-    const govPass = found?.gov_password_reference ?? ''
-    setClientGovPassword(govPass)
     setForm(prev => ({
       ...prev,
       client_id: clientId,
       jurisdiction_state: found?.state ?? '',
     }))
-    if (govPass && selectedTypeSlug) {
-      const fields = PROCESS_TYPE_CUSTOM_FIELDS[selectedTypeSlug] ?? []
-      if (fields.some(f => f.field_name === 'senha_gov')) {
-        setCustomFieldValues(prev => ({ ...prev, senha_gov: govPass }))
-      }
-    }
   }
 
   const handleTypeSelect = (typeId: string) => {
@@ -140,9 +127,7 @@ function NovoProcessoForm() {
     setSelectedTypeSlug(type.slug)
     setSelectedTypeName(type.name)
     setSelectedTypeColor(type.color ?? '#3B82F6')
-    const fields = PROCESS_TYPE_CUSTOM_FIELDS[type.slug] ?? []
-    const hasSenhaGov = fields.some(f => f.field_name === 'senha_gov')
-    setCustomFieldValues(hasSenhaGov && clientGovPassword ? { senha_gov: clientGovPassword } : {})
+    setCustomFieldValues({})
   }
 
   const clearType = () => {
@@ -501,7 +486,6 @@ function NovoProcessoForm() {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {customFields.map(field => {
-                  const isAutoFilled = field.field_name === 'senha_gov' && !!clientGovPassword && customFieldValues['senha_gov'] === clientGovPassword
                   return (
                     <div key={field.field_name}>
                       {field.field_type === 'boolean' ? (
@@ -533,11 +517,6 @@ function NovoProcessoForm() {
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
                             <label className="block text-sm font-medium text-slate-700 dash">{field.field_label}</label>
-                            {isAutoFilled && (
-                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-green-700 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded-full dash">
-                                <Sparkles className="w-2.5 h-2.5" /> Do cadastro
-                              </span>
-                            )}
                           </div>
                           <input
                             type={field.field_type === 'date' ? 'date' : field.field_type === 'number' || field.field_type === 'currency' ? 'number' : 'text'}

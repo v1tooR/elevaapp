@@ -25,8 +25,10 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
   const pathname = request.nextUrl.pathname
-  const publicRoutes = ['/login', '/', '/forgot-password', '/reset-password', '/auth/callback']
-  const isPublicRoute = publicRoutes.some(r => pathname === r || pathname.startsWith(r)) || pathname.startsWith('/api/')
+  const publicRoutes = ['/login', '/forgot-password', '/reset-password', '/auth/callback']
+  const isPublicRoute = pathname === '/'
+    || publicRoutes.some(route => pathname === route || pathname.startsWith(`${route}/`))
+    || pathname.startsWith('/api/')
 
   if (!user && !isPublicRoute) {
     const url = request.nextUrl.clone()
@@ -42,7 +44,7 @@ export async function updateSession(request: NextRequest) {
       .single()
 
     const url = request.nextUrl.clone()
-    url.pathname = (profile as any)?.role === 'cliente' ? '/minha-area' : '/dashboard'
+    url.pathname = profile?.role === 'cliente' ? '/minha-area' : '/dashboard'
     return NextResponse.redirect(url)
   }
 

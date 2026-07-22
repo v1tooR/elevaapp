@@ -28,7 +28,7 @@ export async function PATCH(
 
   const { data: stage, error: lookupError } = await supabase
     .from('process_stages')
-    .select('process_id')
+    .select('process_id, stage_key')
     .eq('id', stageId)
     .single()
   if (lookupError || !stage || stage.process_id !== id) {
@@ -36,6 +36,12 @@ export async function PATCH(
   }
 
   const values = parsed.data
+  const isApprovedMedicalBoard = stage.stage_key === 'recurso_junta_medica'
+    && (values.status === 'aprovado' || values.result === 'aprovado')
+  if (isApprovedMedicalBoard && typeof values.data.requires_practical_exam !== 'boolean') {
+    return NextResponse.json({ error: 'Informe se a junta determinou exame prático.' }, { status: 422 })
+  }
+
   const { data, error } = await supabase.rpc('save_process_stage', {
     p_stage_id: stageId,
     p_status: values.status,
@@ -48,6 +54,45 @@ export async function PATCH(
   })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  if (isApprovedMedicalBoard) {
+    const restrictions = typeof values.data.restricoes === 'string'
+      ? values.data.restricoes.split(',').map(value => value.trim().toUpperCase()).filter(Boolean)
+      : []
+    const requiresPracticalExam = values.data.requires_practical_exam as boolean
+    const requiresAdaptedVehicle = typeof values.data.requires_adapted_vehicle === 'boolean'
+      ? values.data.requires_adapted_vehicle
+      : null
+
+    const { data: process, error: processError } = await supabase
+      .from('processes')
+      .select('client_id')
+      .eq('id', id)
+      .single()
+    if (processError || !process) {
+      return NextResponse.json({ error: processError?.message ?? 'Processo não encontrado após salvar a etapa.' }, { status: 400 })
+    }
+
+    const [clientUpdate, practicalStageUpdate, issuanceStageUpdate] = await Promise.all([
+      supabase.from('clients').update({
+        medical_assessment_status: restrictions.length > 0 ? 'apto_com_restricoes' : 'apto',
+        cnh_restrictions: restrictions,
+        requires_practical_exam: requiresPracticalExam,
+        requires_adapted_vehicle: requiresAdaptedVehicle,
+      }).eq('id', process.client_id),
+      supabase.from('process_stages').update({
+        status: requiresPracticalExam ? 'pendente' : 'nao_aplicavel',
+        label: 'Exame Prático',
+      }).eq('process_id', id).eq('stage_key', 'exame_pratico'),
+      supabase.from('process_stages').update({
+        data: { restricoes: restrictions.join(', '), vencimento_cnh: '' },
+      }).eq('process_id', id).eq('stage_key', 'emissao_cnh'),
+    ])
+    const syncError = clientUpdate.error ?? practicalStageUpdate.error ?? issuanceStageUpdate.error
+    if (syncError) {
+      return NextResponse.json({ error: `Etapa salva, mas não foi possível sincronizar o resultado da junta: ${syncError.message}` }, { status: 400 })
+    }
+  }
+
   return NextResponse.json({ stage: data })
 }
-

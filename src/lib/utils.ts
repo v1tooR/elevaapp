@@ -140,22 +140,14 @@ export const PROCESS_TYPE_CUSTOM_FIELDS: Record<string, ProcessCustomFieldDefini
     { field_name: 'laudo', field_label: 'Laudo', field_type: 'text' },
   ],
   cin: [
-    { field_name: 'senha_gov', field_label: 'Senha Gov.br', field_type: 'text' },
     { field_name: 'pago', field_label: 'Pago', field_type: 'boolean' },
   ],
-  estacionamento: [
-    { field_name: 'senha_gov', field_label: 'Senha Gov.br', field_type: 'text' },
-  ],
-  cnh_especial: [
-    { field_name: 'senha_gov', field_label: 'Senha Gov.br', field_type: 'text' },
-  ],
-  processo_ipi: [
-    { field_name: 'senha_gov', field_label: 'Senha Gov.br', field_type: 'text' },
-  ],
+  estacionamento: [],
+  cnh_especial: [],
+  processo_ipi: [],
   processo_icms: [],
   processo_iof: [],
   processo_ipva: [
-    { field_name: 'senha_gov', field_label: 'Senha Gov.br', field_type: 'text' },
     {
       field_name: 'imesc_status',
       field_label: 'Situação da perícia/laudo IMESC',
@@ -204,9 +196,7 @@ export const PROCESS_TYPE_CUSTOM_FIELDS: Record<string, ProcessCustomFieldDefini
     { field_name: 'recurso_ipva_protocolo', field_label: 'Protocolo do recurso IPVA', field_type: 'text' },
     { field_name: 'imesc', field_label: 'Observações sobre IMESC', field_type: 'text' },
   ],
-  imposto_de_renda: [
-    { field_name: 'senha_gov', field_label: 'Senha Gov.br', field_type: 'text' },
-  ],
+  imposto_de_renda: [],
   laudo: [
     { field_name: 'perfil', field_label: 'Perfil', field_type: 'text' },
     { field_name: 'emissao', field_label: 'Emissão', field_type: 'date' },
@@ -217,9 +207,7 @@ export const PROCESS_TYPE_CUSTOM_FIELDS: Record<string, ProcessCustomFieldDefini
   emplacamento: [
     { field_name: 'valor_pago', field_label: 'Valor Pago', field_type: 'currency' },
   ],
-  rodizio: [
-    { field_name: 'senha_gov', field_label: 'Senha Gov.br', field_type: 'text' },
-  ],
+  rodizio: [],
 }
 
 export function getCustomFieldOptionLabel(processTypeSlug: string, fieldName: string, value: string): string {

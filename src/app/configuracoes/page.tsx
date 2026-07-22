@@ -4,7 +4,7 @@ import { ProcessTypeManager } from '@/components/configuracoes/process-type-mana
 import { UserManager } from '@/components/configuracoes/user-manager'
 import { LegalRulesPanel } from '@/components/configuracoes/legal-rules-panel'
 import { requireAuth } from '@/lib/auth'
-import type { LegalRuleVersion, Profile } from '@/types/database'
+import type { LegalRuleVersion, ProcessType, Profile } from '@/types/database'
 
 export const metadata = { title: 'Configurações — Eleva Isenções' }
 
@@ -18,11 +18,11 @@ export default async function ConfiguracoesPage() {
     supabase.from('legal_rule_versions').select('*').order('effective_from', { ascending: false }),
   ])
 
-  const pts = processTypes ?? []
+  const pts = (processTypes ?? []) as ProcessType[]
   const profs = (profiles ?? []) as Profile[]
-  const activeTypes = pts.filter((p: any) => p.is_active).length
+  const activeTypes = pts.filter(processType => processType.is_active).length
   const totalUsers = profs.length
-  const activeUsers = profs.filter((p: any) => p.role !== 'cliente').length
+  const activeUsers = profs.filter(profile => profile.role !== 'cliente').length
 
   const chips = [
     { label: 'Tipos de processo', value: String(pts.length),    bg: 'rgba(99,102,241,0.15)',  color: '#a5b4fc' },

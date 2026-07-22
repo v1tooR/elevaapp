@@ -44,6 +44,31 @@ const MEDICAL_STATUS_LABEL: Record<string, string> = {
   inapto: 'Inapto',
 }
 
+const GOV_ACCESS_STATUS: Record<string, { label: string; className: string }> = {
+  nao_validado: {
+    label: 'Não validado',
+    className: 'border-slate-200 bg-slate-50 text-slate-600',
+  },
+  aguardando_cliente: {
+    label: 'Aguardando o cliente',
+    className: 'border-amber-200 bg-amber-50 text-amber-700',
+  },
+  validado: {
+    label: 'Acesso validado',
+    className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  },
+  com_pendencia: {
+    label: 'Com pendência',
+    className: 'border-orange-200 bg-orange-50 text-orange-700',
+  },
+}
+
+const GOV_ACCOUNT_LEVEL: Record<string, string> = {
+  bronze: 'Bronze',
+  prata: 'Prata',
+  ouro: 'Ouro',
+}
+
 function avatarGradient(name: string) {
   const g = [
     'linear-gradient(135deg,#6B3019,#A14F2A)',
@@ -265,22 +290,60 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
             </div>
 
             {/* Gov.br */}
-            {client.gov_password_reference && (
-              <div
-                className="anim anim-2 bg-white rounded-2xl p-5"
-                style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-              >
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center">
-                    <Shield className="w-3.5 h-3.5 text-blue-500" />
+            <div
+              className="anim anim-2 rounded-2xl bg-white p-5"
+              style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+            >
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-50">
+                    <Shield className="h-3.5 w-3.5 text-blue-600" />
                   </div>
-                  <h2 className="dash font-bold text-slate-900 text-sm">Gov.br</h2>
+                  <h2 className="dash text-sm font-bold text-slate-900">Acesso Gov.br</h2>
                 </div>
-                <p className="text-sm text-slate-600 bg-slate-50 rounded-xl p-3 dash leading-relaxed">
-                  {client.gov_password_reference}
-                </p>
+                {(() => {
+                  const status = GOV_ACCESS_STATUS[client.gov_access_status ?? 'nao_validado'] ?? GOV_ACCESS_STATUS.nao_validado
+                  return <span className={`dash rounded-full border px-2.5 py-1 text-[10px] font-bold ${status.className}`}>{status.label}</span>
+                })()}
               </div>
-            )}
+
+              <div className="space-y-2.5">
+                <div className="flex items-start justify-between gap-4">
+                  <span className="dash text-xs text-slate-400">Autenticação pelo cliente</span>
+                  <span className="dash text-right text-xs font-semibold text-slate-700">
+                    {client.gov_auth_by_client ? 'Confirmada' : 'Não confirmada'}
+                  </span>
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <span className="dash text-xs text-slate-400">Nível da conta</span>
+                  <span className="dash text-right text-xs font-semibold text-slate-700">
+                    {client.gov_account_level ? GOV_ACCOUNT_LEVEL[client.gov_account_level] : 'Não informado'}
+                  </span>
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <span className="dash text-xs text-slate-400">Nível suficiente</span>
+                  <span className="dash text-right text-xs font-semibold text-slate-700">
+                    {client.gov_account_level_sufficient == null ? 'Não avaliado' : client.gov_account_level_sufficient ? 'Sim' : 'Não'}
+                  </span>
+                </div>
+                <div className="flex items-start justify-between gap-4">
+                  <span className="dash text-xs text-slate-400">Última validação</span>
+                  <span className="dash text-right text-xs font-semibold text-slate-700">
+                    {client.gov_access_last_validated_at ? formatDateTime(client.gov_access_last_validated_at) : 'Ainda não realizada'}
+                  </span>
+                </div>
+              </div>
+
+              {client.gov_access_pending_note && (
+                <div className="dash mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
+                  <span className="font-semibold">Pendência: </span>{client.gov_access_pending_note}
+                </div>
+              )}
+
+              <p className="dash mt-4 border-t border-slate-100 pt-3 text-[10px] leading-relaxed text-slate-400">
+                Para prosseguir, faça o acesso junto com o cliente. Senha e código de verificação não são registrados no Eleva.
+              </p>
+            </div>
 
             {/* Internal notes */}
             {client.internal_notes && (

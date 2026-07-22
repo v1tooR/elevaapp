@@ -3,12 +3,17 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  AlertTriangle,
   BriefcaseBusiness,
   Check,
+  ChevronDown,
   Loader2,
+  Pencil,
   Plus,
+  Save,
   Search,
   ShieldCheck,
+  Trash2,
   UserRound,
   Users,
   X,
@@ -82,6 +87,14 @@ interface UserManagerProps {
   currentProfileId: string
 }
 
+interface EditingEmployee {
+  id: string
+  name: string
+  email: string
+  password: string
+  role: EmployeeRole
+}
+
 export function UserManager({ profiles, canManageEmployees, currentProfileId }: UserManagerProps) {
   const router = useRouter()
   const [activeView, setActiveView] = useState<UserView>('funcionarios')
@@ -92,6 +105,11 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
   const [roleOverrides, setRoleOverrides] = useState<Partial<Record<string, EmployeeRole>>>({})
   const [formError, setFormError] = useState<string | null>(null)
   const [listError, setListError] = useState<string | null>(null)
+  const [editingUser, setEditingUser] = useState<EditingEmployee | null>(null)
+  const [savingEdit, setSavingEdit] = useState(false)
+  const [editError, setEditError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [newUser, setNewUser] = useState({
     email: '',
     name: '',
@@ -170,6 +188,83 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
       setFormError(error instanceof Error ? error.message : 'Não foi possível criar o funcionário.')
     } finally {
       setCreating(false)
+    }
+  }
+
+  const openEditor = (profile: Profile) => {
+    if (profile.role !== 'admin' && profile.role !== 'analista') return
+
+    setEditingUser({
+      id: profile.id,
+      name: profile.name,
+      email: profile.email,
+      password: '',
+      role: (roleOverrides[profile.id] ?? profile.role) as EmployeeRole,
+    })
+    setEditError(null)
+    setConfirmDelete(false)
+  }
+
+  const closeEditor = () => {
+    if (savingEdit || deleting) return
+    setEditingUser(null)
+    setEditError(null)
+    setConfirmDelete(false)
+  }
+
+  const saveEmployee = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!editingUser || confirmDelete) return
+
+    setSavingEdit(true)
+    setEditError(null)
+
+    try {
+      const response = await fetch('/api/usuarios', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingUser),
+      })
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response, 'Não foi possível atualizar o funcionário.'))
+      }
+
+      setRoleOverrides(current => ({ ...current, [editingUser.id]: editingUser.role }))
+      setEditingUser(null)
+      setConfirmDelete(false)
+      router.refresh()
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : 'Não foi possível atualizar o funcionário.')
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  const deleteEmployee = async () => {
+    if (!editingUser) return
+
+    setDeleting(true)
+    setEditError(null)
+
+    try {
+      const response = await fetch('/api/usuarios', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: editingUser.id }),
+      })
+
+      if (!response.ok) {
+        throw new Error(await readApiError(response, 'Não foi possível excluir o funcionário.'))
+      }
+
+      setEditingUser(null)
+      setConfirmDelete(false)
+      router.refresh()
+    } catch (error) {
+      setEditError(error instanceof Error ? error.message : 'Não foi possível excluir o funcionário.')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -326,7 +421,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                   {EMPLOYEE_ROLE_OPTIONS.map(option => (
                     <label
                       key={option.value}
-                      className={`relative cursor-pointer rounded-xl border px-3 py-2 transition-colors ${
+                      className={`relative cursor-pointer rounded-xl border px-3 py-2 transition-colors focus-within:ring-2 focus-within:ring-ring ${
                         newUser.role === option.value
                           ? 'border-primary bg-primary/10'
                           : 'border-input bg-card hover:bg-muted'
@@ -443,20 +538,35 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                       {roleConfig.description}
                     </p>
                     {isEditableEmployee ? (
-                      <div className="relative shrink-0">
-                        <select
-                          value={effectiveRole}
-                          onChange={event => updateRole(profile, event.target.value as EmployeeRole)}
-                          disabled={updatingId === profile.id}
-                          aria-label={`Função de ${profile.name}`}
-                          className={`dash min-w-32 appearance-none rounded-full border py-1.5 pl-3 pr-8 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-wait disabled:opacity-60 ${roleConfig.badge}`}
+                      <div className="flex shrink-0 items-center gap-2">
+                        <div className="relative">
+                          <select
+                            value={effectiveRole}
+                            onChange={event => updateRole(profile, event.target.value as EmployeeRole)}
+                            disabled={updatingId !== null}
+                            aria-label={`Função de ${profile.name}`}
+                            className={`dash min-w-32 appearance-none rounded-full border py-1.5 pl-3 pr-8 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-wait disabled:opacity-60 ${roleConfig.badge}`}
+                          >
+                            <option value="admin">Administrador</option>
+                            <option value="analista">Analista</option>
+                          </select>
+                          {updatingId === profile.id && (
+                            <Loader2 className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin" aria-hidden="true" />
+                          )}
+                          {updatingId !== profile.id && (
+                            <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2" aria-hidden="true" />
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openEditor(profile)}
+                          disabled={updatingId !== null}
+                          aria-label={`Editar ${profile.name}`}
+                          title="Editar funcionário"
+                          className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground transition-colors hover:border-primary/30 hover:bg-primary/10 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          <option value="admin">Administrador</option>
-                          <option value="analista">Analista</option>
-                        </select>
-                        {updatingId === profile.id && (
-                          <Loader2 className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin" aria-hidden="true" />
-                        )}
+                          <Pencil className="h-3.5 w-3.5" aria-hidden="true" />
+                        </button>
                       </div>
                     ) : (
                       <span className={`dash shrink-0 rounded-full border px-3 py-1.5 text-xs font-bold ${roleConfig.badge}`}>
@@ -479,6 +589,169 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
           )}
         </div>
       </div>
+
+      {editingUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4 backdrop-blur-[2px]">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-employee-title"
+            className="eleva-surface max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto shadow-2xl"
+          >
+            <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+              <div>
+                <p className="dash text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Gestão de acesso</p>
+                <h3 id="edit-employee-title" className="dash mt-0.5 text-lg font-bold text-foreground">
+                  Editar funcionário
+                </h3>
+                <p className="dash mt-1 text-xs text-muted-foreground">
+                  Atualize os dados usados para entrar no sistema.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeEditor}
+                disabled={savingEdit || deleting}
+                aria-label="Fechar edição"
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                <X className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </div>
+
+            <form onSubmit={saveEmployee} className="p-5">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label htmlFor="edit-employee-name" className="dash mb-1.5 block text-xs font-semibold text-foreground">Nome completo</label>
+                  <input
+                    id="edit-employee-name"
+                    value={editingUser.name}
+                    onChange={event => setEditingUser(current => current ? { ...current, name: event.target.value } : current)}
+                    className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                    autoComplete="name"
+                    required
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label htmlFor="edit-employee-email" className="dash mb-1.5 block text-xs font-semibold text-foreground">E-mail de acesso</label>
+                  <input
+                    id="edit-employee-email"
+                    type="email"
+                    value={editingUser.email}
+                    onChange={event => setEditingUser(current => current ? { ...current, email: event.target.value } : current)}
+                    className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                    autoComplete="email"
+                    required
+                  />
+                  <p className="dash mt-1 text-[10px] text-muted-foreground">Este também será o novo e-mail usado no login.</p>
+                </div>
+
+                <div>
+                  <label htmlFor="edit-employee-password" className="dash mb-1.5 block text-xs font-semibold text-foreground">Nova senha</label>
+                  <input
+                    id="edit-employee-password"
+                    type="password"
+                    value={editingUser.password}
+                    onChange={event => setEditingUser(current => current ? { ...current, password: event.target.value } : current)}
+                    className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                    placeholder="Mínimo de 6 caracteres"
+                    autoComplete="new-password"
+                    minLength={6}
+                  />
+                  <p className="dash mt-1 text-[10px] text-muted-foreground">Deixe em branco para manter a senha atual.</p>
+                </div>
+
+                <div>
+                  <label htmlFor="edit-employee-role" className="dash mb-1.5 block text-xs font-semibold text-foreground">Função</label>
+                  <div className="relative">
+                    <select
+                      id="edit-employee-role"
+                      value={editingUser.role}
+                      onChange={event => setEditingUser(current => current ? { ...current, role: event.target.value as EmployeeRole } : current)}
+                      className="dash block w-full appearance-none rounded-xl border border-input bg-card px-3.5 py-2.5 pr-9 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                    >
+                      <option value="analista">Analista</option>
+                      <option value="admin">Administrador</option>
+                    </select>
+                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+                  </div>
+                  <p className="dash mt-1 text-[10px] text-muted-foreground">Define as áreas que o funcionário poderá acessar.</p>
+                </div>
+              </div>
+
+              {editError && (
+                <p role="alert" className="dash mt-4 rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                  {editError}
+                </p>
+              )}
+
+              {confirmDelete && (
+                <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/10 p-3.5">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
+                    <div>
+                      <p className="dash text-xs font-bold text-destructive">Excluir este funcionário definitivamente?</p>
+                      <p className="dash mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                        O acesso será removido imediatamente. Processos e eventos existentes continuarão no histórico e ficarão sem responsável quando necessário.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDelete(false)}
+                      disabled={deleting}
+                      className="dash rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                    >
+                      Manter funcionário
+                    </button>
+                    <button
+                      type="button"
+                      onClick={deleteEmployee}
+                      disabled={deleting}
+                      className="dash inline-flex items-center justify-center gap-2 rounded-lg bg-destructive px-3 py-2 text-xs font-bold text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-60"
+                    >
+                      {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}
+                      {deleting ? 'Excluindo...' : 'Confirmar exclusão'}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-5 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  disabled={savingEdit || deleting || confirmDelete}
+                  className="dash inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold text-destructive transition-colors hover:bg-destructive/10 disabled:opacity-40"
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                  Excluir funcionário
+                </button>
+                <div className="flex flex-col-reverse gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={closeEditor}
+                    disabled={savingEdit || deleting}
+                    className="dash rounded-lg border border-border bg-card px-4 py-2 text-sm font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEdit || deleting || confirmDelete}
+                    className="dash inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
+                  >
+                    {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Save className="h-4 w-4" aria-hidden="true" />}
+                    {savingEdit ? 'Salvando...' : 'Salvar alterações'}
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </section>
   )
 }

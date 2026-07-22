@@ -49,7 +49,12 @@ export default function LoginPage() {
     const { data, error: authError } = await supabase.auth.signInWithPassword({ email, password })
 
     if (authError) {
-      setError('E-mail ou senha incorretos. Verifique suas credenciais.')
+      const emailPending = authError.message.toLocaleLowerCase().includes('email not confirmed')
+      setError(
+        emailPending
+          ? 'Este e-mail ainda não foi confirmado. Peça ao SuperAdmin para revisar o seu acesso.'
+          : 'E-mail ou senha incorretos. Verifique suas credenciais.'
+      )
       setLoading(false)
       return
     }

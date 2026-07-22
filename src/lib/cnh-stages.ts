@@ -17,7 +17,7 @@ const STAGE_CHECKLIST: StageTemplate = {
   stage_key: 'checklist_documentos',
   label: 'Checklist de documentos',
   sort_order: 10,
-  data: { cnh: false, laudo_medico: false, senha_gov: false, comprovante_endereco: false, email: false },
+  data: { cnh: false, laudo_medico: false, acesso_gov_validado: false, comprovante_endereco: false, email: false },
 }
 
 const STAGE_AGENDAMENTO: StageTemplate = {
@@ -36,6 +36,9 @@ const STAGE_PERICIA: StageTemplate = {
     restricoes: '',
     requires_practical_exam: null,
     requires_adapted_vehicle: null,
+    medical_follow_up_status: null,
+    complementary_exam_name: '',
+    follow_up_date: '',
   },
 }
 
@@ -49,8 +52,9 @@ const STAGE_EXAME_PRATICO: StageTemplate = {
       cadastro_sei: false,
       anexo_renach: false,
       anexo_cnh: false,
-      comprovante_pagamento_35: false,
+      comprovante_pagamento_exame: false,
       crlv: false,
+      comprovante_endereco: false,
     },
   },
 }

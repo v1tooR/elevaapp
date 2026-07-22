@@ -45,6 +45,8 @@ export type LeadSource = 'instagram' | 'google' | 'indicacao' | 'vendedor' | 'ou
 // --- Shared enums ---
 export type DisabilityType = 'fisica' | 'auditiva' | 'visual' | 'monocular' | 'autismo' | 'mental'
 export type ClientType = 'condutor' | 'nao_condutor'
+export type GovAccessStatus = 'nao_validado' | 'aguardando_cliente' | 'validado' | 'com_pendencia'
+export type GovAccountLevel = 'bronze' | 'prata' | 'ouro'
 export type DisabilitySeverity = 'leve' | 'moderada' | 'grave' | 'gravissima' | 'nao_informada'
 export type CnhStatus = 'nao_possui' | 'comum' | 'com_restricoes' | 'em_regularizacao' | 'inapto_temporario' | 'inapto'
 export type MedicalAssessmentStatus = 'nao_realizada' | 'agendada' | 'apto' | 'apto_com_restricoes' | 'inapto_temporario' | 'inapto'
@@ -95,7 +97,13 @@ export interface Client {
   address?: string
   city?: string
   state?: string
-  gov_password_reference?: string
+  gov_access_status?: GovAccessStatus
+  gov_auth_by_client?: boolean
+  gov_account_level?: GovAccountLevel
+  gov_account_level_sufficient?: boolean | null
+  gov_access_last_validated_at?: string
+  gov_access_pending_note?: string
+  gov_access_validated_by?: string
   internal_notes?: string
   is_active: boolean
   // eligibility fields (migration 007)

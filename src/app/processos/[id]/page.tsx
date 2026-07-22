@@ -71,7 +71,10 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
   const client = process.clients as any
   const responsible = process.responsible_user as any
   const financials = Array.isArray(process.financials) ? process.financials[0] : process.financials
-  const customFields = (Array.isArray(process.custom_fields) ? process.custom_fields : []) as ProcessCustomField[]
+  const sensitiveFieldNames = new Set(['senha_gov', 'gov_password', 'senha_sei', 'senha_email', 'senha_portal'])
+  const customFields = ((Array.isArray(process.custom_fields) ? process.custom_fields : []) as ProcessCustomField[])
+    .filter(field => !sensitiveFieldNames.has(field.field_name))
+  const sanitizedProcess = { ...process, custom_fields: customFields }
   const processStages = (stages ?? []) as ProcessStage[]
   const processDocuments = (documents ?? []) as Document[]
   const typeColor = pt?.color ?? '#3B82F6'
@@ -147,7 +150,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
             <Link href="/processos" className="back-btn flex items-center gap-1.5 text-primary-foreground/75 hover:text-white text-xs font-medium px-3 py-1.5 rounded-lg">
               <ArrowLeft className="w-3.5 h-3.5" /> Voltar a Processos
             </Link>
-            <EditProcessModal process={process as any} isSuperAdmin={isSuperAdmin} />
+            <EditProcessModal process={sanitizedProcess as any} isSuperAdmin={isSuperAdmin} />
           </div>
 
           {/* Process info */}
