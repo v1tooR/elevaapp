@@ -5,7 +5,7 @@ import {
   ArrowLeft, Phone, Tag, Stethoscope, StickyNote, Clock,
   ArrowUpRight, CheckCircle2, UserX
 } from 'lucide-react'
-import { formatPhone, formatDate, formatDateTime } from '@/lib/utils'
+import { formatPhone, formatDateTime } from '@/lib/utils'
 import { EditLeadModal } from '@/components/leads/edit-lead-modal'
 import { ConvertLeadModal } from '@/components/leads/convert-lead-modal'
 
@@ -59,6 +59,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     .single()
 
   if (!lead) notFound()
+  const convertedClient = lead.converted_client as { id: string; name: string } | null
+  const assignee = lead.assignee as { id: string; name: string } | null
 
   const { data: staff } = await supabase
     .from('profiles')
@@ -68,7 +70,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     .order('name')
 
   const st = STATUS_STYLE[lead.status] ?? STATUS_STYLE.novo
-  const isConverted = lead.status === 'convertido'
+  const isConverted = lead.status === 'convertido' && Boolean(lead.converted_client_id)
+  const hasIncompleteConversion = lead.status === 'convertido' && !lead.converted_client_id
   const isPerdido = lead.status === 'perdido'
 
   return (
@@ -108,10 +111,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               Voltar a Leads
             </Link>
             <div className="flex gap-2 items-center">
-              {!isConverted && !isPerdido && (
-                <ConvertLeadModal lead={lead as any} />
+              {!isConverted && !isPerdido && !hasIncompleteConversion && (
+                <ConvertLeadModal lead={lead} />
               )}
-              <EditLeadModal lead={lead as any} staff={staff ?? []} />
+              <EditLeadModal lead={lead} staff={staff ?? []} />
             </div>
           </div>
 
@@ -144,7 +147,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
         </div>
 
         {/* ── Converted banner ───────────────────────────────────── */}
-        {isConverted && (lead.converted_client as any)?.id && (
+        {isConverted && convertedClient?.id && (
           <div
             className="anim flex items-center justify-between gap-4 bg-emerald-50 rounded-2xl px-5 py-4"
             style={{ border: '1px solid #BBF7D0' }}
@@ -154,16 +157,34 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <div>
                 <p className="text-sm font-semibold text-emerald-900 dash">Lead convertido com sucesso</p>
                 <p className="text-xs text-emerald-700 dash">
-                  Cliente: <strong>{(lead.converted_client as any)?.name}</strong>
+                  Cliente: <strong>{convertedClient.name}</strong>
                 </p>
               </div>
             </div>
             <Link
-              href={`/clientes/${(lead.converted_client as any)?.id}`}
+              href={`/clientes/${convertedClient.id}`}
               className="shrink-0 flex items-center gap-1.5 text-xs font-semibold text-emerald-700 hover:text-emerald-900 dash"
             >
               Ver cliente <ArrowUpRight className="w-3.5 h-3.5" />
             </Link>
+          </div>
+        )}
+
+        {hasIncompleteConversion && (
+          <div
+            className="anim flex items-center justify-between gap-4 rounded-2xl bg-amber-50 px-5 py-4"
+            style={{ border: '1px solid #FDE68A' }}
+          >
+            <div className="flex items-center gap-3">
+              <Clock className="h-5 w-5 shrink-0 text-amber-600" />
+              <div>
+                <p className="text-sm font-semibold text-amber-900 dash">Conversão pendente</p>
+                <p className="text-xs text-amber-700 dash">
+                  O status foi alterado, mas o cadastro de cliente ainda precisa ser criado.
+                </p>
+              </div>
+            </div>
+            <ConvertLeadModal lead={lead} />
           </div>
         )}
 
@@ -262,7 +283,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 <div className="flex justify-between">
                   <span className="text-xs text-slate-400 dash">Responsável</span>
                   <span className="text-xs font-semibold text-slate-700 dash">
-                    {(lead.assignee as any)?.name ?? '—'}
+                    {assignee?.name ?? '—'}
                   </span>
                 </div>
               </div>

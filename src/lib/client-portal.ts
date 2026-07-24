@@ -232,9 +232,10 @@ export async function getClientPortalHome() {
     admin.from('processes')
       .select('id, title, protocol, status, started_at, completed_at, renewal_date, created_at, updated_at, process_types(id, name, slug, color)')
       .eq('client_id', client.id)
+      .neq('status', 'cancelado')
       .order('created_at', { ascending: false })
       .limit(10),
-    admin.from('processes').select('*', { count: 'exact', head: true }).eq('client_id', client.id),
+    admin.from('processes').select('*', { count: 'exact', head: true }).eq('client_id', client.id).neq('status', 'cancelado'),
     admin.from('processes').select('*', { count: 'exact', head: true }).eq('client_id', client.id).eq('status', 'concluido'),
     admin.from('processes').select('*', { count: 'exact', head: true }).eq('client_id', client.id).not('status', 'in', '(concluido,cancelado)'),
     admin.from('notifications')
@@ -277,6 +278,7 @@ export async function getClientPortalProcesses() {
     .from('processes')
     .select('id, title, protocol, status, started_at, completed_at, renewal_date, created_at, updated_at, process_types(id, name, slug, color)')
     .eq('client_id', client.id)
+    .neq('status', 'cancelado')
     .order('created_at', { ascending: false })
 
   if (error) throw new Error('Não foi possível carregar os processos.')

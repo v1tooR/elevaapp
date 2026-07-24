@@ -199,6 +199,7 @@ export interface Process {
   eligibility_reviewed_by?: string
   renewal_date?: string | null
   renewal_calendar_event_id?: string | null
+  duplicate_of_process_id?: string | null
   created_at: string
   updated_at: string
   client?: Client

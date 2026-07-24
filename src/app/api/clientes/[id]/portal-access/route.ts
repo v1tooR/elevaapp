@@ -1,6 +1,12 @@
+import { revalidatePath } from 'next/cache'
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+
+function revalidatePortalAccess(clientId: string) {
+  revalidatePath(`/clientes/${clientId}`)
+  revalidatePath('/minha-area', 'layout')
+}
 
 export async function POST(
   request: Request,
@@ -78,11 +84,74 @@ export async function POST(
     return NextResponse.json({ error: 'Acesso criado mas erro ao vincular: ' + linkError.message }, { status: 500 })
   }
 
+  revalidatePortalAccess(clientId)
   return NextResponse.json({ success: true, profile_id: profile.id })
 }
 
-export async function DELETE(
+export async function PATCH(
   request: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id: clientId } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+
+  const { data: caller } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('auth_user_id', user.id)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (!caller || !['super_admin', 'admin'].includes(caller.role)) {
+    return NextResponse.json({ error: 'Sem permissão para redefinir a senha' }, { status: 403 })
+  }
+
+  const body = await request.json().catch(() => null)
+  const password = typeof body?.password === 'string' ? body.password.trim() : ''
+  if (password.length < 8) {
+    return NextResponse.json({ error: 'A nova senha deve ter no mínimo 8 caracteres' }, { status: 400 })
+  }
+
+  const { data: client } = await supabase
+    .from('clients')
+    .select('id, profile_id')
+    .eq('id', clientId)
+    .eq('is_active', true)
+    .maybeSingle()
+
+  if (!client) return NextResponse.json({ error: 'Cliente não encontrado' }, { status: 404 })
+  if (!client.profile_id) {
+    return NextResponse.json({ error: 'Este cliente ainda não possui acesso ao portal' }, { status: 409 })
+  }
+
+  const adminClient = createAdminClient()
+  const { data: profile } = await adminClient
+    .from('profiles')
+    .select('auth_user_id, role, is_active')
+    .eq('id', client.profile_id)
+    .maybeSingle()
+
+  if (!profile?.auth_user_id || profile.role !== 'cliente' || !profile.is_active) {
+    return NextResponse.json({ error: 'O acesso do cliente está incompleto ou inativo' }, { status: 409 })
+  }
+
+  const { error: updateError } = await adminClient.auth.admin.updateUserById(
+    profile.auth_user_id,
+    { password },
+  )
+
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 400 })
+  }
+
+  revalidatePortalAccess(clientId)
+  return NextResponse.json({ success: true })
+}
+
+export async function DELETE(
+  _request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id: clientId } = await params
@@ -125,5 +194,6 @@ export async function DELETE(
     await adminClient.auth.admin.deleteUser(profile.auth_user_id)
   }
 
+  revalidatePortalAccess(clientId)
   return NextResponse.json({ success: true })
 }

@@ -102,6 +102,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
     supabase.from('processes')
       .select('*, process_types(name, color, slug)')
       .eq('client_id', id)
+      .neq('status', 'cancelado')
       .order('created_at', { ascending: false }),
     supabase.from('documents')
       .select('*')

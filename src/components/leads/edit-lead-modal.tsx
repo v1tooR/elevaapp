@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -34,7 +34,6 @@ const SOURCE_OPTIONS: { value: LeadSource | ''; label: string }[] = [
 const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: 'novo',           label: 'Novo' },
   { value: 'em_atendimento', label: 'Em atendimento' },
-  { value: 'convertido',     label: 'Convertido' },
   { value: 'perdido',        label: 'Perdido' },
 ]
 
@@ -81,8 +80,7 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
     report_valid: lead.report_valid ?? false,
   })
 
-  // Reset form when lead changes
-  useEffect(() => {
+  const openEditor = () => {
     setForm({
       name: lead.name ?? '',
       phone: lead.phone ?? '',
@@ -98,7 +96,9 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
       has_medical_report: lead.has_medical_report ?? false,
       report_valid: lead.report_valid ?? false,
     })
-  }, [lead])
+    setError('')
+    setOpen(true)
+  }
 
   const update = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
 
@@ -159,7 +159,7 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
       `}</style>
 
       <button
-        onClick={() => setOpen(true)}
+        onClick={openEditor}
         className="inline-flex items-center gap-2 border border-white/20 bg-white/10 text-white px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-white/20 transition-all dash"
       >
         <Edit className="w-3.5 h-3.5" />
@@ -198,9 +198,20 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
                   <MaskedInput mask="phone" label="Telefone" value={form.phone} onChange={v => update('phone', v)} placeholder="(00) 00000-0000" />
                   <div className="space-y-1">
                     <label className="block text-sm font-medium text-slate-700 dash">Status</label>
-                    <select value={form.status} onChange={e => update('status', e.target.value)} className={sel}>
+                    <select
+                      value={form.status}
+                      onChange={e => update('status', e.target.value)}
+                      className={sel}
+                      disabled={lead.status === 'convertido'}
+                    >
+                      {lead.status === 'convertido' && <option value="convertido">Convertido</option>}
                       {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
+                    {lead.status !== 'convertido' && (
+                      <p className="mt-1 text-[11px] text-slate-400 dash">
+                        Para converter, use o botão “Converter em Cliente” ou arraste o card no kanban.
+                      </p>
+                    )}
                   </div>
                 </div>
 

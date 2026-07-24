@@ -252,7 +252,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         {/* ── Table ────────────────────────────────────────────────── */}
         {view === 'kanban' ? (
           <div className="anim anim-2 rounded-2xl border border-border bg-card p-3 shadow-soft lg:p-4">
-            <LeadKanbanBoard leads={leadList} />
+            <LeadKanbanBoard key={`${q}:${filterAssigned}`} leads={leadList} />
           </div>
         ) : <div
           className="anim anim-2 bg-white rounded-2xl overflow-hidden"

@@ -18,7 +18,7 @@ import {
   type SefazIpvaStatus,
 } from '@/lib/eligibility'
 import { EligibilityAnalysisCard } from '@/components/processos/eligibility-analysis-card'
-import type { VehicleCondition } from '@/types/database'
+import type { Client, ProcessType, Profile, VehicleCondition } from '@/types/database'
 import Link from 'next/link'
 import {
   ArrowLeft, TrendingUp, Link2, Check,
@@ -37,6 +37,14 @@ const PAYMENT_OPTIONS = [
 
 const sectionCard = { background: '#fff', border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' } as const
 
+interface ActiveProcessSummary {
+  id: string
+  client_id: string
+  process_type_id: string
+  protocol: string | null
+  status: string
+}
+
 function NovoProcessoForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -48,9 +56,10 @@ function NovoProcessoForm() {
   const [error, setError] = useState('')
   const [dataLoaded, setDataLoaded] = useState(false)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
-  const [processTypes, setProcessTypes] = useState<any[]>([])
-  const [clients, setClients] = useState<any[]>([])
-  const [profiles, setProfiles] = useState<any[]>([])
+  const [processTypes, setProcessTypes] = useState<ProcessType[]>([])
+  const [clients, setClients] = useState<Client[]>([])
+  const [profiles, setProfiles] = useState<Array<Pick<Profile, 'id' | 'name'>>>([])
+  const [activeProcesses, setActiveProcesses] = useState<ActiveProcessSummary[]>([])
   const [selectedTypeSlug, setSelectedTypeSlug] = useState('')
   const [selectedTypeName, setSelectedTypeName] = useState('')
   const [selectedTypeColor, setSelectedTypeColor] = useState('')
@@ -78,11 +87,18 @@ function NovoProcessoForm() {
       supabase.from('process_types').select('*').eq('is_active', true).neq('slug', 'resumo').order('name'),
       supabase.from('clients').select('id, name, state, client_type, disability_type, disability_types, disability_severity, cnh_status, cnh_restrictions, medical_assessment_status, requires_adapted_vehicle, requires_practical_exam, has_medical_report, authorized_drivers').eq('is_active', true).order('name'),
       supabase.from('profiles').select('id, name').in('role', ['admin', 'analista', 'super_admin']).order('name'),
+      supabase.from('processes')
+        .select('id, client_id, process_type_id, protocol, status')
+        .not('status', 'in', '(concluido,arquivado,cancelado)')
+        .order('created_at'),
       supabase.auth.getUser(),
-    ]).then(async ([{ data: pt }, { data: cl }, { data: pf }, { data: { user } }]) => {
-      setProcessTypes(pt ?? [])
-      setClients(cl ?? [])
-      setProfiles(pf ?? [])
+    ]).then(async ([{ data: pt }, { data: cl }, { data: pf }, { data: active }, { data: { user } }]) => {
+      const processTypeRows = (pt ?? []) as ProcessType[]
+      const clientRows = (cl ?? []) as Client[]
+      setProcessTypes(processTypeRows)
+      setClients(clientRows)
+      setProfiles((pf ?? []) as Array<Pick<Profile, 'id' | 'name'>>)
+      setActiveProcesses((active ?? []) as ActiveProcessSummary[])
       if (user) {
         const { data: prof } = await supabase.from('profiles').select('role').eq('auth_user_id', user.id).single()
         setIsSuperAdmin(prof?.role === 'super_admin')
@@ -90,16 +106,22 @@ function NovoProcessoForm() {
       setDataLoaded(true)
 
       // Pre-select client
-      if (preClientId && cl) {
-        const found = cl.find((c: any) => c.id === preClientId)
-        if (found?.state) setForm(prev => ({ ...prev, jurisdiction_state: prev.jurisdiction_state || found.state }))
+      if (preClientId) {
+        const found = clientRows.find(client => client.id === preClientId)
+        const foundState = found?.state
+        if (foundState) {
+          setForm(prev => ({
+            ...prev,
+            jurisdiction_state: prev.jurisdiction_state || foundState,
+          }))
+        }
       }
 
       // Pre-select type from URL param (type_id=UUID or type=slug)
       const typeToFind = preTypeId
-        ? (pt ?? []).find((t: any) => t.id === preTypeId)
+        ? processTypeRows.find(type => type.id === preTypeId)
         : preTypeSlug
-        ? (pt ?? []).find((t: any) => t.slug === preTypeSlug)
+        ? processTypeRows.find(type => type.slug === preTypeSlug)
         : null
       if (typeToFind) {
         setForm(prev => ({ ...prev, process_type_id: typeToFind.id }))
@@ -112,7 +134,7 @@ function NovoProcessoForm() {
   }, [preClientId, preTypeId, preTypeSlug])
 
   const handleClientChange = (clientId: string) => {
-    const found = clients.find((c: any) => c.id === clientId)
+    const found = clients.find(client => client.id === clientId)
     setForm(prev => ({
       ...prev,
       client_id: clientId,
@@ -141,7 +163,13 @@ function NovoProcessoForm() {
   const customFields = PROCESS_TYPE_CUSTOM_FIELDS[selectedTypeSlug] ?? []
 
   const selectedClient = form.client_id
-    ? clients.find((client: any) => client.id === form.client_id)
+    ? clients.find(client => client.id === form.client_id)
+    : null
+  const existingActiveProcess = form.client_id && form.process_type_id
+    ? activeProcesses.find(process => (
+        process.client_id === form.client_id
+        && process.process_type_id === form.process_type_id
+      ))
     : null
   const eligibilityAnalysis = selectedClient && isEligibilityProcess(selectedTypeSlug)
     ? analyzeEligibility({
@@ -173,6 +201,14 @@ function NovoProcessoForm() {
     e.preventDefault()
     if (!form.client_id || !form.process_type_id) {
       setError('Selecione o cliente e o tipo de processo.')
+      return
+    }
+    if (!selectedClient) {
+      setError('O cliente selecionado não está mais disponível.')
+      return
+    }
+    if (existingActiveProcess) {
+      setError('Este cliente já possui um processo ativo deste tipo.')
       return
     }
     if (selectedTypeSlug === 'cnh_especial' && selectedClient?.client_type !== 'condutor') {
@@ -600,6 +636,28 @@ function NovoProcessoForm() {
           </div>}
 
           {/* ── Erro ─────────────────────────────────────────────── */}
+          {existingActiveProcess && (
+            <div className="anim flex items-start justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div>
+                  <p className="text-sm font-semibold text-amber-900 dash">
+                    Este processo já está cadastrado
+                  </p>
+                  <p className="mt-0.5 text-xs text-amber-700 dash">
+                    Não é possível manter dois processos ativos do mesmo tipo para o mesmo cliente.
+                  </p>
+                </div>
+              </div>
+              <Link
+                href={`/processos/${existingActiveProcess.id}`}
+                className="shrink-0 text-xs font-semibold text-amber-800 hover:underline dash"
+              >
+                Abrir existente
+              </Link>
+            </div>
+          )}
+
           {error && (
             <div className="anim flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl p-4">
               <AlertCircle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
@@ -609,7 +667,9 @@ function NovoProcessoForm() {
 
           {/* ── Actions ──────────────────────────────────────────── */}
           <div className="anim anim-5 flex gap-3 pb-2">
-            <Button type="submit" loading={loading} size="md">Criar Processo</Button>
+            <Button type="submit" loading={loading} disabled={Boolean(existingActiveProcess)} size="md">
+              Criar Processo
+            </Button>
             <Link href="/processos"><Button variant="outline" type="button" size="md">Cancelar</Button></Link>
           </div>
         </form>

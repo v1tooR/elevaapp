@@ -1,6 +1,6 @@
 BEGIN;
 
-SELECT plan(48);
+SELECT plan(51);
 
 SELECT has_table('public', 'legal_rule_versions', 'legal_rule_versions existe');
 SELECT has_column('public', 'process_stages', 'due_date', 'process_stages possui due_date');
@@ -40,6 +40,9 @@ SELECT has_function('public', 'update_document_workflow', ARRAY['uuid','text','t
 SELECT has_function('public', 'complete_password_setup', ARRAY[]::TEXT[], 'RPC de primeiro acesso existe');
 SELECT has_function('public', 'mark_mfa_enrolled', ARRAY[]::TEXT[], 'RPC de confirmação MFA existe');
 SELECT has_function('public', 'add_staff_process_document', ARRAY['uuid','text','text','text','uuid','text','boolean'], 'RPC documental registra solicitação');
+SELECT has_column('public', 'processes', 'duplicate_of_process_id', 'processo duplicado preserva vínculo de auditoria');
+SELECT has_index('public', 'processes', 'uq_processes_one_active_type_per_client', 'cliente possui somente um processo ativo por tipo');
+SELECT has_function('public', 'prevent_duplicate_active_process', ARRAY[]::TEXT[], 'gatilho de duplicidade ativa existe');
 SELECT ok(public.document_url_is_allowed('https://drive.google.com/file/d/test/view'), 'link oficial do Drive é aceito');
 SELECT isnt(public.document_url_is_allowed('https://drive.google.com.evil.test/file'), TRUE, 'domínio semelhante ao Drive é rejeitado');
 SELECT results_eq(

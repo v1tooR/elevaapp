@@ -122,13 +122,15 @@ export default async function ClienteProcessoDetailPage({
   const isOperational = hasOperationalWorkflow(pt?.slug ?? '')
   const operationalWorkflow = getOperationalWorkflowDefinition(pt?.slug ?? '')
   const stages = isCnh || isOperational ? (rawStages ?? []) : []
-  const color: string = pt?.color ?? '#A14F2A'
 
   // Valores de andamento dos workflows estruturados
   const sortedStages = [...stages].sort((a: any, b: any) => a.sort_order - b.sort_order)
   const doneStatuses = new Set(['concluido', 'aprovado', 'nao_aplicavel'])
   const resolvedStatuses = new Set([...doneStatuses, 'reprovado'])
   const doneCount = sortedStages.filter((s: any) => resolvedStatuses.has(s.status)).length
+  const progressPercent = stages.length > 0
+    ? Math.round((doneCount / stages.length) * 100)
+    : 0
   const currentStage: any = sortedStages.find((s: any) => s.status === 'em_andamento')
     ?? sortedStages.find((s: any) => s.status === 'pendente')
   const currentStageFollowUp = getStageOperationalCopy(currentStage)
@@ -179,41 +181,66 @@ export default async function ClienteProcessoDetailPage({
           <div className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-[0.07]"
             style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
 
-          <div className="relative p-6 sm:p-8">
+          <div className="relative p-5 sm:p-8">
             <Link
               href="/minha-area/processos"
-              className="inline-flex items-center gap-1.5 text-xs font-medium mb-4 transition-colors hover:text-white"
-              style={{ color: 'rgba(201,122,82,0.75)' }}
+              className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-white/15 bg-white/10 px-3 text-sm font-semibold text-white/90 transition-colors hover:border-white/25 hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80 focus-visible:ring-offset-2 focus-visible:ring-offset-[#3C2118]"
             >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              Meus Processos
+              <ArrowLeft className="h-4 w-4" aria-hidden="true" />
+              Voltar para meus processos
             </Link>
 
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div className="flex items-start gap-3">
+            <div className="mt-5 flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+              <div className="flex min-w-0 items-start gap-3.5">
                 <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-white/20 mt-0.5"
-                  style={{ backgroundColor: 'rgba(255,255,255,0.12)' }}
+                  className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/25 bg-white/15 shadow-sm"
                 >
-                  <div className="w-4 h-4 rounded-full bg-white/80" />
+                  <FileText className="h-5 w-5 text-white" aria-hidden="true" />
                 </div>
-                <div>
-                  <h1 className="text-white text-xl font-bold leading-tight">{pt?.name ?? 'Processo'}</h1>
+                <div className="min-w-0">
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-[0.12em] text-orange-100/80">
+                    Processo
+                  </p>
+                  <h1 className="break-words text-xl font-bold leading-tight text-white sm:text-2xl">
+                    {pt?.name ?? 'Processo'}
+                  </h1>
                   {process.protocol && (
-                    <p className="text-[11px] mt-0.5 font-mono" style={{ color: 'rgba(201,122,82,0.7)' }}>
-                      #{process.protocol}
+                    <p className="mt-1 text-sm font-medium text-orange-100">
+                      Protocolo <span className="font-mono">{process.protocol}</span>
                     </p>
                   )}
-                  <div className="mt-2">
+                  <div className="mt-3">
                     <ProcessStatusBadge status={process.status} />
                   </div>
                 </div>
               </div>
 
               {isCnh && stages.length > 0 && (
-                <div className="bg-white/10 border border-white/15 rounded-xl px-4 py-2.5 text-center shrink-0">
-                  <p className="text-white text-2xl font-bold leading-none">{doneCount}<span className="text-white/50 text-base font-medium">/{stages.length}</span></p>
-                  <p className="text-[10px] mt-0.5" style={{ color: 'rgba(201,122,82,0.6)' }}>etapas concluídas</p>
+                <div className="w-full shrink-0 rounded-xl border border-white/20 bg-black/15 p-4 shadow-sm backdrop-blur-sm sm:w-60">
+                  <div className="flex items-end justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-semibold text-white/80">Progresso do processo</p>
+                      <p className="mt-1 text-sm font-medium text-white">
+                        <span className="text-2xl font-bold">{doneCount}</span>
+                        <span className="text-white/80"> de {stages.length} etapas finalizadas</span>
+                      </p>
+                    </div>
+                    <span className="pb-0.5 text-sm font-bold text-orange-100">{progressPercent}%</span>
+                  </div>
+                  <div
+                    className="mt-3 h-2 overflow-hidden rounded-full bg-white/20"
+                    role="progressbar"
+                    aria-label="Progresso das etapas do processo"
+                    aria-valuemin={0}
+                    aria-valuemax={stages.length}
+                    aria-valuenow={doneCount}
+                    aria-valuetext={`${doneCount} de ${stages.length} etapas finalizadas`}
+                  >
+                    <div
+                      className="h-full rounded-full bg-orange-200 transition-[width] duration-500"
+                      style={{ width: `${progressPercent}%` }}
+                    />
+                  </div>
                 </div>
               )}
             </div>

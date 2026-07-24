@@ -2,7 +2,6 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 import { UserPlus, X, AlertCircle, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Lead } from '@/types/database'
@@ -17,19 +16,20 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
     setLoading(true)
     setError('')
 
-    const supabase = createClient()
-
-    const { data: clientId, error: clientErr } = await supabase.rpc('convert_lead_to_client', {
-      p_lead_id: lead.id,
+    const response = await fetch(`/api/leads/${lead.id}/status`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'convertido' }),
     })
+    const result = await response.json().catch(() => ({}))
 
-    if (clientErr || !clientId) {
-      setError('Erro ao criar cliente: ' + (clientErr?.message ?? 'Erro desconhecido'))
+    if (!response.ok || !result.convertedClientId) {
+      setError(result.error ?? 'Não foi possível criar o cliente.')
       setLoading(false)
       return
     }
 
-    router.push(`/clientes/${clientId}`)
+    router.push(`/clientes/${result.convertedClientId}`)
   }
 
   return (
@@ -47,7 +47,7 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
         className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 transition-colors dash"
       >
         <UserPlus className="w-4 h-4" />
-        Converter em Cliente
+        {lead.status === 'convertido' ? 'Concluir conversão' : 'Converter em Cliente'}
       </button>
 
       {open && createPortal(
@@ -65,7 +65,9 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
                     <UserPlus className="w-4.5 h-4.5 text-white" />
                   </div>
                   <div>
-                    <h2 className="dash text-white font-bold text-base">Converter em Cliente</h2>
+                    <h2 className="dash text-white font-bold text-base">
+                      {lead.status === 'convertido' ? 'Concluir conversão' : 'Converter em Cliente'}
+                    </h2>
                     <p className="dash text-emerald-200/80 text-xs mt-0.5">Esta ação é irreversível</p>
                   </div>
                 </div>

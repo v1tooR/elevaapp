@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -24,7 +24,17 @@ const PROCESS_STEPS = [
   { label: 'Protocolo no órgão', detail: 'Próxima etapa', complete: false },
 ]
 
-export default function LoginPage() {
+function getLoginParamError(value: string | null) {
+  if (value === 'link_invalido') {
+    return 'Link inválido ou expirado. Solicite um novo link de redefinição.'
+  }
+  if (value === 'acesso_inativo') {
+    return 'Este acesso está inativo. Entre em contato com a equipe responsável.'
+  }
+  return ''
+}
+
+function LoginContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [email, setEmail] = useState('')
@@ -32,15 +42,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-
-  useEffect(() => {
-    const errParam = searchParams.get('error')
-    if (errParam === 'link_invalido') {
-      setError('Link inválido ou expirado. Solicite um novo link de redefinição.')
-    } else if (errParam === 'acesso_inativo') {
-      setError('Este acesso está inativo. Entre em contato com a equipe responsável.')
-    }
-  }, [searchParams])
+  const displayedError = error || getLoginParamError(searchParams.get('error'))
 
   const handleLogin = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -260,10 +262,10 @@ export default function LoginPage() {
                 </div>
               </div>
 
-              {error && (
+              {displayedError && (
                 <div role="alert" className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3.5">
                   <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
-                  <p className="text-sm leading-5 text-red-700">{error}</p>
+                  <p className="text-sm leading-5 text-red-700">{displayedError}</p>
                 </div>
               )}
 
@@ -305,5 +307,19 @@ export default function LoginPage() {
         </div>
       </section>
     </main>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={(
+        <main className={`${styles.page} flex items-center justify-center`}>
+          <Loader2 className="h-7 w-7 animate-spin text-primary" aria-label="Carregando" />
+        </main>
+      )}
+    >
+      <LoginContent />
+    </Suspense>
   )
 }
