@@ -40,8 +40,20 @@ export type HistoryActionType =
   | 'client_message'
 
 // --- Leads ---
-export type LeadStatus = 'novo' | 'em_atendimento' | 'convertido' | 'perdido'
+export type LeadStatus = 'novo' | 'frio' | 'quente' | 'convertido' | 'perdido'
 export type LeadSource = 'instagram' | 'google' | 'indicacao' | 'vendedor' | 'outros'
+export type LeadIntendedService =
+  | 'cnh_especial'
+  | 'ipi'
+  | 'icms'
+  | 'ipva'
+  | 'credencial_estacionamento'
+  | 'cin'
+  | 'emplacamento'
+  | 'renovacao'
+  | 'isencao_ir'
+  | 'aposentadoria'
+  | 'alvara'
 
 // --- Shared enums ---
 export type DisabilityType = 'fisica' | 'auditiva' | 'visual' | 'monocular' | 'autismo' | 'mental'
@@ -132,6 +144,9 @@ export interface Client {
   receives_loas_bpc?: boolean
   has_medical_report?: boolean
   report_valid_until?: string
+  has_legal_representative?: boolean
+  legal_representative_name?: string
+  legal_representative_cpf?: string
   created_at: string
   updated_at: string
   profile?: Profile
@@ -147,8 +162,15 @@ export interface Lead {
   medical_assessment_status?: MedicalAssessmentStatus
   requires_practical_exam?: boolean | null
   disability_type?: DisabilityType
+  disability_types?: DisabilityType[]
   has_medical_report?: boolean
   report_valid?: boolean
+  cnh_restrictions?: string[]
+  receives_loas_bpc?: boolean
+  has_legal_representative?: boolean
+  legal_representative_name?: string
+  intended_service?: LeadIntendedService
+  intended_services?: LeadIntendedService[]
   lead_source?: LeadSource
   assigned_to?: string
   status: LeadStatus
@@ -200,6 +222,8 @@ export interface Process {
   renewal_date?: string | null
   renewal_calendar_event_id?: string | null
   duplicate_of_process_id?: string | null
+  service_order?: number | null
+  origin_lead_id?: string | null
   created_at: string
   updated_at: string
   client?: Client

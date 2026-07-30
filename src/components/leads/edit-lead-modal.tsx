@@ -8,19 +8,13 @@ import { Input } from '@/components/ui/input'
 import { MaskedInput } from '@/components/ui/masked-input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { cn } from '@/lib/utils'
-import { canHaveCnhEspecial } from '@/lib/eligibility'
-import type { Lead, DisabilityType, LeadSource, LeadStatus } from '@/types/database'
-
-const DISABILITY_OPTIONS: { value: DisabilityType | ''; label: string }[] = [
-  { value: '',          label: 'Não informado' },
-  { value: 'fisica',    label: 'Física' },
-  { value: 'auditiva',  label: 'Auditiva' },
-  { value: 'visual',    label: 'Visual' },
-  { value: 'monocular', label: 'Monocular' },
-  { value: 'autismo',   label: 'Autismo (TEA)' },
-  { value: 'mental',    label: 'Mental / Intelectual' },
-]
+import { LeadEligibilityFields } from '@/components/leads/lead-eligibility-fields'
+import {
+  leadEligibilityFromRecord,
+  leadEligibilityPayload,
+} from '@/lib/lead-eligibility'
+import { LEAD_STATUS_META } from '@/lib/lead-funnel'
+import type { Lead, LeadSource, LeadStatus } from '@/types/database'
 
 const SOURCE_OPTIONS: { value: LeadSource | ''; label: string }[] = [
   { value: '',          label: 'Não informado' },
@@ -32,30 +26,11 @@ const SOURCE_OPTIONS: { value: LeadSource | ''; label: string }[] = [
 ]
 
 const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
-  { value: 'novo',           label: 'Novo' },
-  { value: 'em_atendimento', label: 'Em atendimento' },
-  { value: 'perdido',        label: 'Perdido' },
+  { value: 'novo', label: LEAD_STATUS_META.novo.label },
+  { value: 'frio', label: LEAD_STATUS_META.frio.label },
+  { value: 'quente', label: LEAD_STATUS_META.quente.label },
+  { value: 'perdido', label: LEAD_STATUS_META.perdido.label },
 ]
-
-function Toggle({ enabled, onToggle, disabled }: { enabled: boolean; onToggle: () => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={disabled}
-      className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
-        disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer',
-        enabled ? 'bg-emerald-500' : 'bg-slate-200'
-      )}
-    >
-      <span className={cn(
-        'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200',
-        enabled ? 'translate-x-4' : 'translate-x-0'
-      )} />
-    </button>
-  )
-}
 
 export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string; name: string }[] }) {
   const router = useRouter()
@@ -72,13 +47,7 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
     notes: lead.notes ?? '',
   })
 
-  const [profile, setProfile] = useState({
-    is_driver: lead.is_driver ?? false,
-    disability_type: (lead.disability_type ?? '') as DisabilityType | '',
-    has_cnh_especial: lead.has_cnh_especial ?? false,
-    has_medical_report: lead.has_medical_report ?? false,
-    report_valid: lead.report_valid ?? false,
-  })
+  const [profile, setProfile] = useState(() => leadEligibilityFromRecord(lead))
 
   const openEditor = () => {
     setForm({
@@ -89,37 +58,12 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
       status: lead.status,
       notes: lead.notes ?? '',
     })
-    setProfile({
-      is_driver: lead.is_driver ?? false,
-      disability_type: (lead.disability_type ?? '') as DisabilityType | '',
-      has_cnh_especial: lead.has_cnh_especial ?? false,
-      has_medical_report: lead.has_medical_report ?? false,
-      report_valid: lead.report_valid ?? false,
-    })
+    setProfile(leadEligibilityFromRecord(lead))
     setError('')
     setOpen(true)
   }
 
   const update = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
-
-  const updateProfile = (key: string, value: boolean | string) =>
-    setProfile(prev => {
-      const next = { ...prev, [key]: value }
-      if (key === 'disability_type' || key === 'is_driver') {
-        const d = key === 'disability_type' ? (value as DisabilityType | '') : prev.disability_type
-        const drv = key === 'is_driver' ? (value as boolean) : prev.is_driver
-        if (!canHaveCnhEspecial(drv ? 'condutor' : 'nao_condutor', d || undefined)) {
-          next.has_cnh_especial = false
-        }
-      }
-      if (key === 'has_medical_report' && !value) next.report_valid = false
-      return next
-    })
-
-  const cnhAllowed = canHaveCnhEspecial(
-    profile.is_driver ? 'condutor' : 'nao_condutor',
-    profile.disability_type || undefined
-  )
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -133,12 +77,7 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
       assigned_to: form.assigned_to || null,
       status: form.status,
       notes: form.notes || null,
-      is_driver: profile.is_driver,
-      disability_type: profile.disability_type || null,
-      has_cnh_especial: profile.has_cnh_especial,
-      cnh_status: profile.has_cnh_especial ? 'com_restricoes' : profile.is_driver ? null : 'nao_possui',
-      has_medical_report: profile.has_medical_report,
-      report_valid: profile.has_medical_report ? profile.report_valid : null,
+      ...leadEligibilityPayload(profile),
     }).eq('id', lead.id)
 
     if (err) { setError(err.message); setLoading(false); return }
@@ -168,7 +107,7 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
 
       {open && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
-          <div className="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
+          <div className="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
 
             {/* Header */}
             <div
@@ -208,47 +147,21 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
                       {STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                     {lead.status !== 'convertido' && (
-                      <p className="mt-1 text-[11px] text-slate-400 dash">
-                        Para converter, use o botão “Converter em Cliente” ou arraste o card no kanban.
-                      </p>
+                      <>
+                        <p className="mt-1 text-[11px] text-slate-500 dash">
+                          {LEAD_STATUS_META[form.status].description}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-slate-400 dash">
+                          Para converter, use o botão “Converter em Cliente” ou arraste o card no kanban.
+                        </p>
+                      </>
                     )}
                   </div>
                 </div>
 
                 <div className="border-t border-slate-100 pt-4 space-y-3">
                   <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider dash">Perfil de Deficiência</p>
-
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-slate-700 dash">É habilitado?</p>
-                    <Toggle enabled={profile.is_driver} onToggle={() => updateProfile('is_driver', !profile.is_driver)} />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-sm font-medium text-slate-700 dash">Tipo de deficiência</label>
-                    <select value={profile.disability_type} onChange={e => updateProfile('disability_type', e.target.value)} className={sel}>
-                      {DISABILITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                    </select>
-                    {profile.disability_type && profile.is_driver && (
-                      <p className="text-[11px] text-blue-600 dash">A avaliação médico-pericial define aptidão e restrições.</p>
-                    )}
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <p className={cn('text-sm font-medium dash', cnhAllowed ? 'text-slate-700' : 'text-slate-400')}>Já possui CNH com restrições?</p>
-                    <Toggle enabled={profile.has_cnh_especial} onToggle={() => updateProfile('has_cnh_especial', !profile.has_cnh_especial)} disabled={!cnhAllowed} />
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm font-medium text-slate-700 dash">Possui laudo médico?</p>
-                    <Toggle enabled={profile.has_medical_report} onToggle={() => updateProfile('has_medical_report', !profile.has_medical_report)} />
-                  </div>
-
-                  {profile.has_medical_report && (
-                    <div className="flex items-center justify-between pl-4 border-l-2 border-purple-100">
-                      <p className="text-sm font-medium text-slate-700 dash">Laudo válido?</p>
-                      <Toggle enabled={profile.report_valid} onToggle={() => updateProfile('report_valid', !profile.report_valid)} />
-                    </div>
-                  )}
+                  <LeadEligibilityFields value={profile} onChange={setProfile} compact />
                 </div>
 
                 <div className="border-t border-slate-100 pt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">

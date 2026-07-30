@@ -20,6 +20,9 @@ export interface ClientEligibilityFormValue {
   requires_adapted_vehicle: boolean | null
   requires_practical_exam: boolean | null
   authorized_drivers: AuthorizedDriver[]
+  has_legal_representative: boolean
+  legal_representative_name: string
+  legal_representative_cpf: string
   receives_loas_bpc: boolean
   has_medical_report: boolean
   report_valid_until: string
@@ -38,6 +41,9 @@ export const EMPTY_CLIENT_ELIGIBILITY: ClientEligibilityFormValue = {
   requires_adapted_vehicle: null,
   requires_practical_exam: null,
   authorized_drivers: [],
+  has_legal_representative: false,
+  legal_representative_name: '',
+  legal_representative_cpf: '',
   receives_loas_bpc: false,
   has_medical_report: false,
   report_valid_until: '',
@@ -57,6 +63,9 @@ export function clientEligibilityFromRecord(client: Partial<Client>): ClientElig
     requires_adapted_vehicle: client.requires_adapted_vehicle ?? null,
     requires_practical_exam: client.requires_practical_exam ?? null,
     authorized_drivers: client.authorized_drivers ?? [],
+    has_legal_representative: client.has_legal_representative ?? false,
+    legal_representative_name: client.legal_representative_name ?? '',
+    legal_representative_cpf: client.legal_representative_cpf ?? '',
     receives_loas_bpc: client.receives_loas_bpc ?? false,
     has_medical_report: client.has_medical_report ?? false,
     report_valid_until: client.report_valid_until ?? '',
@@ -87,6 +96,16 @@ export function clientEligibilityPayload(value: ClientEligibilityFormValue) {
     requires_adapted_vehicle: value.requires_adapted_vehicle,
     requires_practical_exam: value.requires_practical_exam,
     authorized_drivers: value.authorized_drivers.filter(driver => driver.name.trim() || driver.cnh.trim()),
+    has_legal_representative:
+      value.client_type === 'nao_condutor' && value.has_legal_representative,
+    legal_representative_name:
+      value.client_type === 'nao_condutor' && value.has_legal_representative
+        ? value.legal_representative_name.trim() || null
+        : null,
+    legal_representative_cpf:
+      value.client_type === 'nao_condutor' && value.has_legal_representative
+        ? value.legal_representative_cpf.trim() || null
+        : null,
     eligibility_notes: value.eligibility_notes.trim() || null,
     has_cnh_especial: value.cnh_status === 'com_restricoes',
     receives_loas_bpc: value.receives_loas_bpc,

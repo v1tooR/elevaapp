@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { createClient } from '@/lib/supabase/server'
+import { OPEN_LEAD_STATUSES } from '@/lib/lead-funnel'
 import { requireAuth } from '@/lib/auth'
 import type { ProcessStatus, UserRole } from '@/types/database'
 
@@ -184,8 +185,8 @@ export async function getStaffOperations() {
     processQuery,
     supabase.from('profiles').select('id, name, role, is_active').in('role', ['super_admin', 'admin', 'analista']).eq('is_active', true).order('name'),
     profile.role === 'analista'
-      ? supabase.from('leads').select('id, status, assigned_to').eq('assigned_to', profile.id).in('status', ['novo', 'em_atendimento'])
-      : supabase.from('leads').select('id, status, assigned_to').in('status', ['novo', 'em_atendimento']),
+      ? supabase.from('leads').select('id, status, assigned_to').eq('assigned_to', profile.id).in('status', [...OPEN_LEAD_STATUSES])
+      : supabase.from('leads').select('id, status, assigned_to').in('status', [...OPEN_LEAD_STATUSES]),
   ])
 
   if (processError) throw new Error('Não foi possível carregar a operação.')

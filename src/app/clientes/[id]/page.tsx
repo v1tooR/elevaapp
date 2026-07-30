@@ -10,6 +10,7 @@ import { ProcessStatusBadge } from '@/components/shared/status-badge'
 import { formatCPF, formatPhone, formatDate, formatDateTime } from '@/lib/utils'
 import { EditClientModal } from '@/components/clientes/edit-client-modal'
 import { PortalAccessCard } from '@/components/clientes/portal-access-card'
+import { ProcessQueueAction } from '@/components/clientes/process-queue-action'
 import { canHaveCnhEspecial } from '@/lib/eligibility'
 
 const DISABILITY_LABEL: Record<string, string> = {
@@ -113,6 +114,22 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
       ? supabase.from('profiles').select('email').eq('id', client.profile_id).single()
       : Promise.resolve({ data: null }),
   ])
+  const terminalProcessStatuses = new Set(['concluido', 'arquivado', 'cancelado'])
+  const processRows = [...(processes ?? [])].sort((left, right) => {
+    const leftOrder = left.service_order as number | null
+    const rightOrder = right.service_order as number | null
+
+    if (leftOrder != null && rightOrder != null) return leftOrder - rightOrder
+    if (leftOrder != null) return -1
+    if (rightOrder != null) return 1
+    return new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+  })
+  const activeQueueProcesses = processRows.filter(process => (
+    process.service_order != null
+    && !terminalProcessStatuses.has(process.status)
+  ))
+  const currentQueueProcessId = activeQueueProcesses[0]?.id
+  const nextQueueProcessId = activeQueueProcesses[1]?.id
 
   return (
     <>
@@ -200,7 +217,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
             {/* Quick stats */}
             <div className="hidden sm:flex gap-3 shrink-0">
               <div className="text-center bg-white/10 border border-white/10 rounded-xl px-4 py-2.5">
-                <p className="dash text-xl font-bold text-white">{processes?.length ?? 0}</p>
+                <p className="dash text-xl font-bold text-white">{processRows.length}</p>
                 <p className="dash text-[10px] text-primary-foreground/65 mt-0.5">Processos</p>
               </div>
               <div className="text-center bg-white/10 border border-white/10 rounded-xl px-4 py-2.5">
@@ -387,7 +404,8 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
 
             {/* Elegibilidade */}
             {(client.client_type || client.disability_type || client.cnh_status ||
-              client.receives_loas_bpc || client.has_medical_report) && (
+              client.receives_loas_bpc || client.has_medical_report ||
+              client.has_legal_representative) && (
               <div
                 className="anim anim-3 bg-white rounded-2xl p-5"
                 style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
@@ -441,6 +459,19 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                         {client.requires_practical_exam === null || client.requires_practical_exam === undefined
                           ? 'Aguardando perícia'
                           : client.requires_practical_exam ? 'Determinado' : 'Dispensado'}
+                      </span>
+                    </div>
+                  )}
+                  {client.client_type === 'nao_condutor' && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-xs text-slate-400 dash">Representante legal</span>
+                      <span className="text-right text-xs font-semibold text-slate-700 dash">
+                        {client.has_legal_representative
+                          ? [
+                              client.legal_representative_name,
+                              client.legal_representative_cpf,
+                            ].filter(Boolean).join(' · ') || 'Sim, dados não informados'
+                          : 'Não'}
                       </span>
                     </div>
                   )}
@@ -513,7 +544,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
               <div className="px-5 py-4 flex items-center justify-between border-b border-slate-50">
                 <div>
                   <h2 className="dash font-bold text-slate-900">Processos</h2>
-                  <p className="text-xs text-slate-400 mt-0.5 dash">{processes?.length ?? 0} registrado{processes?.length !== 1 ? 's' : ''}</p>
+                  <p className="text-xs text-slate-400 mt-0.5 dash">{processRows.length} registrado{processRows.length !== 1 ? 's' : ''}</p>
                 </div>
                 <Link
                   href={`/processos/novo?client_id=${client.id}`}
@@ -523,7 +554,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                 </Link>
               </div>
 
-              {!processes || processes.length === 0 ? (
+              {processRows.length === 0 ? (
                 <div className="py-12 flex flex-col items-center gap-3">
                   <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center">
                     <FolderOpen className="w-5 h-5 text-slate-300" />
@@ -532,37 +563,74 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                 </div>
               ) : (
                 <div>
-                  {(processes as any[]).map(p => (
-                    <Link
-                      key={p.id}
-                      href={`/processos/${p.id}`}
-                      className="process-row flex items-center gap-4 px-5 py-3.5 border-b border-slate-50 last:border-0"
-                    >
+                  {processRows.map(p => {
+                    const isQueued = p.service_order != null
+                    const isTerminal = terminalProcessStatuses.has(p.status)
+                    const isCurrent = p.id === currentQueueProcessId
+                    const isNext = p.id === nextQueueProcessId
+                    const canPrioritize = isQueued && !isTerminal && !isCurrent && !isNext
+
+                    return (
                       <div
-                        className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center"
-                        style={{ backgroundColor: `${p.process_types?.color ?? '#3B82F6'}18` }}
+                        key={p.id}
+                        className="process-row flex items-center gap-3 border-b border-slate-50 px-5 py-3.5 last:border-0"
                       >
-                        <div
-                          className="w-3 h-3 rounded-full"
-                          style={{ backgroundColor: p.process_types?.color ?? '#3B82F6' }}
-                        />
+                        <Link
+                          href={`/processos/${p.id}`}
+                          className="flex min-w-0 flex-1 items-center gap-4"
+                        >
+                          <div
+                            className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center"
+                            style={{ backgroundColor: `${p.process_types?.color ?? '#3B82F6'}18` }}
+                          >
+                            <div
+                              className="w-3 h-3 rounded-full"
+                              style={{ backgroundColor: p.process_types?.color ?? '#3B82F6' }}
+                            />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="process-name text-sm font-semibold text-slate-900 dash transition-colors">
+                                {p.process_types?.name}
+                              </p>
+                              {isCurrent && (
+                                <span className="dash rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                                  Em andamento agora
+                                </span>
+                              )}
+                              {isNext && (
+                                <span className="dash rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                  Próximo
+                                </span>
+                              )}
+                              {isQueued && isTerminal && (
+                                <span className="dash rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                                  Encerrado na fila
+                                </span>
+                              )}
+                              {isQueued && !isTerminal && !isCurrent && !isNext && (
+                                <span className="dash rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                                  Na fila
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              {p.protocol && (
+                                <p className="text-xs text-slate-400 dash">Protocolo: {p.protocol}</p>
+                              )}
+                              {p.protocol && <span className="text-slate-200 text-xs">·</span>}
+                              <p className="text-xs text-slate-400 dash">{formatDate(p.created_at)}</p>
+                            </div>
+                          </div>
+                          <ProcessStatusBadge status={p.status} />
+                          <ArrowUpRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
+                        </Link>
+                        {canPrioritize && (
+                          <ProcessQueueAction clientId={client.id} processId={p.id} />
+                        )}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="process-name text-sm font-semibold text-slate-900 dash transition-colors">
-                          {p.process_types?.name}
-                        </p>
-                        <div className="flex items-center gap-2 mt-0.5">
-                          {p.protocol && (
-                            <p className="text-xs text-slate-400 dash">Protocolo: {p.protocol}</p>
-                          )}
-                          {p.protocol && <span className="text-slate-200 text-xs">·</span>}
-                          <p className="text-xs text-slate-400 dash">{formatDate(p.created_at)}</p>
-                        </div>
-                      </div>
-                      <ProcessStatusBadge status={p.status} />
-                      <ArrowUpRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
-                    </Link>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -594,7 +662,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                 </div>
               ) : (
                 <div>
-                  {(documents as any[]).map(d => (
+                  {documents.map(d => (
                     <div key={d.id} className="doc-row flex items-center gap-4 px-5 py-3.5 border-b border-slate-50 last:border-0">
                       <div className="w-9 h-9 rounded-xl bg-slate-50 flex items-center justify-center shrink-0">
                         <FileText className="w-4 h-4 text-slate-400" />

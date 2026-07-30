@@ -6,22 +6,16 @@ import {
   ArrowUpRight, CheckCircle2, UserX
 } from 'lucide-react'
 import { formatPhone, formatDateTime } from '@/lib/utils'
+import {
+  getLeadDisabilityTypes,
+  getLeadIntendedServices,
+  LEAD_DISABILITY_LABELS,
+  LEAD_SERVICE_LABELS,
+} from '@/lib/lead-eligibility'
 import { EditLeadModal } from '@/components/leads/edit-lead-modal'
 import { ConvertLeadModal } from '@/components/leads/convert-lead-modal'
-
-const STATUS_LABEL: Record<string, string> = {
-  novo:            'Novo',
-  em_atendimento:  'Em atendimento',
-  convertido:      'Convertido',
-  perdido:         'Perdido',
-}
-
-const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = {
-  novo:           { bg: '#EFF6FF', text: '#2563EB', dot: '#3B82F6' },
-  em_atendimento: { bg: '#FFFBEB', text: '#D97706', dot: '#F59E0B' },
-  convertido:     { bg: '#F0FDF4', text: '#16A34A', dot: '#22C55E' },
-  perdido:        { bg: '#FEF2F2', text: '#DC2626', dot: '#EF4444' },
-}
+import { LEAD_STATUS_META } from '@/lib/lead-funnel'
+import type { LeadStatus } from '@/types/database'
 
 const SOURCE_LABEL: Record<string, string> = {
   instagram: 'Instagram',
@@ -39,15 +33,6 @@ const SOURCE_STYLE: Record<string, { bg: string; text: string }> = {
   outros:    { bg: '#F8FAFC', text: '#64748B' },
 }
 
-const DISABILITY_LABEL: Record<string, string> = {
-  fisica:    'Física',
-  auditiva:  'Auditiva',
-  visual:    'Visual',
-  monocular: 'Monocular',
-  autismo:   'Autismo (TEA)',
-  mental:    'Mental / Intelectual',
-}
-
 export default async function LeadDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
@@ -61,6 +46,8 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
   if (!lead) notFound()
   const convertedClient = lead.converted_client as { id: string; name: string } | null
   const assignee = lead.assignee as { id: string; name: string } | null
+  const disabilityTypes = getLeadDisabilityTypes(lead)
+  const intendedServices = getLeadIntendedServices(lead)
 
   const { data: staff } = await supabase
     .from('profiles')
@@ -69,7 +56,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
     .eq('is_active', true)
     .order('name')
 
-  const st = STATUS_STYLE[lead.status] ?? STATUS_STYLE.novo
+  const st = LEAD_STATUS_META[lead.status as LeadStatus] ?? LEAD_STATUS_META.novo
   const isConverted = lead.status === 'convertido' && Boolean(lead.converted_client_id)
   const hasIncompleteConversion = lead.status === 'convertido' && !lead.converted_client_id
   const isPerdido = lead.status === 'perdido'
@@ -124,10 +111,10 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               <div className="flex flex-wrap items-center gap-2 mb-2">
                 <span
                   className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold dash"
-                  style={{ background: st.bg, color: st.text }}
+                  style={{ background: st.background, color: st.text }}
                 >
                   <span className="w-1.5 h-1.5 rounded-full" style={{ background: st.dot }} />
-                  {STATUS_LABEL[lead.status]}
+                  {st.label}
                 </span>
                 {lead.lead_source && (
                   <span
@@ -235,29 +222,89 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 <h2 className="dash font-bold text-slate-900 text-sm">Perfil de Deficiência</h2>
               </div>
               <div className="space-y-2.5">
-                <div className="flex justify-between">
-                  <span className="text-xs text-slate-400 dash">Habilitado</span>
+                <div className="flex justify-between gap-4">
+                  <span className="text-xs text-slate-400 dash">Perfil</span>
                   <span className="text-xs font-semibold text-slate-700 dash">
-                    {lead.is_driver ? 'Sim' : 'Não'}
+                    {lead.is_driver == null
+                      ? 'Não informado'
+                      : lead.is_driver ? 'Condutor' : 'Não condutor'}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-xs text-slate-400 dash">Tipo de deficiência</span>
-                  <span className="text-xs font-semibold text-slate-700 dash">
-                    {lead.disability_type ? DISABILITY_LABEL[lead.disability_type] : '—'}
+                <div className="space-y-1.5">
+                  <span className="text-xs text-slate-400 dash">Condições associadas</span>
+                  {disabilityTypes.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {disabilityTypes.map(type => (
+                        <span
+                          key={type}
+                          className="dash inline-flex rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700"
+                        >
+                          {LEAD_DISABILITY_LABELS[type]}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs font-semibold text-slate-400 dash">Não informado</p>
+                  )}
+                </div>
+                {lead.is_driver === true && (
+                  <>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-xs text-slate-400 dash">CNH especial</span>
+                      <span className="text-xs font-semibold dash" style={{ color: lead.has_cnh_especial ? '#16A34A' : '#94A3B8' }}>
+                        {lead.has_cnh_especial ? 'Sim' : 'Não'}
+                      </span>
+                    </div>
+                    {lead.has_cnh_especial && lead.cnh_restrictions?.length > 0 && (
+                      <div className="flex justify-between gap-4">
+                        <span className="text-xs text-slate-400 dash">Restrições da CNH</span>
+                        <span className="text-right text-xs font-semibold text-slate-700 dash">
+                          {lead.cnh_restrictions.join(', ')}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+                {lead.is_driver === false && (
+                  <>
+                    <div className="flex justify-between gap-4">
+                      <span className="text-xs text-slate-400 dash">Representante legal</span>
+                      <span className="text-right text-xs font-semibold text-slate-700 dash">
+                        {lead.has_legal_representative
+                          ? lead.legal_representative_name || 'Sim, nome não informado'
+                          : 'Não'}
+                      </span>
+                    </div>
+                  </>
+                )}
+                <div className="flex justify-between gap-4">
+                  <span className="text-xs text-slate-400 dash">LOAS/BPC</span>
+                  <span className="text-xs font-semibold dash" style={{ color: lead.receives_loas_bpc ? '#16A34A' : '#94A3B8' }}>
+                    {lead.receives_loas_bpc ? 'Sim' : 'Não'}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-xs text-slate-400 dash">CNH Especial</span>
-                  <span className="text-xs font-semibold dash" style={{ color: lead.has_cnh_especial ? '#16A34A' : '#94A3B8' }}>
-                    {lead.has_cnh_especial ? 'Sim' : 'Não / N.A.'}
-                  </span>
-                </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between gap-4">
                   <span className="text-xs text-slate-400 dash">Laudo médico</span>
                   <span className="text-xs font-semibold dash" style={{ color: lead.has_medical_report ? '#16A34A' : '#94A3B8' }}>
-                    {lead.has_medical_report ? (lead.report_valid ? 'Sim, dentro da validade' : 'Sim, vencido') : 'Não'}
+                    {lead.has_medical_report ? 'Sim, válido para o processo' : 'Não'}
                   </span>
+                </div>
+                <div className="space-y-1.5">
+                  <span className="text-xs text-slate-400 dash">Serviços pretendidos</span>
+                  {intendedServices.length > 0 ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {intendedServices.map((service, index) => (
+                        <span
+                          key={service}
+                          className="dash inline-flex items-center gap-1 rounded-full border border-primary/20 bg-primary/5 px-2.5 py-1 text-[11px] font-semibold text-primary"
+                        >
+                          {index + 1}. {LEAD_SERVICE_LABELS[service]}
+                        </span>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs font-semibold text-slate-400 dash">Não informado</p>
+                  )}
                 </div>
               </div>
             </div>

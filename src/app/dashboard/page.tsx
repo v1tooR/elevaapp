@@ -44,7 +44,7 @@ export default async function DashboardPage() {
           { label: 'Sem responsável', value: metrics.unassigned, hint: 'precisam ser distribuídos', href: '/processos/lista?pendencia=sem_responsavel', icon: UserRoundX, tone: 'text-violet-700 bg-violet-50 border-violet-200' },
           { label: 'Prazos críticos', value: metrics.overdue, hint: 'vencidos e exigindo ação', href: '/rotina', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 border-red-200' },
           { label: 'Documentos para revisar', value: metrics.documentsForReview, hint: 'fila documental da operação', href: '/documentos', icon: FileSearch, tone: 'text-blue-700 bg-blue-50 border-blue-200' },
-          { label: 'Leads em aberto', value: metrics.openLeads, hint: 'novos ou em atendimento', href: '/leads', icon: Target, tone: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { label: 'Leads em aberto', value: metrics.openLeads, hint: 'novos, frios ou quentes', href: '/leads', icon: Target, tone: 'text-amber-700 bg-amber-50 border-amber-200' },
         ]
       : [
           { label: 'Meus processos ativos', value: metrics.activeProcesses, hint: `${metrics.clientsInService} clientes sob sua responsabilidade`, href: '/processos/lista', icon: Activity, tone: 'text-primary bg-primary/10 border-primary/20' },

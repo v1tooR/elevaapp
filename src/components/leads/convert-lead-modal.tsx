@@ -4,6 +4,12 @@ import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { UserPlus, X, AlertCircle, CheckCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  getLeadDisabilityTypes,
+  getLeadIntendedServices,
+  LEAD_DISABILITY_LABELS,
+  LEAD_SERVICE_LABELS,
+} from '@/lib/lead-eligibility'
 import type { Lead } from '@/types/database'
 
 export function ConvertLeadModal({ lead }: { lead: Lead }) {
@@ -11,6 +17,8 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const disabilityTypes = getLeadDisabilityTypes(lead)
+  const intendedServices = getLeadIntendedServices(lead)
 
   const handleConvert = async () => {
     setLoading(true)
@@ -99,13 +107,27 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500 dash">Perfil</span>
                     <span className="font-semibold text-slate-900 dash">
-                      {lead.is_driver ? 'Condutor' : 'Não condutor'}
+                      {lead.is_driver == null
+                        ? 'Não informado'
+                        : lead.is_driver ? 'Condutor' : 'Não condutor'}
                     </span>
                   </div>
-                  {lead.disability_type && (
-                    <div className="flex justify-between text-sm">
-                      <span className="text-slate-500 dash">Deficiência</span>
-                      <span className="font-semibold text-slate-900 dash capitalize">{lead.disability_type}</span>
+                  {disabilityTypes.length > 0 && (
+                    <div className="flex items-start justify-between gap-4 text-sm">
+                      <span className="text-slate-500 dash">Condições</span>
+                      <span className="text-right font-semibold text-slate-900 dash">
+                        {disabilityTypes.map(type => LEAD_DISABILITY_LABELS[type]).join(', ')}
+                      </span>
+                    </div>
+                  )}
+                  {intendedServices.length > 0 && (
+                    <div className="flex items-start justify-between gap-4 text-sm">
+                      <span className="text-slate-500 dash">Serviços</span>
+                      <span className="text-right font-semibold text-slate-900 dash">
+                        {intendedServices
+                          .map((service, index) => `${index + 1}. ${LEAD_SERVICE_LABELS[service]}`)
+                          .join(', ')}
+                      </span>
                     </div>
                   )}
                 </div>
@@ -114,7 +136,7 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
               <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3.5">
                 <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <p className="text-sm text-emerald-800 dash leading-snug">
-                  Um novo cadastro de cliente será criado com os dados acima. O lead será marcado como <strong>Convertido</strong> e você será redirecionado para a página do cliente.
+                  Um novo cliente será criado e os serviços selecionados já aparecerão como processos. A CNH Especial terá prioridade; os demais ficarão organizados na fila do cliente.
                 </p>
               </div>
 

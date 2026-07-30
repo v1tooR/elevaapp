@@ -6,27 +6,21 @@ import { Input } from '@/components/ui/input'
 import { MaskedInput } from '@/components/ui/masked-input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { LeadEligibilityFields } from '@/components/leads/lead-eligibility-fields'
 import Link from 'next/link'
 import { ArrowLeft, Target, User, Stethoscope, Tag, AlertCircle } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { canHaveCnhEspecial } from '@/lib/eligibility'
-import type { DisabilityType, LeadSource } from '@/types/database'
+import {
+  EMPTY_LEAD_ELIGIBILITY,
+  leadEligibilityPayload,
+  type LeadEligibilityFormValue,
+} from '@/lib/lead-eligibility'
+import type { LeadSource } from '@/types/database'
 
 const sectionCard = {
   background: '#fff',
   border: '1px solid #E2E8F0',
   boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
 } as const
-
-const DISABILITY_OPTIONS: { value: DisabilityType | ''; label: string }[] = [
-  { value: '',         label: 'Não informado' },
-  { value: 'fisica',   label: 'Física' },
-  { value: 'auditiva', label: 'Auditiva' },
-  { value: 'visual',   label: 'Visual' },
-  { value: 'monocular',label: 'Monocular' },
-  { value: 'autismo',  label: 'Autismo (TEA)' },
-  { value: 'mental',   label: 'Mental / Intelectual' },
-]
 
 const SOURCE_OPTIONS: { value: LeadSource | ''; label: string }[] = [
   { value: '',          label: 'Não informado' },
@@ -36,26 +30,6 @@ const SOURCE_OPTIONS: { value: LeadSource | ''; label: string }[] = [
   { value: 'vendedor',  label: 'Vendedor' },
   { value: 'outros',    label: 'Outros' },
 ]
-
-function Toggle({ enabled, onToggle, disabled }: { enabled: boolean; onToggle: () => void; disabled?: boolean }) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      disabled={disabled}
-      className={cn(
-        'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors duration-200',
-        disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer',
-        enabled ? 'bg-emerald-500' : 'bg-slate-200'
-      )}
-    >
-      <span className={cn(
-        'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow transform transition-transform duration-200',
-        enabled ? 'translate-x-4' : 'translate-x-0'
-      )} />
-    </button>
-  )
-}
 
 export default function NovoLeadPage() {
   const router = useRouter()
@@ -71,13 +45,10 @@ export default function NovoLeadPage() {
     notes: '',
   })
 
-  const [profile, setProfile] = useState({
-    is_driver: false,
-    disability_type: '' as DisabilityType | '',
-    has_cnh_especial: false,
-    has_medical_report: false,
-    report_valid: false,
-  })
+  const [profile, setProfile] = useState<LeadEligibilityFormValue>(() => ({
+    ...EMPTY_LEAD_ELIGIBILITY,
+    disability_types: [],
+  }))
 
   useEffect(() => {
     const supabase = createClient()
@@ -92,32 +63,6 @@ export default function NovoLeadPage() {
 
   const update = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
 
-  const updateProfile = (key: string, value: boolean | string) =>
-    setProfile(prev => {
-      const next = { ...prev, [key]: value }
-      // Se mudou disability ou is_driver, recalcula has_cnh_especial
-      if (key === 'disability_type' || key === 'is_driver') {
-        const disabilityVal = key === 'disability_type' ? (value as DisabilityType | '') : prev.disability_type
-        const isDriver = key === 'is_driver' ? (value as boolean) : prev.is_driver
-        if (!canHaveCnhEspecial(
-          isDriver ? 'condutor' : 'nao_condutor',
-          disabilityVal || undefined
-        )) {
-          next.has_cnh_especial = false
-        }
-      }
-      // Se desmarcou laudo, remove validade
-      if (key === 'has_medical_report' && !value) {
-        next.report_valid = false
-      }
-      return next
-    })
-
-  const cnhAllowed = canHaveCnhEspecial(
-    profile.is_driver ? 'condutor' : 'nao_condutor',
-    profile.disability_type || undefined
-  )
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.name.trim()) { setError('Nome é obrigatório.'); return }
@@ -131,12 +76,7 @@ export default function NovoLeadPage() {
       lead_source: form.lead_source || null,
       assigned_to: form.assigned_to || null,
       notes: form.notes || null,
-      is_driver: profile.is_driver,
-      disability_type: profile.disability_type || null,
-      has_cnh_especial: profile.has_cnh_especial,
-      cnh_status: profile.has_cnh_especial ? 'com_restricoes' : profile.is_driver ? null : 'nao_possui',
-      has_medical_report: profile.has_medical_report,
-      report_valid: profile.has_medical_report ? profile.report_valid : null,
+      ...leadEligibilityPayload(profile),
       status: 'novo',
     })
 
@@ -219,64 +159,7 @@ export default function NovoLeadPage() {
                 <p className="text-[11px] text-slate-400 dash">Elegibilidade para isenções</p>
               </div>
             </div>
-            <div className="space-y-4">
-              {/* is_driver toggle */}
-              <div className="flex items-center justify-between py-1">
-                <div>
-                  <p className="text-sm font-medium text-slate-700 dash">É habilitado (motorista)?</p>
-                  <p className="text-[11px] text-slate-400 dash">Possui ou deseja obter CNH</p>
-                </div>
-                <Toggle enabled={profile.is_driver} onToggle={() => updateProfile('is_driver', !profile.is_driver)} />
-              </div>
-
-              {/* disability_type */}
-              <div className="space-y-1">
-                <label className="block text-sm font-medium text-slate-700 dash">Tipo de deficiência</label>
-                <select
-                  value={profile.disability_type}
-                  onChange={e => updateProfile('disability_type', e.target.value as DisabilityType | '')}
-                  className="fsel block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white transition-all dash"
-                >
-                  {DISABILITY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-                {profile.disability_type && profile.is_driver && (
-                  <p className="text-[11px] text-blue-600 dash">A aptidão e eventuais restrições serão definidas pela avaliação médico-pericial.</p>
-                )}
-              </div>
-
-              {/* has_cnh_especial */}
-              <div className="flex items-center justify-between py-1">
-                <div>
-                  <p className={cn('text-sm font-medium dash', cnhAllowed ? 'text-slate-700' : 'text-slate-400')}>Já possui CNH com restrições?</p>
-                  {!cnhAllowed && (
-                    <p className="text-[11px] text-slate-400 dash">Informe o perfil condutor e a condição para registrar esta informação.</p>
-                  )}
-                </div>
-                <Toggle
-                  enabled={profile.has_cnh_especial}
-                  onToggle={() => updateProfile('has_cnh_especial', !profile.has_cnh_especial)}
-                  disabled={!cnhAllowed}
-                />
-              </div>
-
-              {/* has_medical_report */}
-              <div className="flex items-center justify-between py-1">
-                <div>
-                  <p className="text-sm font-medium text-slate-700 dash">Possui laudo médico?</p>
-                </div>
-                <Toggle enabled={profile.has_medical_report} onToggle={() => updateProfile('has_medical_report', !profile.has_medical_report)} />
-              </div>
-
-              {/* report_valid (conditional) */}
-              {profile.has_medical_report && (
-                <div className="flex items-center justify-between py-1 pl-4 border-l-2 border-purple-100">
-                  <div>
-                    <p className="text-sm font-medium text-slate-700 dash">Laudo dentro da validade?</p>
-                  </div>
-                  <Toggle enabled={profile.report_valid} onToggle={() => updateProfile('report_valid', !profile.report_valid)} />
-                </div>
-              )}
-            </div>
+            <LeadEligibilityFields value={profile} onChange={setProfile} />
           </div>
 
           {/* ── Origem e Atribuição ─────────────────────────────────── */}

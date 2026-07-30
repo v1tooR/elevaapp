@@ -3,22 +3,13 @@ import Link from 'next/link'
 import { Plus, Search, Target, ArrowUpRight, ChevronLeft, ChevronRight, Filter, LayoutList, Columns3 } from 'lucide-react'
 import { formatPhone } from '@/lib/utils'
 import { LeadKanbanBoard, type LeadKanbanItem } from '@/components/leads/lead-kanban-board'
+import {
+  isLeadStatus,
+  LEAD_FUNNEL_STATUSES,
+  LEAD_STATUS_META,
+} from '@/lib/lead-funnel'
 
 interface SearchParams { q?: string; status?: string; assigned_to?: string; page?: string; view?: string }
-
-const STATUS_LABEL: Record<string, string> = {
-  novo:            'Novo',
-  em_atendimento:  'Em atendimento',
-  convertido:      'Convertido',
-  perdido:         'Perdido',
-}
-
-const STATUS_STYLE: Record<string, { bg: string; text: string; dot: string }> = {
-  novo:           { bg: '#EFF6FF', text: '#2563EB', dot: '#3B82F6' },
-  em_atendimento: { bg: '#FFFBEB', text: '#D97706', dot: '#F59E0B' },
-  convertido:     { bg: '#F0FDF4', text: '#16A34A', dot: '#22C55E' },
-  perdido:        { bg: '#FEF2F2', text: '#DC2626', dot: '#EF4444' },
-}
 
 const SOURCE_LABEL: Record<string, string> = {
   instagram: 'Instagram',
@@ -40,7 +31,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   const params = await searchParams
   const view = params.view === 'kanban' ? 'kanban' : 'lista'
   const q = params.q ?? ''
-  const filterStatus = view === 'lista' ? (params.status ?? '') : ''
+  const requestedStatus = params.status ?? ''
+  const filterStatus = view === 'lista' && isLeadStatus(requestedStatus)
+    ? requestedStatus
+    : ''
   const filterAssigned = params.assigned_to ?? ''
   const page = parseInt(params.page ?? '1')
   const perPage = 20
@@ -126,7 +120,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               <div>
                 <h1 className="dash text-white text-2xl lg:text-3xl font-bold leading-tight">Leads</h1>
                 <p className="dash text-primary-foreground/65 text-sm mt-0.5">
-                  {count ?? 0} lead{count !== 1 ? 's' : ''} {filterStatus ? `com status "${STATUS_LABEL[filterStatus]}"` : 'no total'}
+                  {count ?? 0} lead{count !== 1 ? 's' : ''} {filterStatus ? `com status "${LEAD_STATUS_META[filterStatus].label}"` : 'no total'}
                 </p>
               </div>
             </div>
@@ -185,8 +179,8 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                 className="filter-select border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dash transition-all"
               >
                 <option value="">Todos os status</option>
-                {Object.entries(STATUS_LABEL).map(([v, l]) => (
-                  <option key={v} value={v}>{l}</option>
+                {LEAD_FUNNEL_STATUSES.map(status => (
+                  <option key={status} value={status}>{LEAD_STATUS_META[status].label}</option>
                 ))}
               </select>
             )}
@@ -231,18 +225,18 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
             >
               Todos
             </Link>
-            {Object.entries(STATUS_LABEL).map(([v, l]) => {
-              const s = STATUS_STYLE[v]
+            {LEAD_FUNNEL_STATUSES.map(status => {
+              const statusMeta = LEAD_STATUS_META[status]
               return (
                 <Link
-                  key={v}
-                  href={buildUrl({ status: v })}
+                  key={status}
+                  href={buildUrl({ status })}
                   className="px-3 py-1 rounded-full text-xs font-semibold dash transition-all"
-                  style={filterStatus === v
-                    ? { background: s.dot, color: '#fff' }
-                    : { background: s.bg, color: s.text }}
+                  style={filterStatus === status
+                    ? { background: statusMeta.dot, color: '#fff' }
+                    : { background: statusMeta.background, color: statusMeta.text }}
                 >
-                  {l}
+                  {statusMeta.label}
                 </Link>
               )
             })}
@@ -295,7 +289,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                 </thead>
                 <tbody>
                   {leadList.map(lead => {
-                    const st = STATUS_STYLE[lead.status] ?? STATUS_STYLE.novo
+                    const st = LEAD_STATUS_META[lead.status] ?? LEAD_STATUS_META.novo
                     const src = lead.lead_source ? SOURCE_STYLE[lead.lead_source] : null
                     return (
                       <tr key={lead.id} className="lead-row border-b border-slate-50 last:border-0">
@@ -321,10 +315,10 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                         <td className="px-5 py-3.5">
                           <span
                             className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold dash"
-                            style={{ background: st.bg, color: st.text }}
+                            style={{ background: st.background, color: st.text }}
                           >
                             <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: st.dot }} />
-                            {STATUS_LABEL[lead.status]}
+                            {st.label}
                           </span>
                         </td>
                         <td className="px-5 py-3.5">

@@ -2,6 +2,7 @@
 
 import { Plus, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { MaskedInput } from '@/components/ui/masked-input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/lib/utils'
 import type { ClientEligibilityFormValue } from '@/lib/client-eligibility'
@@ -207,7 +208,36 @@ export function ClientEligibilityFields({ value, onChange, compact = false }: Pr
       )}
 
       {value.client_type === 'nao_condutor' && (
-        <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+        <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+          <div className="space-y-3 rounded-xl border border-amber-100 bg-amber-50/50 p-3.5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Representante legal</p>
+                <p className="mt-1 text-[11px] text-slate-500">Complete os dados que podem ter sido iniciados no lead.</p>
+              </div>
+              <Toggle
+                enabled={value.has_legal_representative}
+                onToggle={() => update('has_legal_representative', !value.has_legal_representative)}
+              />
+            </div>
+            {value.has_legal_representative && (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <Input
+                  label="Nome do representante"
+                  value={value.legal_representative_name}
+                  onChange={event => update('legal_representative_name', event.target.value)}
+                />
+                <MaskedInput
+                  mask="cpf"
+                  label="CPF do representante"
+                  value={value.legal_representative_cpf}
+                  onChange={next => update('legal_representative_cpf', next)}
+                  placeholder="000.000.000-00"
+                />
+              </div>
+            )}
+          </div>
+
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-slate-500">Condutores autorizados</p>

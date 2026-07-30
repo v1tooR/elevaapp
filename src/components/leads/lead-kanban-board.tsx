@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { AlertCircle, ArrowUpRight, CalendarDays, GripVertical, Loader2, Phone, UserRound } from 'lucide-react'
 import type { LeadSource, LeadStatus } from '@/types/database'
 import { cn, formatDate, formatPhone } from '@/lib/utils'
+import { LEAD_STATUS_META } from '@/lib/lead-funnel'
 
 export interface LeadKanbanItem {
   id: string
@@ -23,34 +24,47 @@ type LeadUpdate = Partial<Pick<LeadKanbanItem, 'status' | 'converted_client_id'>
 const COLUMNS: Array<{
   key: LeadStatus
   label: string
+  description: string
   headerClass: string
   dotClass: string
   countClass: string
 }> = [
   {
     key: 'novo',
-    label: 'Novo',
+    label: LEAD_STATUS_META.novo.label,
+    description: LEAD_STATUS_META.novo.description,
     headerClass: 'border-info/20 bg-info-bg/60 text-info',
     dotClass: 'bg-info',
     countClass: 'bg-info/10 text-info',
   },
   {
-    key: 'em_atendimento',
-    label: 'Em atendimento',
-    headerClass: 'border-warning/20 bg-warning-bg/60 text-warning',
-    dotClass: 'bg-warning',
-    countClass: 'bg-warning/10 text-warning',
+    key: 'frio',
+    label: LEAD_STATUS_META.frio.label,
+    description: LEAD_STATUS_META.frio.description,
+    headerClass: 'border-sky-200 bg-sky-50 text-sky-700',
+    dotClass: 'bg-sky-500',
+    countClass: 'bg-sky-100 text-sky-700',
+  },
+  {
+    key: 'quente',
+    label: LEAD_STATUS_META.quente.label,
+    description: LEAD_STATUS_META.quente.description,
+    headerClass: 'border-orange-200 bg-orange-50 text-orange-700',
+    dotClass: 'bg-orange-500',
+    countClass: 'bg-orange-100 text-orange-700',
   },
   {
     key: 'convertido',
-    label: 'Convertido',
+    label: LEAD_STATUS_META.convertido.label,
+    description: LEAD_STATUS_META.convertido.description,
     headerClass: 'border-success/20 bg-success-bg/60 text-success',
     dotClass: 'bg-success',
     countClass: 'bg-success/10 text-success',
   },
   {
     key: 'perdido',
-    label: 'Perdido',
+    label: LEAD_STATUS_META.perdido.label,
+    description: LEAD_STATUS_META.perdido.description,
     headerClass: 'border-destructive/20 bg-destructive/5 text-destructive',
     dotClass: 'bg-destructive',
     countClass: 'bg-destructive/10 text-destructive',
@@ -148,10 +162,10 @@ export function LeadKanbanBoard({ leads }: { leads: LeadKanbanItem[] }) {
       )}
 
       <p className="px-1 text-xs text-muted-foreground">
-        Arraste um card para mudar sua situação. Ao mover para Convertido, o cliente é criado automaticamente.
+        Novo ainda não foi classificado. Frio indica baixo interesse ou dificuldade de retorno; Quente indica intenção de contratar enquanto aguarda uma providência. Arraste os cards para mover.
       </p>
 
-      <div className="flex gap-3 overflow-x-auto pb-3 xl:grid xl:grid-cols-4 xl:overflow-visible">
+      <div className="flex gap-3 overflow-x-auto pb-3 xl:grid xl:grid-cols-5 xl:overflow-visible">
         {COLUMNS.map((column) => {
           const columnLeads = items.filter((lead) => lead.status === column.key)
           const headingId = `lead-column-${column.key}`
@@ -183,16 +197,21 @@ export function LeadKanbanBoard({ leads }: { leads: LeadKanbanItem[] }) {
                 isDropTarget ? 'border-primary ring-2 ring-primary/15' : 'border-border',
               )}
             >
-              <div className={`flex items-center justify-between rounded-xl border px-3 py-2.5 ${column.headerClass}`}>
-                <div className="flex min-w-0 items-center gap-2">
-                  <span className={`h-2 w-2 shrink-0 rounded-full ${column.dotClass}`} />
-                  <h2 id={headingId} className="truncate text-xs font-bold">
-                    {column.label}
-                  </h2>
+              <div className={`min-h-[4.5rem] rounded-xl border px-3 py-2.5 ${column.headerClass}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={`h-2 w-2 shrink-0 rounded-full ${column.dotClass}`} />
+                    <h2 id={headingId} className="truncate text-xs font-bold">
+                      {column.label}
+                    </h2>
+                  </div>
+                  <span className={`shrink-0 rounded-md px-2 py-0.5 text-[11px] font-bold ${column.countClass}`}>
+                    {columnLeads.length}
+                  </span>
                 </div>
-                <span className={`rounded-md px-2 py-0.5 text-[11px] font-bold ${column.countClass}`}>
-                  {columnLeads.length}
-                </span>
+                <p className="mt-1.5 line-clamp-2 text-[10px] leading-snug opacity-75">
+                  {column.description}
+                </p>
               </div>
 
               <div className="mt-2 flex min-h-72 flex-col gap-2">
