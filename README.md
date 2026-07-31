@@ -1,8 +1,12 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-## Workflow IMESC/IPVA
+## Operação IMESC
 
-O fluxo operacional, a migration necessária e o roteiro de validação estão documentados em [`docs/imesc-workflow.md`](docs/imesc-workflow.md).
+A operação independente, a migration necessária e o roteiro de validação estão documentados em [`docs/imesc-workflow.md`](docs/imesc-workflow.md).
+
+## Segurança da credencial Gov.br
+
+A política de acesso, criptografia, auditoria, retenção e configuração obrigatória está documentada em [`docs/gov-credential-security.md`](docs/gov-credential-security.md).
 
 ## Getting Started
 

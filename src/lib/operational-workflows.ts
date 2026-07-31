@@ -34,6 +34,7 @@ export type OperationalStageTemplate = {
   description: string
   sort_order: number
   initialStatus?: OperationalStageStatus
+  initialData?: Record<string, unknown>
   allowedStatuses?: OperationalStageStatus[]
   fields?: OperationalFieldDefinition[]
   checklist?: OperationalChecklistItem[]
@@ -73,6 +74,54 @@ const REQUEST_STATUS_OPTIONS: OperationalFieldOption[] = [
   { value: 'indeferido', label: 'Indeferido' },
 ]
 
+export const IPI_DETRAN_REPORT_STATUS_VALUES = [
+  'nao_solicitado',
+  'solicitado',
+  'em_andamento',
+  'pronto',
+  'nao_aplicavel',
+] as const
+
+export type IpiDetranReportStatus = typeof IPI_DETRAN_REPORT_STATUS_VALUES[number]
+
+export const IPI_DETRAN_REPORT_STATUS_OPTIONS: OperationalFieldOption[] = [
+  { value: 'nao_solicitado', label: 'Ainda não solicitado' },
+  { value: 'solicitado', label: 'Solicitado' },
+  { value: 'em_andamento', label: 'Em andamento' },
+  { value: 'pronto', label: 'Pronto' },
+  { value: 'nao_aplicavel', label: 'Não se aplica' },
+]
+
+export function getIpiDetranStageStatus(
+  reportStatus: IpiDetranReportStatus,
+): OperationalStageStatus {
+  if (reportStatus === 'pronto') return 'concluido'
+  if (reportStatus === 'nao_aplicavel') return 'nao_aplicavel'
+  if (reportStatus === 'solicitado' || reportStatus === 'em_andamento') return 'em_andamento'
+  return 'pendente'
+}
+
+export function getIpiDetranReportStatus(
+  data: Record<string, unknown> | null | undefined,
+  stageStatus?: string | null,
+): IpiDetranReportStatus {
+  const reportStatus = data?.report_status
+  if (
+    typeof reportStatus === 'string'
+    && IPI_DETRAN_REPORT_STATUS_VALUES.includes(reportStatus as IpiDetranReportStatus)
+  ) {
+    return reportStatus as IpiDetranReportStatus
+  }
+  if (stageStatus === 'concluido' || stageStatus === 'aprovado') return 'pronto'
+  if (stageStatus === 'nao_aplicavel') return 'nao_aplicavel'
+  if (stageStatus === 'em_andamento') return 'em_andamento'
+  return 'nao_solicitado'
+}
+
+export function isOperationalStageBlocked(data: Record<string, unknown> | null | undefined) {
+  return typeof data?.blocked_by === 'string' && data.blocked_by.length > 0
+}
+
 const COMMON_DECISION_RESULTS: OperationalResultOption[] = [
   { value: 'deferido', label: 'Deferido', stageStatus: 'aprovado' },
   { value: 'indeferido', label: 'Indeferido', stageStatus: 'reprovado' },
@@ -101,22 +150,31 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
     ],
     stages: [
       {
-        stage_key: 'laudo_ipi', label: 'Laudo para IPI', sort_order: 10,
-        description: 'Confirmar origem, solicitação e emissão do laudo aceito para o pedido.',
+        stage_key: 'laudo_ipi', label: 'Laudo DETRAN', sort_order: 10,
+        description: 'Controle a solicitação e a emissão do Laudo DETRAN. Ao ficar pronto, a documentação do IPI será liberada automaticamente.',
+        initialData: { report_status: 'nao_solicitado' },
         fields: [
-          { key: 'issuer', label: 'Órgão emissor', type: 'select', requiredOnResolve: true, options: [
-            { value: 'detran', label: 'DETRAN' }, { value: 'sus_conveniado', label: 'Serviço público ou conveniado ao SUS' }, { value: 'outro_oficial', label: 'Outro emissor oficial aceito' },
-          ] },
-          { key: 'requested_at', label: 'Data da solicitação', type: 'date' },
-          { key: 'issued_at', label: 'Data de emissão', type: 'date', requiredOnResolve: true },
+          {
+            key: 'report_status',
+            label: 'Situação do laudo',
+            type: 'select',
+            options: IPI_DETRAN_REPORT_STATUS_OPTIONS,
+            help: '“Pronto” libera automaticamente a próxima etapa e avisa o cliente.',
+          },
+          { key: 'issuing_authority', label: 'Órgão emissor', type: 'text', placeholder: 'Ex.: DETRAN-SP', requiredOnResolve: true },
+          { key: 'requested_at', label: 'Solicitado em', type: 'date' },
+          { key: 'issued_at', label: 'Emitido em', type: 'date', requiredOnResolve: true },
+          { key: 'document_number', label: 'Número/código do laudo', type: 'text', requiredOnResolve: true },
+          { key: 'valid_until', label: 'Validade, se informada', type: 'date' },
+          { key: 'document_details', label: 'Informações do documento', type: 'textarea', placeholder: 'Restrições, observações do emissor ou referência para localização.' },
         ],
       },
       {
         stage_key: 'documentos_ipi', label: 'Documentos do pedido', sort_order: 20,
-        description: 'Checklist base; a exigência final deve seguir o perfil do cliente no SISEN.',
+        description: 'Liberada quando o Laudo DETRAN estiver pronto ou não for aplicável. A exigência final deve seguir o perfil do cliente no SISEN.',
+        initialData: { blocked_by: 'laudo_ipi' },
         checklist: [
           { key: 'identificacao_cpf', label: 'Documento de identificação e CPF' },
-          { key: 'laudo', label: 'Laudo aceito para IPI' },
           { key: 'comprovante_endereco', label: 'Comprovante de endereço' },
           { key: 'condutores', label: 'Condutor(es) habilitado(s), quando o beneficiário não conduz', requiredOnResolve: false },
           { key: 'representacao_legal', label: 'Representação legal/procuração, quando aplicável', requiredOnResolve: false },
@@ -720,7 +778,8 @@ export function getOperationalStageTemplate(slug: string, stageKey: string) {
 export function getOperationalStageInitialData(stage: OperationalStageTemplate) {
   const fields = Object.fromEntries((stage.fields ?? []).map(field => [field.key, field.type === 'boolean' ? false : '']))
   const checklist = Object.fromEntries((stage.checklist ?? []).map(item => [item.key, false]))
-  return stage.checklist ? { ...fields, checklist } : fields
+  const initialData = { ...fields, ...(stage.initialData ?? {}) }
+  return stage.checklist ? { ...initialData, checklist } : initialData
 }
 
 export function buildOperationalStageRows(processId: string, slug: string) {

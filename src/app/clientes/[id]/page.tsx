@@ -12,6 +12,7 @@ import { EditClientModal } from '@/components/clientes/edit-client-modal'
 import { PortalAccessCard } from '@/components/clientes/portal-access-card'
 import { ProcessQueueAction } from '@/components/clientes/process-queue-action'
 import { canHaveCnhEspecial } from '@/lib/eligibility'
+import { normalizeGovAccessStatus, normalizeGovCredentialMetadata } from '@/lib/gov-access'
 
 const DISABILITY_LABEL: Record<string, string> = {
   fisica:    'Física',
@@ -46,28 +47,18 @@ const MEDICAL_STATUS_LABEL: Record<string, string> = {
 }
 
 const GOV_ACCESS_STATUS: Record<string, { label: string; className: string }> = {
-  nao_validado: {
-    label: 'Não validado',
-    className: 'border-slate-200 bg-slate-50 text-slate-600',
-  },
-  aguardando_cliente: {
-    label: 'Aguardando o cliente',
+  aguardando: {
+    label: 'Aguardando',
     className: 'border-amber-200 bg-amber-50 text-amber-700',
   },
   validado: {
     label: 'Acesso validado',
     className: 'border-emerald-200 bg-emerald-50 text-emerald-700',
   },
-  com_pendencia: {
-    label: 'Com pendência',
-    className: 'border-orange-200 bg-orange-50 text-orange-700',
+  nao_informou: {
+    label: 'Não informou',
+    className: 'border-slate-200 bg-slate-50 text-slate-600',
   },
-}
-
-const GOV_ACCOUNT_LEVEL: Record<string, string> = {
-  bronze: 'Bronze',
-  prata: 'Prata',
-  ouro: 'Ouro',
 }
 
 function avatarGradient(name: string) {
@@ -99,7 +90,12 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
     ? await supabase.from('profiles').select('role').eq('auth_user_id', user.id).single()
     : { data: null }
 
-  const [{ data: processes }, { data: documents }, { data: linkedProfile }] = await Promise.all([
+  const [
+    { data: processes },
+    { data: documents },
+    { data: linkedProfile },
+    { data: govCredentialMetadataRaw },
+  ] = await Promise.all([
     supabase.from('processes')
       .select('*, process_types(name, color, slug)')
       .eq('client_id', id)
@@ -113,7 +109,9 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
     client.profile_id
       ? supabase.from('profiles').select('email').eq('id', client.profile_id).single()
       : Promise.resolve({ data: null }),
+    supabase.rpc('get_gov_credential_metadata', { p_client_id: id }),
   ])
+  const govCredentialMetadata = normalizeGovCredentialMetadata(govCredentialMetadataRaw)
   const terminalProcessStatuses = new Set(['concluido', 'arquivado', 'cancelado'])
   const processRows = [...(processes ?? [])].sort((left, right) => {
     const leftOrder = left.service_order as number | null
@@ -181,7 +179,10 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                 <Plus className="w-3.5 h-3.5" />
                 Novo Processo
               </Link>
-              <EditClientModal client={client} />
+              <EditClientModal
+                client={client}
+                initialGovCredentialMetadata={govCredentialMetadata}
+              />
             </div>
           </div>
 
@@ -252,15 +253,20 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                     </div>
                   </div>
                 )}
-                {client.email && (
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
-                      <Mail className="w-3.5 h-3.5 text-indigo-500" />
+                {client.email ? (
+                  <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+                    <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
+                      <Mail className="w-3.5 h-3.5 text-blue-600" />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-[10px] text-slate-400 dash">E-mail</p>
-                      <p className="text-sm font-medium text-slate-800 dash truncate">{client.email}</p>
+                      <p className="text-[10px] text-blue-500 dash">E-mail para os processos</p>
+                      <p className="text-sm font-semibold text-slate-800 dash truncate">{client.email}</p>
                     </div>
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                    <p className="dash text-xs font-semibold text-amber-800">E-mail ainda não informado</p>
+                    <p className="dash mt-0.5 text-[11px] text-amber-700">Recomendado para protocolos e acessos.</p>
                   </div>
                 )}
                 {(client.city || client.state) && (
@@ -298,12 +304,6 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                     </div>
                   </div>
                 )}
-                {client.rg && (
-                  <div className="pt-2 border-t border-slate-50">
-                    <p className="text-[10px] text-slate-400 dash mb-0.5">RG</p>
-                    <p className="text-sm font-medium text-slate-800 dash">{client.rg}</p>
-                  </div>
-                )}
               </div>
             </div>
 
@@ -320,46 +320,48 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                   <h2 className="dash text-sm font-bold text-slate-900">Acesso Gov.br</h2>
                 </div>
                 {(() => {
-                  const status = GOV_ACCESS_STATUS[client.gov_access_status ?? 'nao_validado'] ?? GOV_ACCESS_STATUS.nao_validado
+                  const normalizedStatus = normalizeGovAccessStatus(client.gov_access_status)
+                  const status = GOV_ACCESS_STATUS[normalizedStatus]
                   return <span className={`dash rounded-full border px-2.5 py-1 text-[10px] font-bold ${status.className}`}>{status.label}</span>
                 })()}
               </div>
 
               <div className="space-y-2.5">
                 <div className="flex items-start justify-between gap-4">
-                  <span className="dash text-xs text-slate-400">Autenticação pelo cliente</span>
+                  <span className="dash text-xs text-slate-400">Senha protegida</span>
                   <span className="dash text-right text-xs font-semibold text-slate-700">
-                    {client.gov_auth_by_client ? 'Confirmada' : 'Não confirmada'}
+                    {govCredentialMetadata.exists ? 'Armazenada' : 'Não armazenada'}
                   </span>
                 </div>
-                <div className="flex items-start justify-between gap-4">
-                  <span className="dash text-xs text-slate-400">Nível da conta</span>
-                  <span className="dash text-right text-xs font-semibold text-slate-700">
-                    {client.gov_account_level ? GOV_ACCOUNT_LEVEL[client.gov_account_level] : 'Não informado'}
-                  </span>
-                </div>
-                <div className="flex items-start justify-between gap-4">
-                  <span className="dash text-xs text-slate-400">Nível suficiente</span>
-                  <span className="dash text-right text-xs font-semibold text-slate-700">
-                    {client.gov_account_level_sufficient == null ? 'Não avaliado' : client.gov_account_level_sufficient ? 'Sim' : 'Não'}
-                  </span>
-                </div>
-                <div className="flex items-start justify-between gap-4">
-                  <span className="dash text-xs text-slate-400">Última validação</span>
-                  <span className="dash text-right text-xs font-semibold text-slate-700">
-                    {client.gov_access_last_validated_at ? formatDateTime(client.gov_access_last_validated_at) : 'Ainda não realizada'}
-                  </span>
-                </div>
+                {govCredentialMetadata.exists && (
+                  <>
+                    <div className="flex items-start justify-between gap-4">
+                      <span className="dash text-xs text-slate-400">Gravada em</span>
+                      <span className="dash text-right text-xs font-semibold text-slate-700">
+                        {govCredentialMetadata.storedAt ? formatDateTime(govCredentialMetadata.storedAt) : 'Data indisponível'}
+                      </span>
+                    </div>
+                    <div className="flex items-start justify-between gap-4">
+                      <span className="dash text-xs text-slate-400">Exclusão automática</span>
+                      <span className="dash text-right text-xs font-semibold text-slate-700">
+                        {govCredentialMetadata.purgeAfter || govCredentialMetadata.hardExpiresAt
+                          ? formatDateTime((govCredentialMetadata.purgeAfter ?? govCredentialMetadata.hardExpiresAt)!)
+                          : 'Data indisponível'}
+                      </span>
+                    </div>
+                  </>
+                )}
               </div>
 
               {client.gov_access_pending_note && (
                 <div className="dash mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">
-                  <span className="font-semibold">Pendência: </span>{client.gov_access_pending_note}
+                  <span className="font-semibold">Observação: </span>{client.gov_access_pending_note}
                 </div>
               )}
 
               <p className="dash mt-4 border-t border-slate-100 pt-3 text-[10px] leading-relaxed text-slate-400">
-                Para prosseguir, faça o acesso junto com o cliente. Senha e código de verificação não são registrados no Eleva.
+                A senha pode ser gravada ou substituída, mas não pode ser visualizada nem copiada.
+                Códigos de verificação nunca são armazenados.
               </p>
             </div>
 
@@ -446,20 +448,18 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                       <span className="text-right text-xs font-semibold text-slate-700 dash">{client.cnh_restrictions.join(', ')}</span>
                     </div>
                   )}
+                  {client.cnh_expiry_date && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-xs text-slate-400 dash">Vencimento da CNH</span>
+                      <span className="text-right text-xs font-semibold text-slate-700 dash">
+                        {formatDate(client.cnh_expiry_date)}
+                      </span>
+                    </div>
+                  )}
                   {client.medical_assessment_status && (
                     <div className="flex justify-between gap-3">
                       <span className="text-xs text-slate-400 dash">Avaliação pericial</span>
                       <span className="text-right text-xs font-semibold text-slate-700 dash">{MEDICAL_STATUS_LABEL[client.medical_assessment_status]}</span>
-                    </div>
-                  )}
-                  {client.client_type === 'condutor' && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-xs text-slate-400 dash">Exame prático</span>
-                      <span className="text-right text-xs font-semibold text-slate-700 dash">
-                        {client.requires_practical_exam === null || client.requires_practical_exam === undefined
-                          ? 'Aguardando perícia'
-                          : client.requires_practical_exam ? 'Determinado' : 'Dispensado'}
-                      </span>
                     </div>
                   )}
                   {client.client_type === 'nao_condutor' && (

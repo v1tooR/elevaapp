@@ -8,8 +8,18 @@ import {
   LEAD_FUNNEL_STATUSES,
   LEAD_STATUS_META,
 } from '@/lib/lead-funnel'
+import { normalizeReferralMonth, referralMonthBounds } from '@/lib/referral-partners'
+import type { ReferralPartner } from '@/types/database'
 
-interface SearchParams { q?: string; status?: string; assigned_to?: string; page?: string; view?: string }
+interface SearchParams {
+  q?: string
+  status?: string
+  assigned_to?: string
+  partner_id?: string
+  month?: string
+  page?: string
+  view?: string
+}
 
 const SOURCE_LABEL: Record<string, string> = {
   instagram: 'Instagram',
@@ -36,21 +46,30 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
     ? requestedStatus
     : ''
   const filterAssigned = params.assigned_to ?? ''
+  const filterPartner = params.partner_id ?? ''
+  const filterMonth = normalizeReferralMonth(params.month)
+  const monthBounds = referralMonthBounds(filterMonth)
   const page = parseInt(params.page ?? '1')
   const perPage = 20
 
   const supabase = await createClient()
 
-  const { data: staff } = await supabase
-    .from('profiles')
-    .select('id, name')
-    .in('role', ['super_admin', 'admin', 'analista'])
-    .eq('is_active', true)
-    .order('name')
+  const [{ data: staff }, { data: referralPartners }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, name')
+      .in('role', ['super_admin', 'admin', 'analista'])
+      .eq('is_active', true)
+      .order('name'),
+    supabase
+      .from('referral_partners')
+      .select('*')
+      .order('name'),
+  ])
 
   let query = supabase
     .from('leads')
-    .select('*, assignee:assigned_to(id, name)', { count: 'exact' })
+    .select('*, assignee:assigned_to(id, name), referral_partner:referral_partner_id(id, name)', { count: 'exact' })
     .order('created_at', { ascending: false })
 
   query = view === 'kanban'
@@ -60,17 +79,32 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
   if (q)              query = query.or(`name.ilike.%${q}%,phone.ilike.%${q}%`)
   if (filterStatus)   query = query.eq('status', filterStatus)
   if (filterAssigned) query = query.eq('assigned_to', filterAssigned)
+  if (filterPartner)  query = query.eq('referral_partner_id', filterPartner)
+  if (monthBounds) {
+    query = query.gte('created_at', monthBounds.start).lt('created_at', monthBounds.end)
+  }
 
   const { data: leads, count } = await query
   const leadList = (leads ?? []) as LeadKanbanItem[]
   const totalPages = Math.ceil((count ?? 0) / perPage)
 
   const buildUrl = (overrides: Record<string, string>) => {
-    const p = { q, status: filterStatus, assigned_to: filterAssigned, page: '1', view, ...overrides }
+    const p = {
+      q,
+      status: filterStatus,
+      assigned_to: filterAssigned,
+      partner_id: filterPartner,
+      month: filterMonth,
+      page: '1',
+      view,
+      ...overrides,
+    }
     const s = new URLSearchParams()
     if (p.q)            s.set('q', p.q)
     if (p.status)       s.set('status', p.status)
     if (p.assigned_to)  s.set('assigned_to', p.assigned_to)
+    if (p.partner_id)   s.set('partner_id', p.partner_id)
+    if (p.month)        s.set('month', p.month)
     if (p.page !== '1') s.set('page', p.page)
     if (p.view === 'kanban') s.set('view', 'kanban')
     const str = s.toString()
@@ -196,6 +230,27 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               ))}
             </select>
 
+            <select
+              name="partner_id"
+              defaultValue={filterPartner}
+              className="filter-select border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dash transition-all"
+            >
+              <option value="">Todos os vendedores/indicadores</option>
+              {((referralPartners ?? []) as ReferralPartner[]).map(partner => (
+                <option key={partner.id} value={partner.id}>
+                  {partner.name}{partner.is_active ? '' : ' (inativo)'}
+                </option>
+              ))}
+            </select>
+
+            <input
+              type="month"
+              name="month"
+              defaultValue={filterMonth}
+              aria-label="Mês de entrada do lead"
+              className="filter-select border border-slate-200 rounded-xl px-3 py-2.5 text-sm bg-slate-50 dash transition-all"
+            />
+
             <button
               type="submit"
               className="flex items-center gap-1.5 px-5 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-700 transition-colors dash"
@@ -204,9 +259,16 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               Filtrar
             </button>
 
-            {(q || filterStatus || filterAssigned) && (
+            {(q || filterStatus || filterAssigned || filterPartner || filterMonth) && (
               <Link
-                href={buildUrl({ q: '', status: '', assigned_to: '', page: '1' })}
+                href={buildUrl({
+                  q: '',
+                  status: '',
+                  assigned_to: '',
+                  partner_id: '',
+                  month: '',
+                  page: '1',
+                })}
                 className="px-4 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors dash"
               >
                 Limpar
@@ -246,7 +308,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         {/* ── Table ────────────────────────────────────────────────── */}
         {view === 'kanban' ? (
           <div className="anim anim-2 rounded-2xl border border-border bg-card p-3 shadow-soft lg:p-4">
-            <LeadKanbanBoard key={`${q}:${filterAssigned}`} leads={leadList} />
+            <LeadKanbanBoard key={`${q}:${filterAssigned}:${filterPartner}:${filterMonth}`} leads={leadList} />
           </div>
         ) : <div
           className="anim anim-2 bg-white rounded-2xl overflow-hidden"
@@ -259,13 +321,13 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
               </div>
               <div className="text-center">
                 <p className="dash font-semibold text-slate-700">
-                  {q || filterStatus || filterAssigned ? 'Nenhum resultado encontrado' : 'Nenhum lead cadastrado'}
+                  {q || filterStatus || filterAssigned || filterPartner || filterMonth ? 'Nenhum resultado encontrado' : 'Nenhum lead cadastrado'}
                 </p>
                 <p className="text-sm text-slate-400 mt-1 dash">
-                  {q || filterStatus || filterAssigned ? 'Tente ajustar os filtros' : 'Comece adicionando o primeiro lead'}
+                  {q || filterStatus || filterAssigned || filterPartner || filterMonth ? 'Tente ajustar os filtros' : 'Comece adicionando o primeiro lead'}
                 </p>
               </div>
-              {!q && !filterStatus && !filterAssigned && (
+              {!q && !filterStatus && !filterAssigned && !filterPartner && !filterMonth && (
                 <Link
                   href="/leads/novo"
                   className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors dash"
@@ -308,6 +370,11 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
                               {SOURCE_LABEL[lead.lead_source]}
                             </span>
                           ) : <span className="text-slate-300 dash">—</span>}
+                          {lead.referral_partner?.name && (
+                            <p className="dash mt-1 text-[11px] font-medium text-slate-500">
+                              {lead.referral_partner.name}
+                            </p>
+                          )}
                         </td>
                         <td className="px-5 py-3.5 text-slate-500 hidden lg:table-cell dash">
                           {lead.assignee?.name ?? <span className="text-slate-300">—</span>}

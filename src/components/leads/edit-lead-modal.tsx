@@ -14,7 +14,8 @@ import {
   leadEligibilityPayload,
 } from '@/lib/lead-eligibility'
 import { LEAD_STATUS_META } from '@/lib/lead-funnel'
-import type { Lead, LeadSource, LeadStatus } from '@/types/database'
+import { partnerSupportsSource, referralTypeForSource } from '@/lib/referral-partners'
+import type { Lead, LeadSource, LeadStatus, ReferralPartner } from '@/types/database'
 
 const SOURCE_OPTIONS: { value: LeadSource | ''; label: string }[] = [
   { value: '',          label: 'Não informado' },
@@ -32,7 +33,15 @@ const STATUS_OPTIONS: { value: LeadStatus; label: string }[] = [
   { value: 'perdido', label: LEAD_STATUS_META.perdido.label },
 ]
 
-export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string; name: string }[] }) {
+export function EditLeadModal({
+  lead,
+  staff,
+  referralPartners,
+}: {
+  lead: Lead
+  staff: { id: string; name: string }[]
+  referralPartners: ReferralPartner[]
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -41,7 +50,9 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
   const [form, setForm] = useState({
     name: lead.name ?? '',
     phone: lead.phone ?? '',
+    email: lead.email ?? '',
     lead_source: (lead.lead_source ?? '') as LeadSource | '',
+    referral_partner_id: lead.referral_partner_id ?? '',
     assigned_to: lead.assigned_to ?? '',
     status: lead.status,
     notes: lead.notes ?? '',
@@ -53,7 +64,9 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
     setForm({
       name: lead.name ?? '',
       phone: lead.phone ?? '',
+      email: lead.email ?? '',
       lead_source: (lead.lead_source ?? '') as LeadSource | '',
+      referral_partner_id: lead.referral_partner_id ?? '',
       assigned_to: lead.assigned_to ?? '',
       status: lead.status,
       notes: lead.notes ?? '',
@@ -64,16 +77,33 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
   }
 
   const update = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
+  const updateSource = (leadSource: LeadSource | '') => {
+    setForm(current => ({
+      ...current,
+      lead_source: leadSource,
+      referral_partner_id: '',
+    }))
+  }
+  const sourcePartnerType = referralTypeForSource(form.lead_source)
+  const availablePartners = referralPartners.filter(partner => (
+    partner.is_active && partnerSupportsSource(partner, form.lead_source)
+  ))
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (sourcePartnerType && !form.referral_partner_id) {
+      setError(`Selecione o ${sourcePartnerType === 'vendedor' ? 'vendedor' : 'indicador'} responsável.`)
+      return
+    }
     setLoading(true)
     setError('')
     const supabase = createClient()
     const { error: err } = await supabase.from('leads').update({
       name: form.name.trim(),
       phone: form.phone || null,
+      email: form.email.trim() || null,
       lead_source: form.lead_source || null,
+      referral_partner_id: sourcePartnerType ? form.referral_partner_id : null,
       assigned_to: form.assigned_to || null,
       status: form.status,
       notes: form.notes || null,
@@ -135,6 +165,15 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
                     <Input label="Nome *" value={form.name} onChange={e => update('name', e.target.value)} required />
                   </div>
                   <MaskedInput mask="phone" label="Telefone" value={form.phone} onChange={v => update('phone', v)} placeholder="(00) 00000-0000" />
+                  <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+                    <Input
+                      label="E-mail — recomendado"
+                      type="email"
+                      value={form.email}
+                      onChange={event => update('email', event.target.value)}
+                      helperText="Reaproveitado automaticamente na conversão."
+                    />
+                  </div>
                   <div className="space-y-1">
                     <label className="block text-sm font-medium text-slate-700 dash">Status</label>
                     <select
@@ -168,10 +207,44 @@ export function EditLeadModal({ lead, staff }: { lead: Lead; staff: { id: string
                   <p className="sm:col-span-2 text-xs font-semibold text-slate-500 uppercase tracking-wider dash">Origem e Atribuição</p>
                   <div className="space-y-1">
                     <label className="block text-sm font-medium text-slate-700 dash">Origem</label>
-                    <select value={form.lead_source} onChange={e => update('lead_source', e.target.value)} className={sel}>
+                    <select
+                      value={form.lead_source}
+                      onChange={event => updateSource(event.target.value as LeadSource | '')}
+                      className={sel}
+                    >
                       {SOURCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
+                  {sourcePartnerType && (
+                    <div className="space-y-1">
+                      <label className="block text-sm font-medium text-slate-700 dash">
+                        {sourcePartnerType === 'vendedor' ? 'Vendedor *' : 'Indicador *'}
+                      </label>
+                      <select
+                        value={form.referral_partner_id}
+                        onChange={event => update('referral_partner_id', event.target.value)}
+                        required
+                        className={sel}
+                      >
+                        <option value="">Selecione</option>
+                        {referralPartners
+                          .filter(partner => (
+                            partnerSupportsSource(partner, form.lead_source)
+                            && (partner.is_active || partner.id === lead.referral_partner_id)
+                          ))
+                          .map(partner => (
+                            <option key={partner.id} value={partner.id}>
+                              {partner.name}{partner.is_active ? '' : ' (inativo)'}
+                            </option>
+                          ))}
+                      </select>
+                      {availablePartners.length === 0 && (
+                        <p className="dash text-[11px] text-amber-600">
+                          Nenhum parceiro ativo desta categoria.
+                        </p>
+                      )}
+                    </div>
+                  )}
                   <div className="space-y-1">
                     <label className="block text-sm font-medium text-slate-700 dash">Responsável</label>
                     <select value={form.assigned_to} onChange={e => update('assigned_to', e.target.value)} className={sel}>

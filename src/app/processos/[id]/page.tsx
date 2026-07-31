@@ -14,13 +14,12 @@ import { OperationalStagesPanel } from '@/components/processos/operational-stage
 import { ProcessCommunicationForm } from '@/components/processos/process-communication-form'
 import { EligibilityReviewPanel } from '@/components/processos/eligibility-review-panel'
 import { hasOperationalWorkflow } from '@/lib/operational-workflows'
+import { IMESC_BOARD_LABELS, mapFollowupToEligibility } from '@/lib/imesc-workflow'
 import { getProcessOperationalSummary, type OperationalProcessSummary, type OperationalStageSummary } from '@/lib/staff-operations'
 import {
   analyzeEligibility,
   isEligibilityProcess,
   type EligibilityAnalysis,
-  type ImescSeverity,
-  type ImescStatus,
   type SefazIpvaStatus,
 } from '@/lib/eligibility'
 import type { Document, EligibilityStatus, LegalRuleVersion, ProcessCustomField, ProcessStage } from '@/types/database'
@@ -75,6 +74,14 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
 
   const pt = process.process_types as any
   const client = process.clients as any
+  const { data: imescFollowup } = client?.id
+    ? await supabase
+        .from('imesc_followups')
+        .select('id, board_status, operational_status, report_issued_at, source_classification')
+        .eq('client_id', client.id)
+        .maybeSingle()
+    : { data: null }
+  const imescEligibility = mapFollowupToEligibility(imescFollowup)
   const responsible = process.responsible_user as any
   const financials = Array.isArray(process.financials) ? process.financials[0] : process.financials
   const sensitiveFieldNames = new Set(['senha_gov', 'gov_password', 'senha_sei', 'senha_email', 'senha_portal'])
@@ -103,9 +110,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
         requiresPracticalExam: client?.requires_practical_exam,
         hasMedicalReport: client?.has_medical_report,
         authorizedDrivers: client?.authorized_drivers,
-        imescStatus: (customFieldValues.imesc_status || null) as ImescStatus | null,
-        imescReportIssuedAt: customFieldValues.imesc_data_laudo || null,
-        imescSeverity: (customFieldValues.imesc_grau || null) as ImescSeverity | null,
+        ...imescEligibility,
         sefazIpvaStatus: (customFieldValues.sefaz_ipva_status || null) as SefazIpvaStatus | null,
         sefazDecisionNotifiedAt: customFieldValues.sefaz_data_ciencia || null,
         ipvaAppealFiledAt: customFieldValues.recurso_ipva_protocolado_em || null,
@@ -436,10 +441,23 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                     <ListChecks className="h-3.5 w-3.5 text-pink-600" />
                   </div>
                   <div>
-                    <h2 className="dash font-bold text-slate-900">Workflow IMESC/IPVA</h2>
-                    <p className="dash mt-0.5 text-xs text-slate-400">Etapas, prazos, documentos e fontes oficiais sincronizados</p>
+                    <h2 className="dash font-bold text-slate-900">Workflow IPVA</h2>
+                    <p className="dash mt-0.5 text-xs text-slate-400">Protocolo, SEFAZ, recurso e conclusão</p>
                   </div>
                 </div>
+                {imescFollowup && (
+                  <div className="mx-5 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-100 bg-violet-50 px-3 py-2.5">
+                    <div>
+                      <p className="dash text-xs font-semibold text-violet-900">Acompanhamento IMESC vinculado</p>
+                      <p className="dash mt-0.5 text-[11px] text-violet-700">
+                        {IMESC_BOARD_LABELS[imescFollowup.board_status as keyof typeof IMESC_BOARD_LABELS]}
+                      </p>
+                    </div>
+                    <Link href="/processos/imesc-operacao" className="dash text-xs font-semibold text-violet-700 hover:underline">
+                      Abrir operação
+                    </Link>
+                  </div>
+                )}
                 <IpvaStagesPanel
                   processId={process.id}
                   stages={processStages}

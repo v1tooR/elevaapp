@@ -3,22 +3,17 @@ import type {
   Client,
   ClientType,
   CnhStatus,
-  DisabilitySeverity,
   DisabilityType,
   MedicalAssessmentStatus,
 } from '@/types/database'
 
 export interface ClientEligibilityFormValue {
   client_type: ClientType | ''
-  disability_type: DisabilityType | ''
   disability_types: DisabilityType[]
-  disability_severity: DisabilitySeverity | ''
-  disability_details: string
   cnh_status: CnhStatus | ''
   cnh_restrictions: string
+  cnh_expiry_date: string
   medical_assessment_status: MedicalAssessmentStatus | ''
-  requires_adapted_vehicle: boolean | null
-  requires_practical_exam: boolean | null
   authorized_drivers: AuthorizedDriver[]
   has_legal_representative: boolean
   legal_representative_name: string
@@ -31,15 +26,11 @@ export interface ClientEligibilityFormValue {
 
 export const EMPTY_CLIENT_ELIGIBILITY: ClientEligibilityFormValue = {
   client_type: '',
-  disability_type: '',
   disability_types: [],
-  disability_severity: '',
-  disability_details: '',
   cnh_status: '',
   cnh_restrictions: '',
+  cnh_expiry_date: '',
   medical_assessment_status: 'nao_realizada',
-  requires_adapted_vehicle: null,
-  requires_practical_exam: null,
   authorized_drivers: [],
   has_legal_representative: false,
   legal_representative_name: '',
@@ -51,17 +42,18 @@ export const EMPTY_CLIENT_ELIGIBILITY: ClientEligibilityFormValue = {
 }
 
 export function clientEligibilityFromRecord(client: Partial<Client>): ClientEligibilityFormValue {
+  const disabilityTypes = [...new Set([
+    ...(client.disability_types ?? []),
+    ...(client.disability_type ? [client.disability_type] : []),
+  ])]
+
   return {
     client_type: client.client_type ?? '',
-    disability_type: client.disability_type ?? '',
-    disability_types: client.disability_types ?? (client.disability_type ? [client.disability_type] : []),
-    disability_severity: client.disability_severity ?? '',
-    disability_details: client.disability_details ?? '',
+    disability_types: disabilityTypes,
     cnh_status: client.cnh_status ?? (client.has_cnh_especial ? 'com_restricoes' : ''),
     cnh_restrictions: (client.cnh_restrictions ?? []).join(', '),
+    cnh_expiry_date: client.cnh_expiry_date ?? '',
     medical_assessment_status: client.medical_assessment_status ?? 'nao_realizada',
-    requires_adapted_vehicle: client.requires_adapted_vehicle ?? null,
-    requires_practical_exam: client.requires_practical_exam ?? null,
     authorized_drivers: client.authorized_drivers ?? [],
     has_legal_representative: client.has_legal_representative ?? false,
     legal_representative_name: client.legal_representative_name ?? '',
@@ -79,22 +71,17 @@ export function clientEligibilityPayload(value: ClientEligibilityFormValue) {
     .map(code => code.trim().toUpperCase())
     .filter(Boolean)
 
-  const disabilityTypes = [...new Set([
-    ...(value.disability_type ? [value.disability_type] : []),
-    ...value.disability_types,
-  ])]
+  const disabilityTypes = [...new Set(value.disability_types)]
 
   return {
     client_type: value.client_type || null,
-    disability_type: value.disability_type || null,
+    // Campo singular mantido somente para compatibilidade com consultas antigas.
+    disability_type: disabilityTypes[0] ?? null,
     disability_types: disabilityTypes,
-    disability_severity: value.disability_severity || null,
-    disability_details: value.disability_details.trim() || null,
     cnh_status: value.cnh_status || null,
     cnh_restrictions: restrictions,
+    cnh_expiry_date: value.cnh_expiry_date || null,
     medical_assessment_status: value.medical_assessment_status || null,
-    requires_adapted_vehicle: value.requires_adapted_vehicle,
-    requires_practical_exam: value.requires_practical_exam,
     authorized_drivers: value.authorized_drivers.filter(driver => driver.name.trim() || driver.cnh.trim()),
     has_legal_representative:
       value.client_type === 'nao_condutor' && value.has_legal_representative,

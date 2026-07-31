@@ -22,12 +22,12 @@ export function InitCnhStagesButton({ processId, clientId }: Props) {
 
     const { data: client } = await supabase
       .from('clients')
-      .select('client_type, disability_type, medical_assessment_status, requires_practical_exam')
+      .select('client_type, disability_type, disability_types, medical_assessment_status')
       .eq('id', clientId)
       .single()
 
-    if (!client?.disability_type) {
-      setError('Tipo de deficiência não cadastrado no cliente. Atualize o cadastro antes de inicializar as etapas.')
+    if (!client || ((client.disability_types?.length ?? 0) === 0 && !client.disability_type)) {
+      setError('Deficiência/condição não cadastrada no cliente. Atualize o cadastro antes de inicializar as etapas.')
       setLoading(false)
       return
     }
@@ -36,11 +36,11 @@ export function InitCnhStagesButton({ processId, clientId }: Props) {
       await createCnhProcessStages(supabase, processId, {
         clientType: client.client_type,
         medicalAssessmentStatus: client.medical_assessment_status,
-        requiresPracticalExam: client.requires_practical_exam,
+        requiresPracticalExam: null,
       })
       router.refresh()
-    } catch (err: any) {
-      setError(err.message ?? 'Erro ao criar etapas')
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Erro ao criar etapas')
       setLoading(false)
     }
   }

@@ -2,9 +2,6 @@ import type { ProcessStage } from '@/types/database'
 
 export const IPVA_STAGE_KEYS = [
   'ipva_documentos',
-  'imesc_agendamento',
-  'imesc_pericia',
-  'imesc_laudo',
   'sivei_protocolo',
   'sefaz_decisao',
   'ipva_recurso',
@@ -14,16 +11,14 @@ export const IPVA_STAGE_KEYS = [
 export type IpvaStageKey = (typeof IPVA_STAGE_KEYS)[number]
 export type IpvaOperationalBucket =
   | 'configuracao'
-  | 'pericia'
-  | 'laudo'
+  | 'protocolo'
   | 'sefaz'
   | 'recurso'
   | 'concluido'
 
 export const IPVA_OPERATIONAL_BUCKETS: Record<IpvaOperationalBucket, string> = {
   configuracao: 'Inicializar workflow',
-  pericia: 'Aguardando perícia',
-  laudo: 'Aguardando laudo',
+  protocolo: 'Preparar protocolo',
   sefaz: 'Aguardando SEFAZ',
   recurso: 'Recurso',
   concluido: 'Concluído',
@@ -44,11 +39,8 @@ export function getIpvaOperationalBucket(
   if (appeal && ['pendente', 'em_andamento', 'reprovado'].includes(appeal.status)) return 'recurso'
   if (isFinished(conclusion)) return 'concluido'
 
-  const report = byKey.get('imesc_laudo')
-  if (!isFinished(report)) {
-    const examination = byKey.get('imesc_pericia')
-    return isFinished(examination) ? 'laudo' : 'pericia'
-  }
+  const protocol = byKey.get('sivei_protocolo')
+  if (!isFinished(protocol)) return 'protocolo'
 
   return 'sefaz'
 }
@@ -107,4 +99,3 @@ export function calculateProcessRenewalDate(input: RenewalRuleInput): string | n
   completed.setUTCMonth(completed.getUTCMonth() + input.configuredMonths)
   return formatDateOnly(completed)
 }
-

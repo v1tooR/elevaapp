@@ -1,127 +1,128 @@
 'use client'
 
-import { ExternalLink, ShieldCheck, UserCheck } from 'lucide-react'
+import { KeyRound, ShieldCheck, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import type { GovAccessFormValue } from '@/lib/gov-access'
+import type { GovAccessFormValue, GovCredentialMetadata } from '@/lib/gov-access'
+import { formatDateTime } from '@/lib/utils'
 
 interface Props {
   value: GovAccessFormValue
   onChange: (value: GovAccessFormValue) => void
+  credentialPassword: string
+  onCredentialPasswordChange: (password: string) => void
+  credentialMetadata?: GovCredentialMetadata
+  onDeleteCredential?: () => void
+  deletingCredential?: boolean
   compact?: boolean
 }
 
 const STATUS_OPTIONS = [
-  { value: 'nao_validado', label: 'Não validado' },
-  { value: 'aguardando_cliente', label: 'Aguardando o cliente' },
+  { value: 'aguardando', label: 'Aguardando' },
   { value: 'validado', label: 'Acesso validado' },
-  { value: 'com_pendencia', label: 'Acesso com pendência' },
+  { value: 'nao_informou', label: 'Não informou' },
 ]
 
-const LEVEL_OPTIONS = [
-  { value: 'bronze', label: 'Bronze' },
-  { value: 'prata', label: 'Prata' },
-  { value: 'ouro', label: 'Ouro' },
-]
-
-const SUFFICIENCY_OPTIONS = [
-  { value: 'nao_avaliado', label: 'Ainda não avaliado' },
-  { value: 'sim', label: 'Sim' },
-  { value: 'nao', label: 'Não' },
-]
-
-export function GovAccessFields({ value, onChange, compact = false }: Props) {
-  const update = <K extends keyof GovAccessFormValue>(key: K, nextValue: GovAccessFormValue[K]) => {
-    onChange({ ...value, [key]: nextValue })
-  }
-
-  const updateStatus = (status: GovAccessFormValue['status']) => {
-    onChange({
-      ...value,
-      status,
-      auth_by_client: status === 'validado' ? true : value.auth_by_client,
-      last_validated_at: status === 'validado' && !value.last_validated_at
-        ? new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 16)
-        : value.last_validated_at,
-    })
-  }
+export function GovAccessFields({
+  value,
+  onChange,
+  credentialPassword,
+  onCredentialPasswordChange,
+  credentialMetadata,
+  onDeleteCredential,
+  deletingCredential = false,
+  compact = false,
+}: Props) {
+  const expiry = credentialMetadata?.purgeAfter ?? credentialMetadata?.hardExpiresAt
 
   return (
     <div className="space-y-4">
+      <Select
+        label="Situação do acesso Gov.br"
+        value={value.status}
+        onChange={event => onChange({
+          ...value,
+          status: event.target.value as GovAccessFormValue['status'],
+        })}
+        options={STATUS_OPTIONS}
+      />
+
+      <Textarea
+        label="Observação de acesso"
+        value={value.pending_note}
+        onChange={event => onChange({ ...value, pending_note: event.target.value })}
+        placeholder="Ex.: cliente precisa recuperar a conta. Nunca informe senha ou código de verificação aqui."
+        rows={compact ? 3 : 4}
+        maxLength={500}
+      />
+
       <div className="rounded-xl border border-blue-200 bg-blue-50 p-3.5">
         <div className="flex items-start gap-2.5">
           <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
-          <div>
-            <p className="dash text-xs font-semibold text-blue-900">Acesso assistido, sem guardar senha</p>
+          <div className="min-w-0 flex-1">
+            <p className="dash text-xs font-semibold text-blue-900">Credencial protegida e somente para gravação</p>
             <p className="dash mt-1 text-[11px] leading-relaxed text-blue-700">
-              O cliente informa a senha e o código de verificação somente durante o atendimento. Registre aqui apenas a situação do acesso.
+              A senha é criptografada antes de chegar ao banco. O app não possui opção de visualizar ou copiar.
+              Códigos de verificação continuam proibidos e nunca devem ser registrados.
             </p>
-            <a
-              href="https://www.gov.br/governodigital/pt-br/identidade/conta-gov-br/seguranca-da-conta"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="dash mt-2 inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 hover:underline"
-            >
-              Orientações oficiais de segurança <ExternalLink className="h-3 w-3" />
-            </a>
           </div>
         </div>
       </div>
 
-      <div className={`grid grid-cols-1 gap-4 ${compact ? '' : 'sm:grid-cols-2'}`}>
-        <Select
-          label="Situação do acesso Gov.br"
-          value={value.status}
-          onChange={event => updateStatus(event.target.value as GovAccessFormValue['status'])}
-          options={STATUS_OPTIONS}
-        />
-        <Select
-          label="Nível atual da conta"
-          value={value.account_level}
-          onChange={event => update('account_level', event.target.value as GovAccessFormValue['account_level'])}
-          options={LEVEL_OPTIONS}
-          placeholder="Não informado"
-        />
-        <Select
-          label="Possui o nível necessário?"
-          value={value.level_sufficiency}
-          onChange={event => update('level_sufficiency', event.target.value as GovAccessFormValue['level_sufficiency'])}
-          options={SUFFICIENCY_OPTIONS}
-        />
+      {credentialMetadata?.exists && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="dash text-xs font-semibold text-emerald-900">Senha protegida armazenada</p>
+              <p className="dash mt-1 text-[11px] leading-relaxed text-emerald-700">
+                {credentialMetadata.storedAt && `Gravada em ${formatDateTime(credentialMetadata.storedAt)}. `}
+                {expiry && `Exclusão automática prevista para ${formatDateTime(expiry)}.`}
+              </p>
+            </div>
+            {onDeleteCredential && (
+              <button
+                type="button"
+                onClick={onDeleteCredential}
+                disabled={deletingCredential}
+                className="dash inline-flex shrink-0 items-center gap-1 rounded-lg border border-red-200 bg-white px-2.5 py-1.5 text-[10px] font-semibold text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 className="h-3 w-3" />
+                {deletingCredential ? 'Excluindo...' : 'Excluir agora'}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="rounded-xl border border-slate-200 bg-slate-50 p-3.5">
+        <div className="mb-3 flex items-start gap-2.5">
+          <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+          <div>
+            <p className="dash text-xs font-semibold text-slate-800">
+              {credentialMetadata?.exists ? 'Substituir a senha protegida' : 'Salvar senha do Gov.br'}
+            </p>
+            <p className="dash mt-0.5 text-[11px] leading-relaxed text-slate-500">
+              O campo sempre aparece vazio. Ao salvar, uma senha anterior é substituída e o conteúdo sai da tela.
+            </p>
+          </div>
+        </div>
         <Input
-          label="Data da última validação"
-          type="datetime-local"
-          value={value.last_validated_at}
-          onChange={event => update('last_validated_at', event.target.value)}
+          label="Senha do Gov.br"
+          type="password"
+          name="gov-credential-write-only"
+          value={credentialPassword}
+          onChange={event => onCredentialPasswordChange(event.target.value)}
+          onCopy={event => event.preventDefault()}
+          onCut={event => event.preventDefault()}
+          autoComplete="off"
+          spellCheck={false}
+          minLength={1}
+          maxLength={256}
+          placeholder="Digite ou cole apenas se houver autorização"
+          helperText="Sem botão de visualizar ou copiar. Retenção: 7 dias após todos os processos terminarem, com limite máximo de 180 dias."
         />
       </div>
-
-      <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5">
-        <input
-          type="checkbox"
-          checked={value.auth_by_client}
-          onChange={event => update('auth_by_client', event.target.checked)}
-          disabled={value.status === 'validado'}
-          className="mt-0.5 h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
-        />
-        <UserCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
-        <span>
-          <span className="dash block text-xs font-semibold text-slate-800">Autenticação realizada pelo cliente</span>
-          <span className="dash mt-0.5 block text-[11px] leading-relaxed text-slate-500">
-            Confirma que a equipe não recebeu nem armazenou a senha ou o código de verificação.
-          </span>
-        </span>
-      </label>
-
-      <Textarea
-        label="Pendência de acesso"
-        value={value.pending_note}
-        onChange={event => update('pending_note', event.target.value)}
-        placeholder="Ex.: cliente precisa recuperar a conta ou elevar o nível. Nunca informe senha ou código."
-        rows={compact ? 3 : 4}
-        maxLength={500}
-      />
     </div>
   )
 }

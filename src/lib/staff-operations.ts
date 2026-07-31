@@ -3,6 +3,7 @@ import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { OPEN_LEAD_STATUSES } from '@/lib/lead-funnel'
 import { requireAuth } from '@/lib/auth'
+import { IPVA_STAGE_KEYS } from '@/lib/process-workflow'
 import type { ProcessStatus, UserRole } from '@/types/database'
 
 const ACTIVE_STATUSES = new Set<ProcessStatus>([
@@ -107,7 +108,10 @@ function maxDate(...values: Array<string | null | undefined>) {
 }
 
 export function getProcessOperationalSummary({ process, stages, lastActivityAt }: ProcessOperationalContext) {
-  const sortedStages = [...stages].sort((a, b) => a.sort_order - b.sort_order)
+  const workflowStages = process.process_types?.slug === 'processo_ipva'
+    ? stages.filter(stage => (IPVA_STAGE_KEYS as readonly string[]).includes(stage.stage_key))
+    : stages
+  const sortedStages = [...workflowStages].sort((a, b) => a.sort_order - b.sort_order)
   const currentStage = sortedStages.find(stage => !CLOSED_STAGE_STATUSES.has(stage.status)) ?? null
   const data = asRecord(currentStage?.data)
   const medicalRequirements = Array.isArray(data.medical_requirements) ? data.medical_requirements : []
@@ -291,13 +295,13 @@ export async function getStaffOperations() {
       })
     }
 
-    if (process.clients && ['aguardando_cliente', 'com_pendencia'].includes(process.clients.gov_access_status)) {
+    if (process.clients && ['aguardando', 'aguardando_cliente', 'com_pendencia'].includes(process.clients.gov_access_status)) {
       pushItem({
         id: `auth:${process.id}`,
         category: 'autenticacao_cliente',
         severity: 'high',
-        title: 'Cliente precisa realizar autenticação',
-        detail: process.clients.gov_access_status === 'com_pendencia' ? 'Há uma pendência de acesso' : 'Aguardando o cliente acessar',
+        title: 'Acesso Gov.br aguardando',
+        detail: 'Aguardando providência para prosseguir com o acesso',
         href: `/clientes/${process.clients.id}`,
         dueDate: operational.dueDate,
         processId: process.id,

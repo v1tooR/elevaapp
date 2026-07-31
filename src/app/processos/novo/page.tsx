@@ -13,8 +13,6 @@ import { buildOperationalStageRows } from '@/lib/operational-workflows'
 import {
   analyzeEligibility,
   isEligibilityProcess,
-  type ImescSeverity,
-  type ImescStatus,
   type SefazIpvaStatus,
 } from '@/lib/eligibility'
 import { EligibilityAnalysisCard } from '@/components/processos/eligibility-analysis-card'
@@ -84,7 +82,14 @@ function NovoProcessoForm() {
   useEffect(() => {
     const supabase = createClient()
     Promise.all([
-      supabase.from('process_types').select('*').eq('is_active', true).neq('slug', 'resumo').order('name'),
+      supabase
+        .from('process_types')
+        .select('*')
+        .eq('is_active', true)
+        .eq('accepts_new_processes', true)
+        .neq('slug', 'resumo')
+        .order('sort_order')
+        .order('name'),
       supabase.from('clients').select('id, name, state, client_type, disability_type, disability_types, disability_severity, cnh_status, cnh_restrictions, medical_assessment_status, requires_adapted_vehicle, requires_practical_exam, has_medical_report, authorized_drivers').eq('is_active', true).order('name'),
       supabase.from('profiles').select('id, name').in('role', ['admin', 'analista', 'super_admin']).order('name'),
       supabase.from('processes')
@@ -187,9 +192,6 @@ function NovoProcessoForm() {
         requiresPracticalExam: selectedClient.requires_practical_exam,
         hasMedicalReport: selectedClient.has_medical_report,
         authorizedDrivers: selectedClient.authorized_drivers,
-        imescStatus: (customFieldValues.imesc_status || null) as ImescStatus | null,
-        imescReportIssuedAt: customFieldValues.imesc_data_laudo || null,
-        imescSeverity: (customFieldValues.imesc_grau || null) as ImescSeverity | null,
         sefazIpvaStatus: (customFieldValues.sefaz_ipva_status || null) as SefazIpvaStatus | null,
         sefazDecisionNotifiedAt: customFieldValues.sefaz_data_ciencia || null,
         ipvaAppealFiledAt: customFieldValues.recurso_ipva_protocolado_em || null,
@@ -234,7 +236,7 @@ function NovoProcessoForm() {
       ? getCnhStageTemplates({
           clientType: selectedClient.client_type,
           medicalAssessmentStatus: selectedClient.medical_assessment_status,
-          requiresPracticalExam: selectedClient.requires_practical_exam,
+          requiresPracticalExam: null,
         })
       : null
     const stageRows = cnhStages

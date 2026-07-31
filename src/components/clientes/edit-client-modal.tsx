@@ -12,7 +12,11 @@ import { ClientEligibilityFields } from '@/components/clientes/client-eligibilit
 import { clientEligibilityFromRecord, clientEligibilityPayload } from '@/lib/client-eligibility'
 import type { Client } from '@/types/database'
 import { GovAccessFields } from '@/components/clientes/gov-access-fields'
-import { govAccessFromRecord, govAccessPayload } from '@/lib/gov-access'
+import {
+  govAccessFromRecord,
+  govAccessPayload,
+  type GovCredentialMetadata,
+} from '@/lib/gov-access'
 
 const BRAZIL_STATES = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO']
 
@@ -26,7 +30,13 @@ const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: 'elegibilidade', label: 'Elegibilidade',   icon: <Stethoscope className="w-3.5 h-3.5" /> },
 ]
 
-export function EditClientModal({ client }: { client: Client }) {
+export function EditClientModal({
+  client,
+  initialGovCredentialMetadata,
+}: {
+  client: Client
+  initialGovCredentialMetadata?: GovCredentialMetadata
+}) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState<Tab>('pessoal')
@@ -35,7 +45,6 @@ export function EditClientModal({ client }: { client: Client }) {
   const [form, setForm] = useState({
     name: client.name ?? '',
     cpf: client.cpf ?? '',
-    rg: client.rg ?? '',
     birth_date: client.birth_date ?? '',
     phone: client.phone ?? '',
     email: client.email ?? '',
@@ -45,6 +54,9 @@ export function EditClientModal({ client }: { client: Client }) {
     internal_notes: client.internal_notes ?? '',
   })
   const [govAccess, setGovAccess] = useState(() => govAccessFromRecord(client))
+  const [govCredentialPassword, setGovCredentialPassword] = useState('')
+  const [govCredentialMetadata, setGovCredentialMetadata] = useState(initialGovCredentialMetadata)
+  const [deletingCredential, setDeletingCredential] = useState(false)
 
   const [eligi, setEligi] = useState(() => clientEligibilityFromRecord(client))
 
@@ -59,7 +71,6 @@ export function EditClientModal({ client }: { client: Client }) {
       ...form,
       birth_date: form.birth_date || null,
       cpf: form.cpf || null,
-      rg: form.rg || null,
       phone: form.phone || null,
       email: form.email || null,
       address: form.address || null,
@@ -71,11 +82,59 @@ export function EditClientModal({ client }: { client: Client }) {
     }).eq('id', client.id)
 
     if (err) { setError(err.code === '23505' ? 'Já existe outro cliente cadastrado com este CPF.' : err.message); setLoading(false); return }
+
+    if (govCredentialPassword) {
+      const credentialResponse = await fetch(`/api/clientes/${client.id}/gov-credential`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: govCredentialPassword }),
+      })
+      setGovCredentialPassword('')
+
+      if (!credentialResponse.ok) {
+        const json = await credentialResponse.json().catch(() => null)
+        setError(`Os demais dados foram salvos, mas a senha Gov.br não: ${json?.error ?? 'erro desconhecido'}`)
+        setLoading(false)
+        router.refresh()
+        return
+      }
+    }
+
     setOpen(false)
     router.refresh()
   }
 
-  const close = () => { setOpen(false); setError('') }
+  const deleteGovCredential = async () => {
+    if (!window.confirm('Excluir agora a senha Gov.br protegida deste cliente?')) return
+
+    setDeletingCredential(true)
+    setError('')
+    const response = await fetch(`/api/clientes/${client.id}/gov-credential`, {
+      method: 'DELETE',
+    })
+
+    if (!response.ok) {
+      const json = await response.json().catch(() => null)
+      setError(json?.error ?? 'Não foi possível excluir a senha Gov.br.')
+      setDeletingCredential(false)
+      return
+    }
+
+    setGovCredentialMetadata({
+      exists: false,
+      storedAt: null,
+      purgeAfter: null,
+      hardExpiresAt: null,
+    })
+    setDeletingCredential(false)
+    router.refresh()
+  }
+
+  const close = () => {
+    setOpen(false)
+    setError('')
+    setGovCredentialPassword('')
+  }
 
   return (
     <>
@@ -146,11 +205,16 @@ export function EditClientModal({ client }: { client: Client }) {
                       <Input label="Nome completo *" value={form.name} onChange={e => update('name', e.target.value)} required />
                     </div>
                     <MaskedInput mask="cpf" label="CPF" value={form.cpf} onChange={v => update('cpf', v)} placeholder="000.000.000-00" />
-                    <MaskedInput mask="rg" label="RG" value={form.rg} onChange={v => update('rg', v)} placeholder="00.000.000-0" />
                     <Input label="Data de nascimento" type="date" value={form.birth_date} onChange={e => update('birth_date', e.target.value)} />
                     <MaskedInput mask="phone" label="Telefone" value={form.phone} onChange={v => update('phone', v)} placeholder="(00) 00000-0000" />
-                    <div className="sm:col-span-2">
-                      <Input label="E-mail" type="email" value={form.email} onChange={e => update('email', e.target.value)} />
+                    <div className="sm:col-span-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+                      <Input
+                        label="E-mail — recomendado"
+                        type="email"
+                        value={form.email}
+                        onChange={e => update('email', e.target.value)}
+                        helperText="Utilizado em protocolos, acessos e comunicações dos processos."
+                      />
                     </div>
                   </div>
                 )}
@@ -188,7 +252,16 @@ export function EditClientModal({ client }: { client: Client }) {
                 )}
 
                 {tab === 'acesso' && (
-                  <GovAccessFields value={govAccess} onChange={setGovAccess} compact />
+                  <GovAccessFields
+                    value={govAccess}
+                    onChange={setGovAccess}
+                    credentialPassword={govCredentialPassword}
+                    onCredentialPasswordChange={setGovCredentialPassword}
+                    credentialMetadata={govCredentialMetadata}
+                    onDeleteCredential={govCredentialMetadata?.exists ? deleteGovCredential : undefined}
+                    deletingCredential={deletingCredential}
+                    compact
+                  />
                 )}
 
                 {tab === 'elegibilidade' && (

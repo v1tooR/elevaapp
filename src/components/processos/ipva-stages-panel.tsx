@@ -1,9 +1,11 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, Loader2, RefreshCw, Scale } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { IPVA_STAGE_KEYS } from '@/lib/process-workflow'
 import { formatDate } from '@/lib/utils'
 import type { Document, LegalRuleVersion, ProcessStage } from '@/types/database'
 
@@ -52,7 +54,9 @@ export function IpvaStagesPanel({ processId, stages, documents, legalRules = [] 
     }
   }
 
-  const sortedStages = [...stages].sort((a, b) => a.sort_order - b.sort_order)
+  const sortedStages = [...stages]
+    .filter(stage => (IPVA_STAGE_KEYS as readonly string[]).includes(stage.stage_key))
+    .sort((a, b) => a.sort_order - b.sort_order)
   const completed = sortedStages.filter(stage => ['concluido', 'aprovado', 'nao_aplicavel'].includes(stage.status)).length
   const progress = sortedStages.length > 0 ? Math.round((completed / sortedStages.length) * 100) : 0
 
@@ -62,7 +66,7 @@ export function IpvaStagesPanel({ processId, stages, documents, legalRules = [] 
         <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
           <div>
-            <p className="text-sm font-semibold text-amber-900">Workflow IMESC/IPVA ainda não inicializado</p>
+            <p className="text-sm font-semibold text-amber-900">Workflow IPVA ainda não inicializado</p>
             <p className="mt-1 text-xs leading-relaxed text-amber-700">A inicialização cria as etapas formais e sincroniza o estado atual sem duplicá-las.</p>
           </div>
         </div>
@@ -88,6 +92,12 @@ export function IpvaStagesPanel({ processId, stages, documents, legalRules = [] 
           {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           Sincronizar
         </Button>
+        <Link
+          href="/processos/imesc-operacao"
+          className="inline-flex h-8 items-center rounded-lg border border-border bg-card px-3 text-xs font-semibold text-muted-foreground hover:bg-muted"
+        >
+          Abrir operação IMESC
+        </Link>
       </div>
 
       {error && <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
@@ -146,4 +156,3 @@ export function IpvaStagesPanel({ processId, stages, documents, legalRules = [] 
     </div>
   )
 }
-

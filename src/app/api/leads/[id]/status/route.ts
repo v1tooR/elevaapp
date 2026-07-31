@@ -33,8 +33,6 @@ type QueueClient = Pick<
   | 'cnh_status'
   | 'cnh_restrictions'
   | 'medical_assessment_status'
-  | 'requires_adapted_vehicle'
-  | 'requires_practical_exam'
   | 'has_medical_report'
   | 'authorized_drivers'
 >
@@ -68,14 +66,14 @@ async function ensureLeadServiceQueue(
       .from('process_types')
       .select('id, slug')
       .in('slug', slugs)
-      .eq('is_active', true),
+      .eq('is_active', true)
+      .eq('accepts_new_processes', true),
     supabase
       .from('clients')
       .select(`
         id, state, client_type, disability_type, disability_types,
         disability_severity, cnh_status, cnh_restrictions,
-        medical_assessment_status, requires_adapted_vehicle,
-        requires_practical_exam, has_medical_report, authorized_drivers
+        medical_assessment_status, has_medical_report, authorized_drivers
       `)
       .eq('id', clientId)
       .single(),
@@ -134,7 +132,7 @@ async function ensureLeadServiceQueue(
       ? getCnhStageTemplates({
           clientType: clientRecord.client_type,
           medicalAssessmentStatus: clientRecord.medical_assessment_status,
-          requiresPracticalExam: clientRecord.requires_practical_exam,
+          requiresPracticalExam: null,
         })
       : null
     const stages = cnhStages
@@ -162,8 +160,6 @@ async function ensureLeadServiceQueue(
       cnhStatus: clientRecord.cnh_status,
       cnhRestrictions: clientRecord.cnh_restrictions,
       medicalAssessmentStatus: clientRecord.medical_assessment_status,
-      requiresAdaptedVehicle: clientRecord.requires_adapted_vehicle,
-      requiresPracticalExam: clientRecord.requires_practical_exam,
       hasMedicalReport: clientRecord.has_medical_report,
       authorizedDrivers: clientRecord.authorized_drivers,
     })

@@ -11,6 +11,7 @@ import {
   ChevronUp,
   ClipboardCheck,
   ExternalLink,
+  LockKeyhole,
   Loader2,
   RefreshCw,
   Scale,
@@ -19,8 +20,11 @@ import {
 import { Button } from '@/components/ui/button'
 import { cn, formatDate } from '@/lib/utils'
 import {
+  getIpiDetranReportStatus,
+  getIpiDetranStageStatus,
   getOperationalStageTemplate,
   getOperationalWorkflowDefinition,
+  isOperationalStageBlocked,
   validateOperationalStage,
   type OperationalFieldDefinition,
   type OperationalStageStatus,
@@ -66,13 +70,19 @@ const DEFAULT_STATUSES: OperationalStageStatus[] = ['pendente', 'em_andamento', 
 const RESOLVED_STATUSES = new Set<OperationalStageStatus>(['concluido', 'aprovado', 'reprovado', 'nao_aplicavel'])
 
 function initEdit(stage: ProcessStage): EditState {
+  const reportStatus = stage.stage_key === 'laudo_ipi'
+    ? getIpiDetranReportStatus(stage.data, stage.status)
+    : null
   return {
-    status: stage.status,
+    status: reportStatus ? getIpiDetranStageStatus(reportStatus) : stage.status,
     scheduledDate: stage.scheduled_date ?? '',
     attended: typeof stage.attended === 'boolean' ? stage.attended : null,
     result: stage.result ?? '',
     notes: stage.notes ?? '',
-    data: { ...(stage.data ?? {}) },
+    data: {
+      ...(stage.data ?? {}),
+      ...(reportStatus ? { report_status: reportStatus } : {}),
+    },
     notifyClient: false,
   }
 }
@@ -162,6 +172,30 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
       return { ...previous, [stage.id]: { ...current, data: { ...current.data, [key]: value } } }
     })
   }
+  const updateIpiReportStatus = (stage: ProcessStage, value: unknown) => {
+    const reportStatus = getIpiDetranReportStatus({ report_status: value })
+    setEdits(previous => {
+      const current = previous[stage.id] ?? initEdit(stage)
+      const requestedAt = (
+        ['solicitado', 'em_andamento'].includes(reportStatus)
+        && !current.data.requested_at
+      )
+        ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
+        : current.data.requested_at
+      return {
+        ...previous,
+        [stage.id]: {
+          ...current,
+          status: getIpiDetranStageStatus(reportStatus),
+          data: {
+            ...current.data,
+            report_status: reportStatus,
+            requested_at: requestedAt,
+          },
+        },
+      }
+    })
+  }
   const updateChecklist = (stage: ProcessStage, key: string, checked: boolean) => {
     setEdits(previous => {
       const current = previous[stage.id] ?? initEdit(stage)
@@ -194,6 +228,9 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
     const template = getOperationalStageTemplate(processTypeSlug, stage.stage_key)
     const edit = getEdit(stage)
     if (!template) return
+    const reportStatus = stage.stage_key === 'laudo_ipi'
+      ? getIpiDetranReportStatus(edit.data, edit.status)
+      : null
 
     const validationError = validateOperationalStage({
       template,
@@ -221,7 +258,7 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
           result: edit.result || null,
           notes: edit.notes || null,
           data: edit.data,
-          notifyClient: edit.notifyClient,
+          notifyClient: edit.notifyClient || reportStatus === 'pronto',
         }),
       })
       const result = await response.json()
@@ -278,6 +315,11 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
           const edit = getEdit(stage)
           const isActive = activeId === stage.id
           const isResolved = RESOLVED_STATUSES.has(stage.status)
+          const isBlocked = isOperationalStageBlocked(stage.data)
+          const isIpiReportStage = processTypeSlug === 'processo_ipi' && stage.stage_key === 'laudo_ipi'
+          const reportStatus = isIpiReportStage
+            ? getIpiDetranReportStatus(edit.data, edit.status)
+            : null
           const checklist = edit.data.checklist && typeof edit.data.checklist === 'object'
             ? edit.data.checklist as Record<string, boolean>
             : {}
@@ -287,14 +329,20 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
             <div key={stage.id} className="overflow-hidden rounded-xl border border-slate-200 bg-white">
               <button
                 type="button"
+                disabled={isBlocked}
                 onClick={() => setActiveId(isActive ? null : stage.id)}
-                className="flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors hover:bg-slate-50"
+                className={cn(
+                  'flex w-full items-center gap-3 px-4 py-3.5 text-left transition-colors',
+                  isBlocked ? 'cursor-not-allowed bg-slate-50/80' : 'hover:bg-slate-50',
+                )}
               >
                 <div className={cn(
                   'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold',
                   isResolved ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500',
                 )}>
-                  {isResolved ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
+                  {isBlocked
+                    ? <LockKeyhole className="h-4 w-4" />
+                    : isResolved ? <CheckCircle2 className="h-4 w-4" /> : index + 1}
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-900">{stage.label}</p>
@@ -302,9 +350,20 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
                     {stage.scheduled_date && <span className="inline-flex items-center gap-1"><Calendar className="h-3 w-3" />{formatDate(stage.scheduled_date)}</span>}
                     {(template?.checklist?.length ?? 0) > 0 && <span>{checklistDone}/{template?.checklist?.length} itens</span>}
                     {stage.notes && <span className="max-w-48 truncate">{stage.notes}</span>}
+                    {isBlocked && <span className="font-semibold text-amber-700">Aguardando Laudo DETRAN</span>}
                   </div>
                 </div>
-                <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-bold', STATUS_STYLES[stage.status])}>{STATUS_LABELS[stage.status]}</span>
+                <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-bold', STATUS_STYLES[edit.status])}>
+                  {reportStatus
+                    ? {
+                        nao_solicitado: 'Ainda não solicitado',
+                        solicitado: 'Solicitado',
+                        em_andamento: 'Em andamento',
+                        pronto: 'Pronto',
+                        nao_aplicavel: 'Não se aplica',
+                      }[reportStatus]
+                    : isBlocked ? 'Bloqueada' : STATUS_LABELS[stage.status]}
+                </span>
                 {isActive ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
               </button>
 
@@ -314,7 +373,7 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
                     <p className="text-xs leading-relaxed text-slate-500">{template.description}</p>
                   </div>
 
-                  <div className="space-y-2">
+                  {!isIpiReportStage && <div className="space-y-2">
                     <p className="text-xs font-semibold text-slate-600">Status da etapa</p>
                     <div className="flex flex-wrap gap-2">
                       {(template.allowedStatuses ?? DEFAULT_STATUSES).map(status => (
@@ -331,7 +390,7 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
                         </button>
                       ))}
                     </div>
-                  </div>
+                  </div>}
 
                   {template.hasScheduledDate && (
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -368,7 +427,11 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
                           key={field.key}
                           field={field}
                           value={edit.data[field.key]}
-                          onChange={value => updateData(stage, field.key, value)}
+                          onChange={value => (
+                            isIpiReportStage && field.key === 'report_status'
+                              ? updateIpiReportStatus(stage, value)
+                              : updateData(stage, field.key, value)
+                          )}
                         />
                       ))}
                     </div>
@@ -439,12 +502,17 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
                   <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2.5">
                     <input
                       type="checkbox"
-                      checked={edit.notifyClient}
+                      checked={edit.notifyClient || reportStatus === 'pronto'}
+                      disabled={reportStatus === 'pronto'}
                       onChange={event => updateEdit(stage, 'notifyClient', event.target.checked)}
                       className="h-4 w-4 rounded text-amber-600"
                     />
                     <Bell className="h-3.5 w-3.5 text-slate-500" />
-                    <span className="text-xs font-semibold text-slate-600">Notificar o cliente sobre esta atualização</span>
+                    <span className="text-xs font-semibold text-slate-600">
+                      {reportStatus === 'pronto'
+                        ? 'O cliente será notificado automaticamente quando o laudo ficar pronto'
+                        : 'Notificar o cliente sobre esta atualização'}
+                    </span>
                   </label>
 
                   {errors[stage.id] && (
@@ -482,4 +550,3 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
     </div>
   )
 }
-

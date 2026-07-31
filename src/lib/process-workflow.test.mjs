@@ -45,24 +45,21 @@ test('outros processos continuam usando a recorrência configurada', () => {
 
 test('fila IPVA prioriza recurso aberto', () => {
   assert.equal(getIpvaOperationalBucket([
-    { stage_key: 'imesc_laudo', status: 'concluido' },
+    { stage_key: 'sivei_protocolo', status: 'concluido' },
     { stage_key: 'ipva_recurso', status: 'pendente' },
     { stage_key: 'ipva_conclusao', status: 'pendente' },
   ]), 'recurso')
 })
 
-test('fila IPVA distingue perícia, laudo, SEFAZ e conclusão', () => {
+test('fila IPVA distingue protocolo, SEFAZ, recurso e conclusão sem depender do IMESC', () => {
   assert.equal(getIpvaOperationalBucket([]), 'configuracao')
   assert.equal(getIpvaOperationalBucket([
     { stage_key: 'imesc_pericia', status: 'pendente' },
     { stage_key: 'imesc_laudo', status: 'pendente' },
-  ]), 'pericia')
+    { stage_key: 'sivei_protocolo', status: 'pendente' },
+  ]), 'protocolo')
   assert.equal(getIpvaOperationalBucket([
-    { stage_key: 'imesc_pericia', status: 'concluido' },
-    { stage_key: 'imesc_laudo', status: 'em_andamento' },
-  ]), 'laudo')
-  assert.equal(getIpvaOperationalBucket([
-    { stage_key: 'imesc_laudo', status: 'concluido' },
+    { stage_key: 'sivei_protocolo', status: 'concluido' },
     { stage_key: 'ipva_recurso', status: 'nao_aplicavel' },
     { stage_key: 'ipva_conclusao', status: 'pendente' },
   ]), 'sefaz')
@@ -71,4 +68,3 @@ test('fila IPVA distingue perícia, laudo, SEFAZ e conclusão', () => {
     { stage_key: 'ipva_conclusao', status: 'concluido' },
   ]), 'concluido')
 })
-

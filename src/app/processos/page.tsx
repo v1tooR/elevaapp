@@ -2,12 +2,13 @@ import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import {
   Accessibility, ArrowRight, BadgeDollarSign, Car, CarFront,
-  CheckCircle2, Clock, FileBadge2, FolderKanban, FolderOpen,
-  IdCard, Layers3, Plus, ReceiptText, RotateCcw, Stethoscope, TrendingUp,
-  AlertTriangle, ListChecks, ListFilter,
+  CheckCircle2, Clock, FileBadge2, FileClock, FolderKanban, FolderOpen,
+  IdCard, Landmark, Layers3, Plus, ReceiptText, RotateCcw, ScrollText, TrendingUp,
+  AlertTriangle, ListChecks, ListFilter, Stethoscope,
   type LucideIcon,
 } from 'lucide-react'
 import { ProcessesStatusChart } from '@/components/processos/processes-status-chart'
+import { getIpiDetranReportStatus } from '@/lib/operational-workflows'
 
 const ACTIVE_STATUSES = ['aberto', 'em_andamento', 'em_analise']
 const WAITING_STATUSES = ['aguardando_documentos', 'aguardando_orgao']
@@ -44,9 +45,11 @@ const PROCESS_TYPE_ICONS: Record<string, LucideIcon> = {
   processo_icms: FileBadge2,
   processo_ipva: BadgeDollarSign,
   imposto_de_renda: BadgeDollarSign,
-  laudo: Stethoscope,
   emplacamento: Car,
   rodizio: RotateCcw,
+  renovacao: FileClock,
+  aposentadoria: Landmark,
+  alvara: ScrollText,
 }
 
 const TYPE_ACCENTS = [
@@ -68,10 +71,19 @@ export default async function ProcessosHubPage() {
   const [
     { data: processTypes },
     { data: allProcs },
+    { data: ipiReportStages },
     { count: deadlineCount },
   ] = await Promise.all([
-    supabase.from('process_types').select('id, name, slug, description').eq('is_active', true).neq('slug', 'resumo').order('name'),
+    supabase
+      .from('process_types')
+      .select('id, name, slug, description')
+      .eq('is_active', true)
+      .eq('accepts_new_processes', true)
+      .neq('slug', 'resumo')
+      .order('sort_order')
+      .order('name'),
     supabase.from('processes').select('process_type_id, status'),
+    supabase.from('process_stages').select('status, data').eq('stage_key', 'laudo_ipi'),
     supabase.from('calendar_events').select('*', { count: 'exact', head: true })
       .eq('event_type', 'deadline')
       .eq('status', 'pending')
@@ -94,6 +106,9 @@ export default async function ProcessosHubPage() {
   }
 
   const processTypeList = (processTypes ?? []) as ProcessTypeSummary[]
+  const reportsToRequest = (ipiReportStages ?? []).filter(stage => (
+    getIpiDetranReportStatus(stage.data as Record<string, unknown>, stage.status) === 'nao_solicitado'
+  )).length
   const portfolioCount = Object.values(typeCountMap).reduce((total, count) => total + count, 0)
 
   // Chart data by status
@@ -191,6 +206,12 @@ export default async function ProcessosHubPage() {
                 <ListFilter className="h-4 w-4" /> Lista geral
               </Link>
               <Link
+                href="/processos/imesc-operacao"
+                className="dash flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:border-white/40 hover:bg-white/20"
+              >
+                <Stethoscope className="h-4 w-4" /> Operação IMESC
+              </Link>
+              <Link
                 href="/processos/ipva-operacao"
                 className="dash flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:border-white/40 hover:bg-white/20"
               >
@@ -230,6 +251,24 @@ export default async function ProcessosHubPage() {
         </div>
 
         {/* ── Mini chart ─────────────────────────────────────────── */}
+        {reportsToRequest > 0 && (
+          <Link
+            href="/processos/lista?laudo=nao_solicitado"
+            className="anim anim-2 flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 transition-colors hover:bg-amber-100"
+          >
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100">
+              <FileClock className="h-4 w-4 text-amber-700" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="dash text-sm font-bold">
+                {reportsToRequest} Laudo{reportsToRequest !== 1 ? 's' : ''} DETRAN aguardando solicitação
+              </p>
+              <p className="dash text-xs text-amber-700">Abra a fila filtrada para iniciar as solicitações.</p>
+            </div>
+            <ArrowRight className="h-4 w-4 shrink-0 text-amber-700" />
+          </Link>
+        )}
+
         {chartData.length > 0 && (
           <div
             className="anim anim-2 bg-white rounded-2xl p-5"

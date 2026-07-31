@@ -13,8 +13,12 @@ import {
   type MedicalRequirement,
 } from '@/lib/cnh-medical-workflow'
 import {
+  getIpiDetranReportStatus,
+  getIpiDetranStageStatus,
   getOperationalStageTemplate,
   getOperationalWorkflowDefinition,
+  IPI_DETRAN_REPORT_STATUS_VALUES,
+  isOperationalStageBlocked,
   validateOperationalStage,
 } from '@/lib/operational-workflows'
 
@@ -95,8 +99,30 @@ export async function PATCH(
   const operationalWorkflow = getOperationalWorkflowDefinition(processTypeSlug)
   const operationalTemplate = getOperationalStageTemplate(processTypeSlug, stage.stage_key)
 
-  const values = parsed.data
+  if (isOperationalStageBlocked(stage.data as Record<string, unknown>)) {
+    return NextResponse.json({
+      error: 'Esta etapa ainda está bloqueada. Conclua o Laudo DETRAN antes de continuar.',
+    }, { status: 409 })
+  }
+
+  const values = { ...parsed.data }
   const stageData = { ...values.data }
+
+  if (processTypeSlug === 'processo_ipi' && stage.stage_key === 'laudo_ipi') {
+    const rawReportStatus = stageData.report_status
+    if (
+      typeof rawReportStatus !== 'string'
+      || !IPI_DETRAN_REPORT_STATUS_VALUES.includes(
+        rawReportStatus as typeof IPI_DETRAN_REPORT_STATUS_VALUES[number],
+      )
+    ) {
+      return NextResponse.json({ error: 'Selecione uma situação válida para o Laudo DETRAN.' }, { status: 422 })
+    }
+    const reportStatus = getIpiDetranReportStatus(stageData)
+    stageData.report_status = reportStatus
+    values.status = getIpiDetranStageStatus(reportStatus)
+    if (reportStatus === 'pronto') values.notifyClient = true
+  }
 
   if (isMedicalStage(stage.stage_key)) {
     const parsedRequirements = z.array(medicalRequirementSchema).max(50).safeParse(stageData.medical_requirements ?? [])
@@ -188,21 +214,33 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
+  const isCompletedCnhIssuance = stage.stage_key === 'emissao_cnh'
+    && values.status === 'concluido'
+    && typeof stageData.vencimento_cnh === 'string'
+  if (isCompletedCnhIssuance) {
+    const { error: expiryError } = await supabase
+      .from('clients')
+      .update({ cnh_expiry_date: stageData.vencimento_cnh })
+      .eq('id', processRecord.client_id)
+
+    if (expiryError) {
+      return NextResponse.json(
+        { error: `Etapa salva, mas não foi possível atualizar o vencimento da CNH: ${expiryError.message}` },
+        { status: 400 },
+      )
+    }
+  }
+
   if (isApprovedMedicalBoard) {
     const restrictions = typeof stageData.restricoes === 'string'
       ? stageData.restricoes.split(',').map(value => value.trim().toUpperCase()).filter(Boolean)
       : []
     const requiresPracticalExam = stageData.requires_practical_exam as boolean
-    const requiresAdaptedVehicle = typeof stageData.requires_adapted_vehicle === 'boolean'
-      ? stageData.requires_adapted_vehicle
-      : null
 
     const [clientUpdate, practicalStageUpdate, issuanceStageUpdate] = await Promise.all([
       supabase.from('clients').update({
         medical_assessment_status: restrictions.length > 0 ? 'apto_com_restricoes' : 'apto',
         cnh_restrictions: restrictions,
-        requires_practical_exam: requiresPracticalExam,
-        requires_adapted_vehicle: requiresAdaptedVehicle,
       }).eq('id', processRecord.client_id),
       supabase.from('process_stages').update({
         status: requiresPracticalExam ? 'pendente' : 'nao_aplicavel',

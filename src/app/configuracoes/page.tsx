@@ -13,7 +13,7 @@ export default async function ConfiguracoesPage() {
   const supabase = await createClient()
 
   const [{ data: processTypes }, { data: profiles }, { data: legalRules }] = await Promise.all([
-    supabase.from('process_types').select('*').neq('slug', 'resumo').order('name'),
+    supabase.from('process_types').select('*').neq('slug', 'resumo').order('sort_order').order('name'),
     supabase.from('profiles').select('*').order('name'),
     supabase.from('legal_rule_versions').select('*').order('effective_from', { ascending: false }),
   ])

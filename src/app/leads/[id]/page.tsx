@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import {
-  ArrowLeft, Phone, Tag, Stethoscope, StickyNote, Clock,
+  ArrowLeft, Phone, Mail, Tag, Stethoscope, StickyNote, Clock,
   ArrowUpRight, CheckCircle2, UserX
 } from 'lucide-react'
 import { formatPhone, formatDateTime } from '@/lib/utils'
@@ -15,7 +15,7 @@ import {
 import { EditLeadModal } from '@/components/leads/edit-lead-modal'
 import { ConvertLeadModal } from '@/components/leads/convert-lead-modal'
 import { LEAD_STATUS_META } from '@/lib/lead-funnel'
-import type { LeadStatus } from '@/types/database'
+import type { LeadStatus, ReferralPartner } from '@/types/database'
 
 const SOURCE_LABEL: Record<string, string> = {
   instagram: 'Instagram',
@@ -39,22 +39,29 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
 
   const { data: lead } = await supabase
     .from('leads')
-    .select('*, assignee:assigned_to(id, name), converted_client:converted_client_id(id, name)')
+    .select('*, assignee:assigned_to(id, name), converted_client:converted_client_id(id, name), referral_partner:referral_partner_id(id, name)')
     .eq('id', id)
     .single()
 
   if (!lead) notFound()
   const convertedClient = lead.converted_client as { id: string; name: string } | null
   const assignee = lead.assignee as { id: string; name: string } | null
+  const referralPartner = lead.referral_partner as { id: string; name: string } | null
   const disabilityTypes = getLeadDisabilityTypes(lead)
   const intendedServices = getLeadIntendedServices(lead)
 
-  const { data: staff } = await supabase
-    .from('profiles')
-    .select('id, name')
-    .in('role', ['super_admin', 'admin', 'analista'])
-    .eq('is_active', true)
-    .order('name')
+  const [{ data: staff }, { data: referralPartners }] = await Promise.all([
+    supabase
+      .from('profiles')
+      .select('id, name')
+      .in('role', ['super_admin', 'admin', 'analista'])
+      .eq('is_active', true)
+      .order('name'),
+    supabase
+      .from('referral_partners')
+      .select('*')
+      .order('name'),
+  ])
 
   const st = LEAD_STATUS_META[lead.status as LeadStatus] ?? LEAD_STATUS_META.novo
   const isConverted = lead.status === 'convertido' && Boolean(lead.converted_client_id)
@@ -101,7 +108,11 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
               {!isConverted && !isPerdido && !hasIncompleteConversion && (
                 <ConvertLeadModal lead={lead} />
               )}
-              <EditLeadModal lead={lead} staff={staff ?? []} />
+              <EditLeadModal
+                lead={lead}
+                staff={staff ?? []}
+                referralPartners={(referralPartners ?? []) as ReferralPartner[]}
+              />
             </div>
           </div>
 
@@ -192,20 +203,35 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
           <div className="space-y-4">
 
             {/* Contato */}
-            {lead.phone && (
+            {(lead.phone || lead.email) && (
               <div
                 className="anim anim-1 bg-white rounded-2xl p-5"
                 style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
               >
                 <h2 className="dash font-bold text-slate-900 mb-4 text-sm">Contato</h2>
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-                    <Phone className="w-3.5 h-3.5 text-blue-500" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-slate-400 dash">Telefone</p>
-                    <p className="text-sm font-medium text-slate-800 dash">{formatPhone(lead.phone)}</p>
-                  </div>
+                <div className="space-y-3">
+                  {lead.phone && (
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+                        <Phone className="w-3.5 h-3.5 text-blue-500" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-slate-400 dash">Telefone</p>
+                        <p className="text-sm font-medium text-slate-800 dash">{formatPhone(lead.phone)}</p>
+                      </div>
+                    </div>
+                  )}
+                  {lead.email && (
+                    <div className="flex items-center gap-3 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+                      <div className="w-8 h-8 rounded-lg bg-white flex items-center justify-center shrink-0">
+                        <Mail className="w-3.5 h-3.5 text-blue-600" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-blue-500 dash">E-mail para os processos</p>
+                        <p className="truncate text-sm font-semibold text-slate-800 dash">{lead.email}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -321,12 +347,22 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 <h2 className="dash font-bold text-slate-900 text-sm">Origem e Atribuição</h2>
               </div>
               <div className="space-y-2.5">
-                <div className="flex justify-between">
-                  <span className="text-xs text-slate-400 dash">Origem</span>
-                  <span className="text-xs font-semibold text-slate-700 dash">
-                    {lead.lead_source ? SOURCE_LABEL[lead.lead_source] : '—'}
-                  </span>
-                </div>
+                  <div className="flex justify-between">
+                    <span className="text-xs text-slate-400 dash">Origem</span>
+                    <span className="text-xs font-semibold text-slate-700 dash">
+                      {lead.lead_source ? SOURCE_LABEL[lead.lead_source] : '—'}
+                    </span>
+                  </div>
+                  {referralPartner && (
+                    <div className="flex justify-between gap-4">
+                      <span className="text-xs text-slate-400 dash">
+                        {lead.lead_source === 'vendedor' ? 'Vendedor' : 'Indicador'}
+                      </span>
+                      <span className="text-right text-xs font-semibold text-slate-700 dash">
+                        {referralPartner.name}
+                      </span>
+                    </div>
+                  )}
                 <div className="flex justify-between">
                   <span className="text-xs text-slate-400 dash">Responsável</span>
                   <span className="text-xs font-semibold text-slate-700 dash">

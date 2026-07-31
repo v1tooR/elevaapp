@@ -1,11 +1,16 @@
 import Link from 'next/link'
-import { AlertTriangle, ArrowLeft, ArrowUpRight, BadgeDollarSign, CheckCircle2, Clock3, FileSearch, Stethoscope } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, ArrowUpRight, BadgeDollarSign, CheckCircle2, Clock3, Send } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
-import { getIpvaOperationalBucket, IPVA_OPERATIONAL_BUCKETS, type IpvaOperationalBucket } from '@/lib/process-workflow'
+import {
+  getIpvaOperationalBucket,
+  IPVA_OPERATIONAL_BUCKETS,
+  IPVA_STAGE_KEYS,
+  type IpvaOperationalBucket,
+} from '@/lib/process-workflow'
 import type { ProcessStage } from '@/types/database'
 
-export const metadata = { title: 'Operação IMESC/IPVA — Eleva Isenções' }
+export const metadata = { title: 'Operação IPVA — Eleva Isenções' }
 
 interface QueueProcess {
   id: string
@@ -19,8 +24,7 @@ interface QueueProcess {
 
 const BUCKET_ICONS = {
   configuracao: AlertTriangle,
-  pericia: Stethoscope,
-  laudo: FileSearch,
+  protocolo: Send,
   sefaz: Clock3,
   recurso: AlertTriangle,
   concluido: CheckCircle2,
@@ -28,8 +32,7 @@ const BUCKET_ICONS = {
 
 const BUCKET_COLORS: Record<IpvaOperationalBucket, string> = {
   configuracao: '#64748B',
-  pericia: '#A14F2A',
-  laudo: '#8B5CF6',
+  protocolo: '#A14F2A',
   sefaz: '#3B82F6',
   recurso: '#EF4444',
   concluido: '#10B981',
@@ -83,15 +86,15 @@ export default async function IpvaOperationsPage({
               <BadgeDollarSign className="h-6 w-6 text-pink-200" />
             </div>
             <div>
-              <h1 className="dash text-2xl font-bold">Operação IMESC/IPVA</h1>
-              <p className="dash mt-1 text-sm text-white/65">Fila por etapa, prazos recursais e responsável</p>
+              <h1 className="dash text-2xl font-bold">Operação IPVA</h1>
+              <p className="dash mt-1 text-sm text-white/65">Protocolo, decisão da SEFAZ, recurso e conclusão</p>
             </div>
           </div>
           <span className="rounded-xl border border-white/15 bg-white/10 px-3 py-2 text-sm font-semibold">{rows.length} processo(s)</span>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         {(Object.keys(IPVA_OPERATIONAL_BUCKETS) as IpvaOperationalBucket[]).map(bucket => {
           const Icon = BUCKET_ICONS[bucket]
           const active = selectedBucket === bucket
@@ -125,7 +128,9 @@ export default async function IpvaOperationsPage({
         ) : (
           <div className="divide-y divide-slate-100">
             {filteredRows.map(process => {
-              const stages = [...(process.stages ?? [])].sort((a, b) => a.sort_order - b.sort_order)
+              const stages = [...(process.stages ?? [])]
+                .filter(stage => (IPVA_STAGE_KEYS as readonly string[]).includes(stage.stage_key))
+                .sort((a, b) => a.sort_order - b.sort_order)
               const currentStage = stages.find(stage => stage.status === 'em_andamento')
                 ?? stages.find(stage => stage.status === 'pendente')
               const appealStage = stages.find(stage => stage.stage_key === 'ipva_recurso')
@@ -157,4 +162,3 @@ export default async function IpvaOperationsPage({
     </div>
   )
 }
-

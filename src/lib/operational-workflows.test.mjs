@@ -3,7 +3,10 @@ import assert from 'node:assert/strict'
 import {
   OPERATIONAL_WORKFLOW_SLUGS,
   buildOperationalStageRows,
+  getIpiDetranReportStatus,
+  getIpiDetranStageStatus,
   getOperationalWorkflowDefinition,
+  isOperationalStageBlocked,
   validateOperationalStage,
 } from './operational-workflows.ts'
 
@@ -26,6 +29,32 @@ test('etapas têm chaves e ordens únicas dentro de cada processo', () => {
 test('etapas condicionais iniciam como não aplicáveis', () => {
   const rows = buildOperationalStageRows('process-1', 'processo_ipi')
   assert.equal(rows.find(row => row.stage_key === 'recurso_ipi').status, 'nao_aplicavel')
+})
+
+test('Laudo DETRAN inicia a solicitar e bloqueia os documentos do IPI', () => {
+  const rows = buildOperationalStageRows('process-1', 'processo_ipi')
+  const report = rows.find(row => row.stage_key === 'laudo_ipi')
+  const documents = rows.find(row => row.stage_key === 'documentos_ipi')
+
+  assert.equal(getIpiDetranReportStatus(report.data, report.status), 'nao_solicitado')
+  assert.equal(getIpiDetranStageStatus('pronto'), 'concluido')
+  assert.equal(getIpiDetranStageStatus('nao_aplicavel'), 'nao_aplicavel')
+  assert.equal(isOperationalStageBlocked(documents.data), true)
+})
+
+test('Laudo DETRAN pronto exige identificação do documento', () => {
+  const workflow = getOperationalWorkflowDefinition('processo_ipi')
+  const template = workflow.stages.find(stage => stage.stage_key === 'laudo_ipi')
+  assert.match(validateOperationalStage({
+    template,
+    status: 'concluido',
+    data: { report_status: 'pronto' },
+  }), /Órgão emissor/)
+  assert.equal(validateOperationalStage({
+    template,
+    status: 'nao_aplicavel',
+    data: { report_status: 'nao_aplicavel' },
+  }), null)
 })
 
 test('checklist obrigatório impede conclusão incompleta', () => {
@@ -53,4 +82,3 @@ test('campo opcional não impede conclusão do checklist', () => {
     } },
   }), null)
 })
-

@@ -2,20 +2,48 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Check, X, Edit2, Tag } from 'lucide-react'
+import { ArrowDown, ArrowUp, Check, X, Edit2, Tag } from 'lucide-react'
+import type { ProcessType } from '@/types/database'
 
-export function ProcessTypeManager({ processTypes }: { processTypes: any[] }) {
+export function ProcessTypeManager({ processTypes }: { processTypes: ProcessType[] }) {
   const router = useRouter()
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editName, setEditName] = useState('')
   const [savingId, setSavingId] = useState<string | null>(null)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+  const [orderingId, setOrderingId] = useState<string | null>(null)
 
   const toggleActive = async (id: string, current: boolean) => {
     setTogglingId(id)
     const supabase = createClient()
     await supabase.from('process_types').update({ is_active: !current }).eq('id', id)
     setTogglingId(null)
+    router.refresh()
+  }
+
+  const toggleAvailability = async (id: string, current: boolean) => {
+    setTogglingId(id)
+    const supabase = createClient()
+    await supabase
+      .from('process_types')
+      .update({ accepts_new_processes: !current })
+      .eq('id', id)
+    setTogglingId(null)
+    router.refresh()
+  }
+
+  const moveType = async (index: number, direction: -1 | 1) => {
+    const current = processTypes[index]
+    const target = processTypes[index + direction]
+    if (!current || !target) return
+
+    setOrderingId(current.id)
+    const supabase = createClient()
+    await Promise.all([
+      supabase.from('process_types').update({ sort_order: target.sort_order }).eq('id', current.id),
+      supabase.from('process_types').update({ sort_order: current.sort_order }).eq('id', target.id),
+    ])
+    setOrderingId(null)
     router.refresh()
   }
 
@@ -56,8 +84,28 @@ export function ProcessTypeManager({ processTypes }: { processTypes: any[] }) {
           </div>
         ) : (
           <div className="divide-y divide-slate-100">
-            {processTypes.map(pt => (
+            {processTypes.map((pt, index) => (
               <div key={pt.id} className="flex items-center gap-3 px-4 py-3.5 hover:bg-slate-50/70 transition-colors group">
+                <div className="flex shrink-0 flex-col">
+                  <button
+                    type="button"
+                    onClick={() => moveType(index, -1)}
+                    disabled={index === 0 || orderingId !== null}
+                    aria-label={`Mover ${pt.name} para cima`}
+                    className="rounded p-0.5 text-slate-300 hover:bg-slate-100 hover:text-primary disabled:opacity-20"
+                  >
+                    <ArrowUp className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveType(index, 1)}
+                    disabled={index === processTypes.length - 1 || orderingId !== null}
+                    aria-label={`Mover ${pt.name} para baixo`}
+                    className="rounded p-0.5 text-slate-300 hover:bg-slate-100 hover:text-primary disabled:opacity-20"
+                  >
+                    <ArrowDown className="h-3 w-3" />
+                  </button>
+                </div>
                 {/* Color dot */}
                 <div
                   className="w-3 h-3 rounded-full shrink-0 shadow-sm"
@@ -102,8 +150,29 @@ export function ProcessTypeManager({ processTypes }: { processTypes: any[] }) {
                       </button>
                     </div>
                   )}
-                  <p className="dash text-[11px] text-slate-400 font-mono mt-0.5">{pt.slug}</p>
+                  <p className="dash text-[11px] text-slate-400 font-mono mt-0.5">
+                    {String(index + 1).padStart(2, '0')} · {pt.slug}
+                  </p>
                 </div>
+
+                {pt.slug === 'laudo' ? (
+                  <span className="dash rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                    Apenas histórico
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => toggleAvailability(pt.id, pt.accepts_new_processes)}
+                    disabled={togglingId === pt.id}
+                    className={`dash rounded-full border px-2.5 py-1 text-[11px] font-bold transition-all disabled:opacity-60 ${
+                      pt.accepts_new_processes
+                        ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                        : 'border-slate-200 bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    }`}
+                  >
+                    {pt.accepts_new_processes ? 'Novos: sim' : 'Novos: não'}
+                  </button>
+                )}
 
                 {/* Active toggle */}
                 <button

@@ -14,7 +14,8 @@ import {
   leadEligibilityPayload,
   type LeadEligibilityFormValue,
 } from '@/lib/lead-eligibility'
-import type { LeadSource } from '@/types/database'
+import { partnerSupportsSource, referralTypeForSource } from '@/lib/referral-partners'
+import type { LeadSource, ReferralPartner } from '@/types/database'
 
 const sectionCard = {
   background: '#fff',
@@ -36,11 +37,14 @@ export default function NovoLeadPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [staff, setStaff] = useState<{ id: string; name: string }[]>([])
+  const [referralPartners, setReferralPartners] = useState<ReferralPartner[]>([])
 
   const [form, setForm] = useState({
     name: '',
     phone: '',
+    email: '',
     lead_source: '' as LeadSource | '',
+    referral_partner_id: '',
     assigned_to: '',
     notes: '',
   })
@@ -52,20 +56,44 @@ export default function NovoLeadPage() {
 
   useEffect(() => {
     const supabase = createClient()
-    supabase
-      .from('profiles')
-      .select('id, name')
-      .in('role', ['super_admin', 'admin', 'analista'])
-      .eq('is_active', true)
-      .order('name')
-      .then(({ data }) => setStaff(data ?? []))
+    Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, name')
+        .in('role', ['super_admin', 'admin', 'analista'])
+        .eq('is_active', true)
+        .order('name'),
+      supabase
+        .from('referral_partners')
+        .select('*')
+        .eq('is_active', true)
+        .order('name'),
+    ]).then(([{ data: staffRows }, { data: partnerRows }]) => {
+      setStaff(staffRows ?? [])
+      setReferralPartners((partnerRows ?? []) as ReferralPartner[])
+    })
   }, [])
 
   const update = (key: string, value: string) => setForm(prev => ({ ...prev, [key]: value }))
+  const updateSource = (leadSource: LeadSource | '') => {
+    setForm(current => ({
+      ...current,
+      lead_source: leadSource,
+      referral_partner_id: '',
+    }))
+  }
+  const sourcePartnerType = referralTypeForSource(form.lead_source)
+  const availablePartners = referralPartners.filter(partner => (
+    partnerSupportsSource(partner, form.lead_source)
+  ))
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.name.trim()) { setError('Nome é obrigatório.'); return }
+    if (sourcePartnerType && !form.referral_partner_id) {
+      setError(`Selecione o ${sourcePartnerType === 'vendedor' ? 'vendedor' : 'indicador'} responsável.`)
+      return
+    }
     setLoading(true)
     setError('')
 
@@ -73,7 +101,9 @@ export default function NovoLeadPage() {
     const { error: err } = await supabase.from('leads').insert({
       name: form.name.trim(),
       phone: form.phone || null,
+      email: form.email.trim() || null,
       lead_source: form.lead_source || null,
+      referral_partner_id: sourcePartnerType ? form.referral_partner_id : null,
       assigned_to: form.assigned_to || null,
       notes: form.notes || null,
       ...leadEligibilityPayload(profile),
@@ -145,6 +175,16 @@ export default function NovoLeadPage() {
               <div className="sm:col-span-2">
                 <MaskedInput mask="phone" label="Telefone" value={form.phone} onChange={v => update('phone', v)} placeholder="(00) 00000-0000" />
               </div>
+              <div className="sm:col-span-2 rounded-xl border border-blue-100 bg-blue-50/50 p-3">
+                <Input
+                  label="E-mail — recomendado"
+                  type="email"
+                  value={form.email}
+                  onChange={event => update('email', event.target.value)}
+                  placeholder="email@exemplo.com"
+                  helperText="Será reaproveitado na conversão e é necessário em vários processos."
+                />
+              </div>
             </div>
           </div>
 
@@ -178,12 +218,35 @@ export default function NovoLeadPage() {
                 <label className="block text-sm font-medium text-slate-700 dash">Origem</label>
                 <select
                   value={form.lead_source}
-                  onChange={e => update('lead_source', e.target.value)}
+                  onChange={event => updateSource(event.target.value as LeadSource | '')}
                   className="fsel block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white transition-all dash"
                 >
                   {SOURCE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                 </select>
               </div>
+              {sourcePartnerType && (
+                <div className="space-y-1">
+                  <label className="block text-sm font-medium text-slate-700 dash">
+                    {sourcePartnerType === 'vendedor' ? 'Vendedor *' : 'Indicador *'}
+                  </label>
+                  <select
+                    value={form.referral_partner_id}
+                    onChange={event => update('referral_partner_id', event.target.value)}
+                    required
+                    className="fsel block w-full rounded-lg border border-slate-300 px-3 py-2 text-sm bg-white transition-all dash"
+                  >
+                    <option value="">Selecione</option>
+                    {availablePartners.map(partner => (
+                      <option key={partner.id} value={partner.id}>{partner.name}</option>
+                    ))}
+                  </select>
+                  {availablePartners.length === 0 && (
+                    <p className="dash text-[11px] text-amber-600">
+                      Nenhum cadastro ativo. Um administrador deve cadastrá-lo em Indicações.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="space-y-1">
                 <label className="block text-sm font-medium text-slate-700 dash">Quem está tratando</label>
                 <select

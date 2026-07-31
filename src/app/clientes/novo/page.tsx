@@ -32,10 +32,11 @@ export default function NovoClientePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({
-    name: '', cpf: '', rg: '', birth_date: '', phone: '', email: '',
+    name: '', cpf: '', birth_date: '', phone: '', email: '',
     address: '', city: '', state: '', internal_notes: ''
   })
   const [govAccess, setGovAccess] = useState<GovAccessFormValue>(EMPTY_GOV_ACCESS)
+  const [govCredentialPassword, setGovCredentialPassword] = useState('')
   const [criarAcesso, setCriarAcesso] = useState(false)
   const [portalEmail, setPortalEmail] = useState('')
   const [portalPassword, setPortalPassword] = useState('')
@@ -62,7 +63,6 @@ export default function NovoClientePage() {
     const { data, error: err } = await supabase.from('clients').insert({
       name: form.name,
       cpf: form.cpf || null,
-      rg: form.rg || null,
       birth_date: form.birth_date || null,
       phone: form.phone || null,
       email: form.email || null,
@@ -78,6 +78,23 @@ export default function NovoClientePage() {
       setError(err.code === '23505' ? 'Já existe um cliente cadastrado com este CPF.' : 'Erro ao cadastrar cliente: ' + err.message)
       setLoading(false)
       return
+    }
+
+    if (govCredentialPassword) {
+      const credentialResponse = await fetch(`/api/clientes/${data.id}/gov-credential`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: govCredentialPassword }),
+      })
+      setGovCredentialPassword('')
+
+      if (!credentialResponse.ok) {
+        const json = await credentialResponse.json().catch(() => null)
+        setError(`Cliente cadastrado, mas a senha Gov.br não foi salva: ${json?.error ?? 'erro desconhecido'}`)
+        setLoading(false)
+        router.push(`/clientes/${data.id}`)
+        return
+      }
     }
 
     if (criarAcesso && portalEmail && portalPassword) {
@@ -156,11 +173,17 @@ export default function NovoClientePage() {
                 <Input label="Nome completo *" value={form.name} onChange={e => update('name', e.target.value)} required placeholder="Nome do cliente" />
               </div>
               <MaskedInput mask="cpf" label="CPF" value={form.cpf} onChange={v => update('cpf', v)} placeholder="000.000.000-00" />
-              <MaskedInput mask="rg" label="RG" value={form.rg} onChange={v => update('rg', v)} placeholder="00.000.000-0" />
               <Input label="Data de nascimento" type="date" value={form.birth_date} onChange={e => update('birth_date', e.target.value)} />
               <MaskedInput mask="phone" label="Telefone" value={form.phone} onChange={v => update('phone', v)} placeholder="(00) 00000-0000" />
-              <div className="sm:col-span-2">
-                <Input label="E-mail" type="email" value={form.email} onChange={e => update('email', e.target.value)} placeholder="email@exemplo.com" />
+              <div className="sm:col-span-2 rounded-xl border border-blue-100 bg-blue-50/60 p-3">
+                <Input
+                  label="E-mail — recomendado"
+                  type="email"
+                  value={form.email}
+                  onChange={e => update('email', e.target.value)}
+                  placeholder="email@exemplo.com"
+                  helperText="Não bloqueia o cadastro, mas é necessário para diversos protocolos e acessos."
+                />
               </div>
             </div>
           </div>
@@ -223,11 +246,16 @@ export default function NovoClientePage() {
                 <ShieldCheck className="h-4 w-4 text-blue-600" />
               </div>
               <div>
-                <h2 className="dash text-sm font-bold text-slate-900">Acesso assistido ao Gov.br</h2>
-                <p className="dash text-[11px] text-slate-400">Controle operacional sem armazenar credenciais</p>
+                <h2 className="dash text-sm font-bold text-slate-900">Acesso Gov.br</h2>
+                <p className="dash text-[11px] text-slate-400">Situação operacional e gravação protegida opcional</p>
               </div>
             </div>
-            <GovAccessFields value={govAccess} onChange={setGovAccess} />
+            <GovAccessFields
+              value={govAccess}
+              onChange={setGovAccess}
+              credentialPassword={govCredentialPassword}
+              onCredentialPasswordChange={setGovCredentialPassword}
+            />
           </div>
 
           {/* ── Elegibilidade ─────────────────────────────────────── */}

@@ -8,9 +8,17 @@ import {
 import { ProcessStatusBadge } from '@/components/shared/status-badge'
 import { formatDate, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { KanbanBoard } from '@/components/processos/kanban-board'
+import type { ProcessStatus } from '@/types/database'
 
 interface SearchParams { status?: string; page?: string; view?: string }
 interface Params { slug: string }
+interface ProcessRow {
+  id: string
+  status: ProcessStatus
+  protocol: string | null
+  created_at: string
+  clients: { id: string; name: string } | null
+}
 
 const STATUS_COLORS: Record<string, { dot: string; pill: string; active: string }> = {
   aberto:                 { dot: '#3B82F6', pill: 'bg-blue-50 text-blue-700 border-blue-200',      active: 'bg-blue-600 text-white border-blue-600' },
@@ -45,39 +53,40 @@ export default async function ProcessosPorTipoPage({
 
   const { data: processType } = await supabase
     .from('process_types')
-    .select('id, name, slug, color')
+    .select('id, name, slug, color, accepts_new_processes')
     .eq('slug', slug)
     .eq('is_active', true)
     .maybeSingle()
 
   if (!processType) notFound()
 
-  const color = (processType as any).color ?? '#3B82F6'
+  const color = processType.color ?? '#3B82F6'
+  const canCreate = processType.accepts_new_processes !== false
 
   // Kanban fetches all (no pagination), list paginates
-  let processes: any[] = []
+  let processes: ProcessRow[] = []
   let count = 0
 
   if (view === 'kanban') {
     const { data } = await supabase
       .from('processes')
       .select('id, status, protocol, created_at, clients(id, name)')
-      .eq('process_type_id', (processType as any).id)
+      .eq('process_type_id', processType.id)
       .not('status', 'in', '(arquivado,cancelado)')
       .order('created_at', { ascending: false })
       .limit(200)
-    processes = data ?? []
+    processes = (data ?? []) as unknown as ProcessRow[]
     count = processes.length
   } else {
     let q = supabase
       .from('processes')
       .select('*, clients(id, name)', { count: 'exact' })
-      .eq('process_type_id', (processType as any).id)
+      .eq('process_type_id', processType.id)
       .order('created_at', { ascending: false })
       .range((page - 1) * perPage, page * perPage - 1)
     if (statusFilter) q = q.eq('status', statusFilter)
     const { data, count: c } = await q
-    processes = data ?? []
+    processes = (data ?? []) as unknown as ProcessRow[]
     count = c ?? 0
   }
 
@@ -135,7 +144,7 @@ export default async function ProcessosPorTipoPage({
                 </div>
                 <div>
                   <h1 className="dash text-white text-2xl lg:text-3xl font-bold leading-tight">
-                    {(processType as any).name}
+                    {processType.name}
                   </h1>
                   <p className="dash text-primary-foreground/65 text-sm mt-0.5">
                     {view === 'kanban' ? `${count} processo${count !== 1 ? 's' : ''} ativos` : `${count ?? 0} processo${count !== 1 ? 's' : ''}`}
@@ -163,13 +172,19 @@ export default async function ProcessosPorTipoPage({
                   </Link>
                 </div>
 
-                <Link
-                  href={`/processos/novo?type_id=${(processType as any).id}`}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white border border-white/20 bg-white/10 hover:bg-white/20 hover:border-white/40 transition-all dash"
-                >
-                  <Plus className="w-4 h-4" />
-                  Novo
-                </Link>
+                {canCreate ? (
+                  <Link
+                    href={`/processos/novo?type_id=${processType.id}`}
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white border border-white/20 bg-white/10 hover:bg-white/20 hover:border-white/40 transition-all dash"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Novo
+                  </Link>
+                ) : (
+                  <span className="dash rounded-xl border border-amber-200/40 bg-amber-100/10 px-4 py-2.5 text-sm font-semibold text-amber-100">
+                    Apenas histórico
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -181,7 +196,7 @@ export default async function ProcessosPorTipoPage({
             className="anim anim-1 bg-white rounded-2xl p-4"
             style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
           >
-            <KanbanBoard initialProcesses={processes as any} />
+            <KanbanBoard initialProcesses={processes} />
           </div>
         ) : (
           <>
@@ -229,16 +244,18 @@ export default async function ProcessosPorTipoPage({
                   <div className="text-center">
                     <p className="dash font-semibold text-slate-700">Nenhum processo encontrado</p>
                     <p className="text-sm text-slate-400 mt-1 dash">
-                      {statusFilter ? 'Tente ajustar o filtro de status' : `Crie o primeiro processo de ${(processType as any).name}`}
+                      {statusFilter ? 'Tente ajustar o filtro de status' : `Crie o primeiro processo de ${processType.name}`}
                     </p>
                   </div>
-                  <Link
-                    href={`/processos/novo?type_id=${(processType as any).id}`}
-                    className="flex items-center gap-2 px-4 py-2 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-colors dash"
-                    style={{ backgroundColor: color }}
-                  >
-                    <Plus className="w-4 h-4" /> Criar processo
-                  </Link>
+                  {canCreate && (
+                    <Link
+                      href={`/processos/novo?type_id=${processType.id}`}
+                      className="flex items-center gap-2 px-4 py-2 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-colors dash"
+                      style={{ backgroundColor: color }}
+                    >
+                      <Plus className="w-4 h-4" /> Criar processo
+                    </Link>
+                  )}
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -253,7 +270,7 @@ export default async function ProcessosPorTipoPage({
                       </tr>
                     </thead>
                     <tbody>
-                      {processes.map((p: any) => (
+                      {processes.map(p => (
                         <tr key={p.id} className="proc-row border-b border-slate-50 last:border-0">
                           <td className="px-5 py-4">
                             <Link

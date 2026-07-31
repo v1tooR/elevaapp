@@ -44,31 +44,6 @@ function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void 
   )
 }
 
-function NullableBooleanSelect({
-  label,
-  value,
-  onChange,
-}: {
-  label: string
-  value: boolean | null
-  onChange: (value: boolean | null) => void
-}) {
-  return (
-    <div className="space-y-1">
-      <label className="block text-sm font-medium text-slate-700 dash">{label}</label>
-      <select
-        value={value === null ? '' : String(value)}
-        onChange={event => onChange(event.target.value === '' ? null : event.target.value === 'true')}
-        className={SELECT_CLASS}
-      >
-        <option value="">Aguardando definição</option>
-        <option value="true">Sim — determinado</option>
-        <option value="false">Não — dispensado</option>
-      </select>
-    </div>
-  )
-}
-
 export function ClientEligibilityFields({ value, onChange, compact = false }: Props) {
   const update = <K extends keyof ClientEligibilityFormValue>(key: K, next: ClientEligibilityFormValue[K]) => {
     onChange({ ...value, [key]: next })
@@ -95,7 +70,7 @@ export function ClientEligibilityFields({ value, onChange, compact = false }: Pr
       <div className="rounded-xl border border-blue-100 bg-blue-50/60 px-4 py-3">
         <p className="text-xs font-semibold text-blue-800">Triagem, não decisão automática</p>
         <p className="mt-1 text-[11px] leading-relaxed text-blue-700">
-          Aptidão, códigos de restrição e exame prático devem reproduzir o laudo, o RENACH ou a CNH. Não são inferidos pelo diagnóstico.
+          A triagem registra somente dados já conhecidos. Grau funcional, exame prático e adaptação do veículo são definidos nos processos específicos.
         </p>
       </div>
 
@@ -106,24 +81,6 @@ export function ClientEligibilityFields({ value, onChange, compact = false }: Pr
             <option value="">Não informado</option>
             <option value="condutor">Condutor</option>
             <option value="nao_condutor">Não condutor</option>
-          </select>
-        </div>
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-slate-700 dash">Tipo de deficiência ou condição</label>
-          <select value={value.disability_type} onChange={event => update('disability_type', event.target.value as ClientEligibilityFormValue['disability_type'])} className={SELECT_CLASS}>
-            <option value="">Não informado</option>
-            {DISABILITY_CHOICES.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
-          </select>
-        </div>
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-slate-700 dash">Grau funcional informado no laudo</label>
-          <select value={value.disability_severity} onChange={event => update('disability_severity', event.target.value as ClientEligibilityFormValue['disability_severity'])} className={SELECT_CLASS}>
-            <option value="">Não informado</option>
-            <option value="leve">Leve</option>
-            <option value="moderada">Moderada</option>
-            <option value="grave">Grave</option>
-            <option value="gravissima">Gravíssima</option>
-            <option value="nao_informada">Laudo sem graduação</option>
           </select>
         </div>
         <div className="space-y-1">
@@ -141,8 +98,8 @@ export function ClientEligibilityFields({ value, onChange, compact = false }: Pr
 
       <div className="space-y-2">
         <div>
-          <p className="text-sm font-medium text-slate-700 dash">Condições associadas</p>
-          <p className="text-[11px] text-slate-400">Marque outras condições quando houver mais de uma caracterização no caso.</p>
+          <p className="text-sm font-medium text-slate-700 dash">Deficiências/condições</p>
+          <p className="text-[11px] text-slate-400">Use esta seleção única e marque todas as condições aplicáveis.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {DISABILITY_CHOICES.map(item => {
@@ -170,14 +127,6 @@ export function ClientEligibilityFields({ value, onChange, compact = false }: Pr
         </div>
       </div>
 
-      <Textarea
-        label="Caracterização funcional"
-        value={value.disability_details}
-        onChange={event => update('disability_details', event.target.value)}
-        placeholder="Descreva o comprometimento funcional conforme o laudo, sem presumir adaptações."
-        rows={compact ? 2 : 3}
-      />
-
       {value.client_type === 'condutor' && (
         <div className="space-y-4 rounded-xl border border-slate-200 bg-slate-50/60 p-4">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-500">CNH do beneficiário</p>
@@ -195,14 +144,19 @@ export function ClientEligibilityFields({ value, onChange, compact = false }: Pr
               </select>
             </div>
             <Input
-              label="Códigos efetivamente registrados"
+              label="Restrições da CNH"
               value={value.cnh_restrictions}
               onChange={event => update('cnh_restrictions', event.target.value)}
               placeholder="Ex.: B, X, D"
               helperText="Separe por vírgulas e copie somente do documento oficial."
             />
-            <NullableBooleanSelect label="Exame prático determinado?" value={value.requires_practical_exam} onChange={next => update('requires_practical_exam', next)} />
-            <NullableBooleanSelect label="Veículo adaptado determinado?" value={value.requires_adapted_vehicle} onChange={next => update('requires_adapted_vehicle', next)} />
+            <Input
+              label="Vencimento da CNH"
+              type="date"
+              value={value.cnh_expiry_date}
+              onChange={event => update('cnh_expiry_date', event.target.value)}
+              helperText="Informe a data impressa no documento."
+            />
           </div>
         </div>
       )}

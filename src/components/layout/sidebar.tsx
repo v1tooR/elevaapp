@@ -5,7 +5,8 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Users, Target, FolderOpen, FileText,
-  Calendar, Bell, Settings, LogOut, Banknote, X, ChevronRight, ListTodo, ListFilter
+  Calendar, Bell, Settings, LogOut, Banknote, X, ChevronRight, ListTodo, ListFilter, Handshake,
+  Stethoscope,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ElevaIcon } from '@/components/brand/eleva-icon'
@@ -22,7 +23,9 @@ const adminNav = [
   { href: '/rotina',       label: 'Minha rotina', icon: ListTodo,        group: 'main'    },
   { href: '/clientes',     label: 'Clientes',     icon: Users,           group: 'main'    },
   { href: '/leads',        label: 'Leads',        icon: Target,          group: 'main'    },
+  { href: '/indicacoes',   label: 'Indicações',   icon: Handshake,       group: 'main'    },
   { href: '/processos',    label: 'Processos',    icon: FolderOpen,      group: 'main'    },
+  { href: '/processos/imesc-operacao', label: 'Operação IMESC', icon: Stethoscope, group: 'main' },
   { href: '/processos/lista', label: 'Lista geral', icon: ListFilter,    group: 'main'    },
   { href: '/documentos',   label: 'Documentos',   icon: FileText,        group: 'main'    },
   { href: '/calendario',   label: 'Calendário',   icon: Calendar,        group: 'comms'   },
@@ -113,11 +116,17 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
       <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
         {navItems.map((item, i) => {
           const Icon = item.icon
-          const isActive =
+          const matchesPath =
             pathname === item.href ||
             (item.href !== '/dashboard' &&
               item.href !== '/minha-area' &&
-              pathname.startsWith(item.href))
+              pathname.startsWith(`${item.href}/`))
+          const hasMoreSpecificMatch = navItems.some(other => (
+            other.href !== item.href
+            && other.href.startsWith(`${item.href}/`)
+            && (pathname === other.href || pathname.startsWith(`${other.href}/`))
+          ))
+          const isActive = matchesPath && !hasMoreSpecificMatch
 
           const prev = navItems[i - 1]
           const showDivider = i > 0 && prev?.group !== item.group

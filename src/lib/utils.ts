@@ -150,36 +150,6 @@ export const PROCESS_TYPE_CUSTOM_FIELDS: Record<string, ProcessCustomFieldDefini
   processo_iof: [],
   processo_ipva: [
     {
-      field_name: 'imesc_status',
-      field_label: 'Situação da perícia/laudo IMESC',
-      field_type: 'select',
-      options: [
-        { value: 'nao_iniciado', label: 'Ainda não iniciado' },
-        { value: 'agendado', label: 'Perícia agendada' },
-        { value: 'pericia_realizada', label: 'Perícia realizada — aguardando laudo' },
-        { value: 'laudo_disponivel', label: 'Laudo disponível' },
-        { value: 'laudo_anterior_reaproveitado', label: 'Laudo anterior reaproveitado' },
-        { value: 'dispensa_documentada', label: 'Dispensa formalmente documentada' },
-      ],
-      help_text: 'Em São Paulo, registre separadamente a perícia, o laudo e a decisão da SEFAZ.',
-    },
-    { field_name: 'imesc_data_pericia', field_label: 'Data da perícia IMESC', field_type: 'date' },
-    { field_name: 'imesc_data_laudo', field_label: 'Data de emissão do laudo IMESC', field_type: 'date' },
-    {
-      field_name: 'imesc_grau',
-      field_label: 'Classificação no laudo IMESC',
-      field_type: 'select',
-      options: [
-        { value: 'sem_deficiencia', label: 'Inexistência de deficiência' },
-        { value: 'leve', label: 'Leve' },
-        { value: 'moderada', label: 'Moderada' },
-        { value: 'grave', label: 'Grave' },
-        { value: 'gravissima', label: 'Gravíssima' },
-      ],
-      help_text: 'Copie a classificação exatamente como consta no laudo; não a deduza pelo diagnóstico.',
-    },
-    { field_name: 'imesc_protocolo', field_label: 'Protocolo/laudo IMESC', field_type: 'text' },
-    {
       field_name: 'sefaz_ipva_status',
       field_label: 'Decisão da SEFAZ',
       field_type: 'select',
@@ -195,7 +165,6 @@ export const PROCESS_TYPE_CUSTOM_FIELDS: Record<string, ProcessCustomFieldDefini
     { field_name: 'sefaz_data_ciencia', field_label: 'Data da ciência da decisão', field_type: 'date' },
     { field_name: 'recurso_ipva_protocolado_em', field_label: 'Recurso protocolado em', field_type: 'date' },
     { field_name: 'recurso_ipva_protocolo', field_label: 'Protocolo do recurso IPVA', field_type: 'text' },
-    { field_name: 'imesc', field_label: 'Observações sobre IMESC', field_type: 'text' },
   ],
   imposto_de_renda: [],
   laudo: [

@@ -5,14 +5,17 @@ import { getProcessOperationalSummary, getStaffOperations } from '@/lib/staff-op
 import { ProcessStatusBadge } from '@/components/shared/status-badge'
 import { SaveProcessFilter } from '@/components/processos/save-process-filter'
 import { formatCPF, formatDate } from '@/lib/utils'
+import { getIpiDetranReportStatus } from '@/lib/operational-workflows'
 
 interface SearchParams {
   q?: string
+  tipo?: string
   status?: string
   responsavel?: string
   prazo?: string
   etapa?: string
   pendencia?: string
+  laudo?: string
   pagina?: string
 }
 
@@ -24,9 +27,16 @@ export default async function ProcessListPage({ searchParams }: { searchParams: 
   const params = await searchParams
   const operations = await getStaffOperations()
   const supabase = await createClient()
-  const [{ data: savedFilters }, { data: staff }] = await Promise.all([
+  const [{ data: savedFilters }, { data: staff }, { data: processTypes }] = await Promise.all([
     supabase.from('saved_filters').select('id, name, filters').eq('scope', 'processes').order('created_at'),
     supabase.from('profiles').select('id, name').in('role', ['super_admin', 'admin', 'analista']).eq('is_active', true).order('name'),
+    supabase
+      .from('process_types')
+      .select('slug, name, accepts_new_processes')
+      .eq('is_active', true)
+      .neq('slug', 'resumo')
+      .order('sort_order')
+      .order('name'),
   ])
 
   const search = normalize(params.q)
@@ -53,10 +63,18 @@ export default async function ProcessListPage({ searchParams }: { searchParams: 
     ].filter(Boolean).join(' '))
     const digits = (params.q ?? '').replace(/\D/g, '')
     if (search && !haystack.includes(search) && (!digits || !haystack.replace(/\D/g, '').includes(digits))) return false
+    if (params.tipo && process.process_types?.slug !== params.tipo) return false
     if (params.status && process.status !== params.status) return false
     if (params.responsavel === 'sem_responsavel' && process.responsible_user_id) return false
     if (params.responsavel && params.responsavel !== 'sem_responsavel' && process.responsible_user_id !== params.responsavel) return false
     if (params.etapa && !stages.some(stage => stage.stage_key === params.etapa && !['concluido', 'aprovado', 'reprovado', 'nao_aplicavel'].includes(stage.status))) return false
+    if (
+      params.laudo
+      && !stages.some(stage => (
+        stage.stage_key === 'laudo_ipi'
+        && getIpiDetranReportStatus(stage.data, stage.status) === params.laudo
+      ))
+    ) return false
     if (params.pendencia && !pendingProcessIds.has(process.id)) return false
     if (params.prazo === 'vencido' && (!operational.dueDate || operational.dueDate >= today)) return false
     if (params.prazo === 'sete_dias' && (!operational.dueDate || operational.dueDate < today || operational.dueDate > sevenDayKey)) return false
@@ -95,14 +113,16 @@ export default async function ProcessListPage({ searchParams }: { searchParams: 
       </section>
 
       <section className="eleva-surface p-4">
-        <form className="grid gap-3 lg:grid-cols-7" method="get">
+        <form className="grid gap-3 lg:grid-cols-9" method="get">
           <label className="relative lg:col-span-2"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input name="q" defaultValue={params.q} placeholder="Nome, CPF, protocolo ou tipo" className="dash w-full rounded-xl border border-input bg-card py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary" /></label>
+          <select name="tipo" defaultValue={params.tipo} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todos os tipos</option>{(processTypes ?? []).map(type => <option key={type.slug} value={type.slug}>{type.name}{type.accepts_new_processes ? '' : ' (histórico)'}</option>)}</select>
           <select name="status" defaultValue={params.status} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todos os status</option><option value="aberto">Aberto</option><option value="em_andamento">Em andamento</option><option value="aguardando_documentos">Aguardando documentos</option><option value="em_analise">Em análise</option><option value="aguardando_orgao">Aguardando órgão</option><option value="concluido">Concluído</option><option value="arquivado">Arquivado</option><option value="cancelado">Cancelado</option></select>
           <select name="responsavel" defaultValue={params.responsavel} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todos responsáveis</option><option value="sem_responsavel">Sem responsável</option>{(staff ?? []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select>
           <select name="prazo" defaultValue={params.prazo} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todos os prazos</option><option value="vencido">Vencidos</option><option value="sete_dias">Próximos 7 dias</option><option value="sem_prazo">Sem prazo</option></select>
           <select name="etapa" defaultValue={params.etapa} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todas as etapas</option>{stageOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+          <select name="laudo" defaultValue={params.laudo} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Laudo DETRAN: todos</option><option value="nao_solicitado">Ainda não solicitado</option><option value="solicitado">Solicitado</option><option value="em_andamento">Em andamento</option><option value="pronto">Pronto</option><option value="nao_aplicavel">Não se aplica</option></select>
           <select name="pendencia" defaultValue={params.pendencia} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todas as pendências</option><option value="etapa_vencida">Etapa vencida</option><option value="documento_analise">Documento</option><option value="sem_responsavel">Sem responsável</option><option value="autenticacao_cliente">Autenticação</option><option value="exigencia_medica">Exigência médica</option><option value="processo_parado">Parado</option></select>
-          <div className="flex flex-wrap gap-2 lg:col-span-7"><button className="dash inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white"><Filter className="h-3.5 w-3.5" /> Aplicar filtros</button><Link href="/processos/lista" className="dash rounded-xl border border-border px-4 py-2 text-xs font-semibold text-foreground">Limpar</Link><SaveProcessFilter filters={currentFilters} /></div>
+          <div className="flex flex-wrap gap-2 lg:col-span-9"><button className="dash inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2 text-xs font-semibold text-white"><Filter className="h-3.5 w-3.5" /> Aplicar filtros</button><Link href="/processos/lista" className="dash rounded-xl border border-border px-4 py-2 text-xs font-semibold text-foreground">Limpar</Link><SaveProcessFilter filters={currentFilters} /></div>
         </form>
         {(savedFilters ?? []).length > 0 && <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3"><span className="dash text-[11px] font-semibold text-muted-foreground">Filtros salvos:</span>{(savedFilters ?? []).map(item => <Link key={item.id} href={filterHref(item.filters as Record<string, string>)} className="dash rounded-full bg-muted px-3 py-1 text-[11px] font-semibold text-foreground hover:bg-primary/10 hover:text-primary">{item.name}</Link>)}</div>}
       </section>

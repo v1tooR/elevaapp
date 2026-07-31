@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, ArrowUpRight, CalendarDays, GripVertical, Loader2, Phone, UserRound } from 'lucide-react'
+import { AlertCircle, ArrowUpRight, CalendarDays, GripVertical, Handshake, Loader2, Phone, UserRound } from 'lucide-react'
 import type { LeadSource, LeadStatus } from '@/types/database'
 import { cn, formatDate, formatPhone } from '@/lib/utils'
 import { LEAD_STATUS_META } from '@/lib/lead-funnel'
@@ -17,6 +17,7 @@ export interface LeadKanbanItem {
   converted_client_id: string | null
   created_at: string
   assignee: { id: string; name: string } | null
+  referral_partner: { id: string; name: string } | null
 }
 
 type LeadUpdate = Partial<Pick<LeadKanbanItem, 'status' | 'converted_client_id'>>
@@ -274,6 +275,12 @@ export function LeadKanbanBoard({ leads }: { leads: LeadKanbanItem[] }) {
                           <UserRound className="h-3.5 w-3.5 shrink-0" />
                           <span className="truncate">{lead.assignee?.name ?? 'Sem responsável'}</span>
                         </div>
+                        {lead.referral_partner?.name && (
+                          <div className="flex items-center gap-2">
+                            <Handshake className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{lead.referral_partner.name}</span>
+                          </div>
+                        )}
                         <div className="flex items-center gap-2">
                           <CalendarDays className="h-3.5 w-3.5 shrink-0" />
                           <span>Criado em {formatDate(lead.created_at)}</span>

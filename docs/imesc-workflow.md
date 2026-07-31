@@ -1,8 +1,14 @@
-# Workflow IMESC/IPVA
+# Operação IMESC independente
 
 ## Aplicação no banco
 
-A implementação depende da migration `011_workflow_hardening.sql`. Ela deve ser aplicada antes da publicação do novo frontend, porque as telas passam a consultar campos, tabela e RPCs criados por ela.
+A operação separada do IMESC depende da migration
+`025_independent_imesc_operations.sql`. Ela cria a carteira, o histórico, as
+políticas de acesso e o backfill dos dados antigos. A mesma migration redefine
+o workflow do IPVA sem excluir as etapas IMESC legadas.
+
+As migrations devem ser aplicadas na ordem numérica antes da publicação do
+frontend:
 
 ```powershell
 npx supabase init
@@ -21,18 +27,30 @@ npm run test:db
 
 ## Verificação pós-deploy
 
-- Criar ou abrir um processo IPVA com UF `SP` e acionar **Inicializar workflow IPVA**.
-- Confirmar que existem oito etapas, sem duplicidades.
-- Informar situação IMESC `laudo_disponivel` e conferir a conclusão das etapas de perícia e laudo.
-- Informar SEFAZ `indeferido` e a data da ciência.
-- Conferir o prazo final de 30 dias e os alertas D-10, D-3 e D-1 no calendário.
-- Protocolar o recurso e conferir o cancelamento dos alertas ainda futuros.
-- Anexar laudo, decisão e recurso, escolhendo a etapa correspondente.
-- Concluir uma emissão de CNH e confirmar que a renovação usa o vencimento digitado.
-- Concluir um IPVA e confirmar que nenhum evento anual de renovação é criado.
+- Abrir `/processos/imesc-operacao` e iniciar um acompanhamento apenas com o
+  cliente, sem IPI ou IPVA.
+- Vincular um IPI existente e confirmar o acesso ao detalhe pelo card.
+- Vincular posteriormente um IPVA do mesmo cliente.
+- Movimentar o card entre Aguardando, Leve, Moderado e Grave.
+- Exibir as situações adicionais e validar Não compareceu, Sem deficiência,
+  Indeferido e Cancelado.
+- Reduzir a etapa operacional e confirmar que datas condicionais ocultas foram
+  limpas.
+- Conferir o histórico em `imesc_followup_history`.
+- Abrir um IPVA de São Paulo, sincronizar o workflow e confirmar somente cinco
+  etapas ativas: documentos, SIVEI, SEFAZ, recurso e conclusão.
+- Confirmar que as etapas IMESC antigas continuam armazenadas, mas não aparecem
+  no progresso nem determinam a fila do IPVA.
+- Validar arrastar e soltar no desktop e o seletor “Mover para” no celular.
+- Executar o fluxo novo lead → classificação → conversão → criação dos
+  processos, confirmando que `converted_client_id` e os serviços foram
+  preservados.
 
 ## Operação
 
-- Fila consolidada: `/processos/ipva-operacao`.
-- Regras ativas: `/configuracoes`, seção **Regras jurídicas versionadas**.
-- O botão **Sincronizar** pode ser acionado novamente com segurança; etapas, eventos e notificações possuem chaves idempotentes.
+- Carteira IMESC: `/processos/imesc-operacao`.
+- Fila IPVA: `/processos/ipva-operacao`.
+- A classificação fica em `imesc_followups.board_status`, nunca no grau
+  genérico do cliente.
+- IPI e IPVA são vínculos opcionais e só podem apontar para processos do mesmo
+  cliente.

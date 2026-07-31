@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
-import { UserPlus, X, AlertCircle, CheckCircle } from 'lucide-react'
+import { UserPlus, X, AlertCircle, CheckCircle, Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   getLeadDisabilityTypes,
@@ -104,6 +104,12 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
                       <span className="font-semibold text-slate-900 dash">{lead.phone}</span>
                     </div>
                   )}
+                  {lead.email && (
+                    <div className="flex justify-between gap-4 text-sm">
+                      <span className="text-slate-500 dash">E-mail</span>
+                      <span className="truncate font-semibold text-slate-900 dash">{lead.email}</span>
+                    </div>
+                  )}
                   <div className="flex justify-between text-sm">
                     <span className="text-slate-500 dash">Perfil</span>
                     <span className="font-semibold text-slate-900 dash">
@@ -132,6 +138,15 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
                   )}
                 </div>
               </div>
+
+              {!lead.email && (
+                <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+                  <Mail className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                  <p className="dash text-sm leading-snug text-amber-800">
+                    O e-mail ainda não foi informado. A conversão pode continuar, mas alguns processos precisarão desse dado depois.
+                  </p>
+                </div>
+              )}
 
               <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3.5">
                 <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />

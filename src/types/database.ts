@@ -42,6 +42,7 @@ export type HistoryActionType =
 // --- Leads ---
 export type LeadStatus = 'novo' | 'frio' | 'quente' | 'convertido' | 'perdido'
 export type LeadSource = 'instagram' | 'google' | 'indicacao' | 'vendedor' | 'outros'
+export type ReferralPartnerType = 'vendedor' | 'indicador'
 export type LeadIntendedService =
   | 'cnh_especial'
   | 'ipi'
@@ -58,12 +59,28 @@ export type LeadIntendedService =
 // --- Shared enums ---
 export type DisabilityType = 'fisica' | 'auditiva' | 'visual' | 'monocular' | 'autismo' | 'mental'
 export type ClientType = 'condutor' | 'nao_condutor'
-export type GovAccessStatus = 'nao_validado' | 'aguardando_cliente' | 'validado' | 'com_pendencia'
+export type GovAccessStatus = 'aguardando' | 'validado' | 'nao_informou'
 export type GovAccountLevel = 'bronze' | 'prata' | 'ouro'
 export type DisabilitySeverity = 'leve' | 'moderada' | 'grave' | 'gravissima' | 'nao_informada'
 export type CnhStatus = 'nao_possui' | 'comum' | 'com_restricoes' | 'em_regularizacao' | 'inapto_temporario' | 'inapto'
 export type MedicalAssessmentStatus = 'nao_realizada' | 'agendada' | 'apto' | 'apto_com_restricoes' | 'inapto_temporario' | 'inapto'
 export type VehicleCondition = 'zero_km' | 'usado'
+export type ImescBoardStatus =
+  | 'aguardando'
+  | 'leve'
+  | 'moderado'
+  | 'grave'
+  | 'nao_compareceu'
+  | 'sem_deficiencia'
+  | 'indeferido'
+  | 'cancelado'
+export type ImescOperationalStatus =
+  | 'nao_iniciado'
+  | 'solicitacao_em_preparo'
+  | 'agendado'
+  | 'pericia_realizada'
+  | 'laudo_disponivel'
+  | 'encerrado'
 export type EligibilityStatus =
   | 'pre_elegivel'
   | 'pendente_informacoes'
@@ -136,6 +153,7 @@ export interface Client {
   disability_details?: string
   cnh_status?: CnhStatus
   cnh_restrictions?: string[]
+  cnh_expiry_date?: string
   medical_assessment_status?: MedicalAssessmentStatus
   requires_adapted_vehicle?: boolean | null
   requires_practical_exam?: boolean | null
@@ -156,6 +174,7 @@ export interface Lead {
   id: string
   name: string
   phone?: string
+  email?: string
   is_driver?: boolean
   has_cnh_especial?: boolean
   cnh_status?: CnhStatus
@@ -172,6 +191,7 @@ export interface Lead {
   intended_service?: LeadIntendedService
   intended_services?: LeadIntendedService[]
   lead_source?: LeadSource
+  referral_partner_id?: string
   assigned_to?: string
   status: LeadStatus
   converted_client_id?: string
@@ -180,6 +200,52 @@ export interface Lead {
   updated_at: string
   assignee?: Profile
   converted_client?: Client
+  referral_partner?: ReferralPartner
+}
+
+export interface ReferralPartner {
+  id: string
+  name: string
+  phone: string
+  partner_types: ReferralPartnerType[]
+  is_active: boolean
+  created_by?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface ImescFollowup {
+  id: string
+  client_id: string
+  board_status: ImescBoardStatus
+  operational_status: ImescOperationalStatus
+  responsible_user_id?: string | null
+  ipi_process_id?: string | null
+  ipva_process_id?: string | null
+  protocol?: string | null
+  scheduled_date?: string | null
+  examination_date?: string | null
+  report_issued_at?: string | null
+  report_valid_until?: string | null
+  source_classification?: DisabilitySeverity | 'sem_deficiencia' | null
+  notes?: string | null
+  started_at: string
+  completed_at?: string | null
+  created_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ImescFollowupHistory {
+  id: string
+  followup_id: string
+  changed_by?: string | null
+  old_board_status?: ImescBoardStatus | null
+  new_board_status: ImescBoardStatus
+  old_operational_status?: ImescOperationalStatus | null
+  new_operational_status: ImescOperationalStatus
+  note?: string | null
+  created_at: string
 }
 
 export interface ProcessType {
@@ -190,6 +256,8 @@ export interface ProcessType {
   icon?: string
   color: string
   is_active: boolean
+  sort_order: number
+  accepts_new_processes: boolean
   renewal_period_months?: number | null
   renewal_notes?: string | null
   created_at: string
@@ -392,6 +460,16 @@ export type Database = {
         Row: Lead
         Insert: Omit<Lead, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<Lead, 'id' | 'created_at' | 'updated_at'>>
+      }
+      imesc_followups: {
+        Row: ImescFollowup
+        Insert: Omit<ImescFollowup, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<ImescFollowup, 'id' | 'created_at' | 'updated_at'>>
+      }
+      imesc_followup_history: {
+        Row: ImescFollowupHistory
+        Insert: Omit<ImescFollowupHistory, 'id' | 'created_at'>
+        Update: never
       }
       process_types: {
         Row: ProcessType
