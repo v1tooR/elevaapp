@@ -81,6 +81,18 @@ export type ImescOperationalStatus =
   | 'pericia_realizada'
   | 'laudo_disponivel'
   | 'encerrado'
+export type ServiceEngagementStatus = 'ativo' | 'concluido' | 'cancelado'
+export type ServicePlanItemStatus =
+  | 'planejado'
+  | 'pronto_para_iniciar'
+  | 'iniciado'
+  | 'concluido'
+  | 'adiado'
+  | 'recusado'
+  | 'cancelado'
+export type FinancialContractStatus = 'ativo' | 'concluido' | 'cancelado'
+export type FinancialInstallmentStatus = 'pendente' | 'parcial' | 'pago' | 'cancelado'
+export type FinancialCommissionStatus = 'pendente' | 'pago' | 'dispensado'
 export type EligibilityStatus =
   | 'pre_elegivel'
   | 'pendente_informacoes'
@@ -125,6 +137,7 @@ export interface Profile {
 export interface Client {
   id: string
   profile_id?: string
+  commercial_owner_id?: string | null
   name: string
   cpf?: string
   cpf_normalized?: string
@@ -228,6 +241,10 @@ export interface ImescFollowup {
   report_issued_at?: string | null
   report_valid_until?: string | null
   source_classification?: DisabilitySeverity | 'sem_deficiencia' | null
+  next_action?: string | null
+  action_owner?: 'equipe' | 'cliente' | 'orgao' | 'terceiro' | null
+  action_due_date?: string | null
+  blocked_reason?: string | null
   notes?: string | null
   started_at: string
   completed_at?: string | null
@@ -290,6 +307,9 @@ export interface Process {
   renewal_date?: string | null
   renewal_calendar_event_id?: string | null
   duplicate_of_process_id?: string | null
+  service_engagement_id?: string | null
+  service_plan_item_id?: string | null
+  vehicle_id?: string | null
   service_order?: number | null
   origin_lead_id?: string | null
   created_at: string
@@ -300,6 +320,67 @@ export interface Process {
   custom_fields?: ProcessCustomField[]
   financials?: ProcessFinancial
   stages?: ProcessStage[]
+}
+
+export interface ClientServiceEngagement {
+  id: string
+  client_id: string
+  origin_lead_id?: string | null
+  commercial_owner_id?: string | null
+  status: ServiceEngagementStatus
+  notes?: string | null
+  created_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ClientServicePlanItem {
+  id: string
+  engagement_id: string
+  process_type_id: string
+  service_key: LeadIntendedService
+  sort_order: number
+  status: ServicePlanItemStatus
+  process_id?: string | null
+  prerequisite_item_id?: string | null
+  wait_reason?: string | null
+  decision_reason?: string | null
+  decided_by?: string | null
+  ready_at?: string | null
+  started_at?: string | null
+  completed_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface ClientServicePlanHistory {
+  id: string
+  plan_item_id: string
+  changed_by?: string | null
+  old_status?: ServicePlanItemStatus | null
+  new_status: ServicePlanItemStatus
+  note?: string | null
+  created_at: string
+}
+
+export interface ClientVehicle {
+  id: string
+  client_id: string
+  description?: string | null
+  vehicle_condition: VehicleCondition
+  plate?: string | null
+  plate_normalized?: string | null
+  renavam?: string | null
+  renavam_normalized?: string | null
+  chassis?: string | null
+  chassis_normalized?: string | null
+  brand?: string | null
+  model?: string | null
+  model_year?: number | null
+  is_active: boolean
+  created_by?: string | null
+  created_at: string
+  updated_at: string
 }
 
 export interface ProcessStage {
@@ -442,6 +523,77 @@ export interface ProcessFinancial {
   updated_at: string
 }
 
+export interface FinancialContract {
+  id: string
+  client_id: string
+  service_engagement_id?: string | null
+  process_id?: string | null
+  total_amount: number
+  discount_amount: number
+  net_amount: number
+  payment_method?: 'pix' | 'cartao' | 'boleto' | 'dinheiro' | 'transferencia' | null
+  status: FinancialContractStatus
+  contracted_at: string
+  notes?: string | null
+  created_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FinancialInstallment {
+  id: string
+  contract_id: string
+  installment_number: number
+  due_date: string
+  amount: number
+  paid_amount: number
+  status: FinancialInstallmentStatus
+  last_paid_at?: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface FinancialReceipt {
+  id: string
+  installment_id: string
+  amount: number
+  paid_at: string
+  payment_method?: string | null
+  note?: string | null
+  finance_entry_id?: string | null
+  created_by?: string | null
+  created_at: string
+}
+
+export interface FinancialContractCost {
+  id: string
+  contract_id: string
+  process_id?: string | null
+  description: string
+  amount: number
+  occurred_at: string
+  finance_entry_id?: string | null
+  created_by?: string | null
+  created_at: string
+}
+
+export interface FinancialCommission {
+  id: string
+  contract_id: string
+  referral_partner_id?: string | null
+  profile_id?: string | null
+  beneficiary_name?: string | null
+  percentage?: number | null
+  amount: number
+  status: FinancialCommissionStatus
+  due_date?: string | null
+  paid_at?: string | null
+  finance_entry_id?: string | null
+  created_by?: string | null
+  created_at: string
+  updated_at: string
+}
+
 // Database generic type for Supabase
 export type Database = {
   public: {
@@ -470,6 +622,26 @@ export type Database = {
         Row: ImescFollowupHistory
         Insert: Omit<ImescFollowupHistory, 'id' | 'created_at'>
         Update: never
+      }
+      client_service_engagements: {
+        Row: ClientServiceEngagement
+        Insert: Omit<ClientServiceEngagement, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<ClientServiceEngagement, 'id' | 'created_at' | 'updated_at'>>
+      }
+      client_service_plan_items: {
+        Row: ClientServicePlanItem
+        Insert: Omit<ClientServicePlanItem, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<ClientServicePlanItem, 'id' | 'created_at' | 'updated_at'>>
+      }
+      client_service_plan_history: {
+        Row: ClientServicePlanHistory
+        Insert: Omit<ClientServicePlanHistory, 'id' | 'created_at'>
+        Update: never
+      }
+      client_vehicles: {
+        Row: ClientVehicle
+        Insert: Omit<ClientVehicle, 'id' | 'plate_normalized' | 'renavam_normalized' | 'chassis_normalized' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<ClientVehicle, 'id' | 'plate_normalized' | 'renavam_normalized' | 'chassis_normalized' | 'created_at' | 'updated_at'>>
       }
       process_types: {
         Row: ProcessType
@@ -515,6 +687,31 @@ export type Database = {
         Row: ProcessFinancial
         Insert: Omit<ProcessFinancial, 'id' | 'created_at' | 'updated_at'>
         Update: Partial<Omit<ProcessFinancial, 'id' | 'created_at' | 'updated_at'>>
+      }
+      financial_contracts: {
+        Row: FinancialContract
+        Insert: Omit<FinancialContract, 'id' | 'net_amount' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<FinancialContract, 'id' | 'net_amount' | 'created_at' | 'updated_at'>>
+      }
+      financial_installments: {
+        Row: FinancialInstallment
+        Insert: Omit<FinancialInstallment, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<FinancialInstallment, 'id' | 'created_at' | 'updated_at'>>
+      }
+      financial_receipts: {
+        Row: FinancialReceipt
+        Insert: Omit<FinancialReceipt, 'id' | 'created_at'>
+        Update: never
+      }
+      financial_contract_costs: {
+        Row: FinancialContractCost
+        Insert: Omit<FinancialContractCost, 'id' | 'created_at'>
+        Update: Partial<Omit<FinancialContractCost, 'id' | 'created_at'>>
+      }
+      financial_commissions: {
+        Row: FinancialCommission
+        Insert: Omit<FinancialCommission, 'id' | 'created_at' | 'updated_at'>
+        Update: Partial<Omit<FinancialCommission, 'id' | 'created_at' | 'updated_at'>>
       }
       legal_rule_versions: {
         Row: LegalRuleVersion

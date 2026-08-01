@@ -4,6 +4,12 @@ import { createClient } from '@/lib/supabase/server'
 import { OPEN_LEAD_STATUSES } from '@/lib/lead-funnel'
 import { requireAuth } from '@/lib/auth'
 import { IPVA_STAGE_KEYS } from '@/lib/process-workflow'
+import {
+  compareOperationalActions,
+  deriveProcessAction,
+  type OperationalActor,
+  type OperationalPriority,
+} from '@/lib/process-actions'
 import type { ProcessStatus, UserRole } from '@/types/database'
 
 const ACTIVE_STATUSES = new Set<ProcessStatus>([
@@ -18,6 +24,10 @@ const CLOSED_STAGE_STATUSES = new Set(['concluido', 'aprovado', 'reprovado', 'na
 const OPEN_MEDICAL_STATUSES = new Set(['pendente', 'aguardando_exame', 'aguardando_retorno', 'em_andamento'])
 
 export type RoutineCategory =
+  | 'acao_equipe'
+  | 'aguardando_cliente'
+  | 'aguardando_orgao'
+  | 'sem_proxima_acao'
   | 'etapa_vencida'
   | 'prazo_proximo'
   | 'documento_analise'
@@ -37,6 +47,16 @@ export interface RoutineItem {
   processId: string | null
   clientName: string
   responsibleName: string | null
+  responsibleId?: string | null
+  serviceName?: string | null
+  serviceSlug?: string | null
+  stageName?: string | null
+  stageStatus?: string | null
+  actor?: OperationalActor | null
+  priority?: OperationalPriority
+  priorityRank?: number
+  blocker?: string | null
+  reasons?: string[]
 }
 
 export interface OperationalStageSummary {
@@ -64,7 +84,7 @@ export interface OperationalProcessSummary {
   created_at: string
   updated_at: string
   completed_at: string | null
-  clients: { id: string; name: string; cpf: string | null; gov_access_status: string } | null
+  clients: { id: string; name: string; cpf: string | null; phone: string | null; gov_access_status: string } | null
   process_types: { id: string; name: string; slug: string; color: string | null } | null
   responsible_user: { id: string; name: string } | null
 }
@@ -118,13 +138,16 @@ export function getProcessOperationalSummary({ process, stages, lastActivityAt }
   const openMedicalRequirement = medicalRequirements
     .map(asRecord)
     .find(requirement => OPEN_MEDICAL_STATUSES.has(String(requirement.status ?? 'pendente')))
-  const actor = process.action_owner
-    ?? (process.status === 'aguardando_documentos'
-      ? 'cliente'
-      : process.status === 'aguardando_orgao'
-        ? 'orgao'
-        : 'equipe')
-  const dueDate = process.action_due_date ?? currentStage?.due_date ?? currentStage?.scheduled_date ?? null
+  const action = deriveProcessAction({
+    processStatus: process.status,
+    nextAction: process.next_action,
+    actionOwner: process.action_owner,
+    actionDueDate: process.action_due_date,
+    blockedReason: process.blocked_reason
+      ?? (openMedicalRequirement ? String(openMedicalRequirement.title ?? 'Exigência médica aberta') : null),
+    currentStage,
+    today: dateKeyInSaoPaulo(),
+  })
   const lastActivity = maxDate(
     process.updated_at,
     lastActivityAt,
@@ -133,11 +156,8 @@ export function getProcessOperationalSummary({ process, stages, lastActivityAt }
 
   return {
     currentStage,
-    nextAction: process.next_action ?? currentStage?.label ?? (ACTIVE_STATUSES.has(process.status) ? 'Definir próxima ação' : 'Processo finalizado'),
-    actor,
-    dueDate,
-    blocker: process.blocked_reason
-      ?? (openMedicalRequirement ? String(openMedicalRequirement.title ?? 'Exigência médica aberta') : null),
+    stageStatus: currentStage?.status ?? null,
+    ...action,
     lastActivity,
   }
 }
@@ -177,7 +197,7 @@ export async function getStaffOperations() {
     .select(`
       id, status, protocol, responsible_user_id, action_due_date, next_action,
       action_owner, blocked_reason, last_client_update_at, created_at, updated_at, completed_at,
-      clients(id, name, cpf, gov_access_status),
+      clients(id, name, cpf, phone, gov_access_status),
       process_types(id, name, slug, color),
       responsible_user:profiles!responsible_user_id(id, name)
     `)
@@ -185,15 +205,32 @@ export async function getStaffOperations() {
 
   if (profile.role === 'analista') processQuery = processQuery.eq('responsible_user_id', profile.id)
 
-  const [{ data: processRows, error: processError }, { data: staffRows }, { data: leadRows }] = await Promise.all([
+  let imescQuery = supabase
+    .from('imesc_followups')
+    .select(`
+      id, client_id, operational_status, responsible_user_id,
+      next_action, action_owner, action_due_date, blocked_reason, updated_at,
+      clients(id, name), responsible_user:profiles!responsible_user_id(id, name)
+    `)
+    .neq('operational_status', 'encerrado')
+  if (profile.role === 'analista') imescQuery = imescQuery.eq('responsible_user_id', profile.id)
+
+  const [
+    { data: processRows, error: processError },
+    { data: staffRows },
+    { data: leadRows },
+    { data: imescRows, error: imescError },
+  ] = await Promise.all([
     processQuery,
     supabase.from('profiles').select('id, name, role, is_active').in('role', ['super_admin', 'admin', 'analista']).eq('is_active', true).order('name'),
     profile.role === 'analista'
       ? supabase.from('leads').select('id, status, assigned_to').eq('assigned_to', profile.id).in('status', [...OPEN_LEAD_STATUSES])
       : supabase.from('leads').select('id, status, assigned_to').in('status', [...OPEN_LEAD_STATUSES]),
+    imescQuery,
   ])
 
   if (processError) throw new Error('Não foi possível carregar a operação.')
+  if (imescError) throw new Error('Nao foi possivel carregar a operacao IMESC.')
   const processes = (processRows ?? []).map(row => normalizeProcess(row as unknown as Record<string, unknown>))
   const processIds = processes.map(process => process.id)
 
@@ -229,18 +266,54 @@ export async function getStaffOperations() {
     if (!historyByProcess.has(row.process_id)) historyByProcess.set(row.process_id, row.created_at)
   }
 
-  const routineItems: RoutineItem[] = []
-  const pushItem = (item: RoutineItem) => routineItems.push(item)
+  const routineItemCandidates: RoutineItem[] = []
+  const pushItem = (item: RoutineItem) => routineItemCandidates.push(item)
 
   for (const process of processes) {
     if (!ACTIVE_STATUSES.has(process.status)) continue
     const clientName = process.clients?.name ?? 'Cliente não informado'
     const responsibleName = process.responsible_user?.name ?? null
-    const processStages = stagesByProcess.get(process.id) ?? []
+    const processStages = process.process_types?.slug === 'processo_ipva'
+      ? (stagesByProcess.get(process.id) ?? []).filter(stage => (
+          (IPVA_STAGE_KEYS as readonly string[]).includes(stage.stage_key)
+        ))
+      : stagesByProcess.get(process.id) ?? []
     const operational = getProcessOperationalSummary({
       process,
       stages: processStages,
       lastActivityAt: historyByProcess.get(process.id),
+    })
+
+    const actionCategory: RoutineCategory = operational.actor === 'equipe'
+      ? operational.priority === 'sem_acao' ? 'sem_proxima_acao' : 'acao_equipe'
+      : operational.actor === 'cliente'
+        ? 'aguardando_cliente'
+        : 'aguardando_orgao'
+    pushItem({
+      id: `action:${process.id}`,
+      category: actionCategory,
+      severity: operational.isOverdue
+        ? 'critical'
+        : operational.requiresTeamAction ? 'high' : 'medium',
+      title: operational.nextAction,
+      detail: [
+        process.process_types?.name,
+        operational.currentStage?.label,
+      ].filter(Boolean).join(' · ') || 'Processo sem etapa definida',
+      href: `/processos/${process.id}`,
+      dueDate: operational.dueDate,
+      processId: process.id,
+      clientName,
+      responsibleName,
+      responsibleId: process.responsible_user_id,
+      serviceName: process.process_types?.name ?? null,
+      serviceSlug: process.process_types?.slug ?? null,
+      stageName: operational.currentStage?.label ?? null,
+      stageStatus: operational.stageStatus,
+      actor: operational.actor,
+      priority: operational.priority,
+      priorityRank: operational.priorityRank,
+      blocker: operational.blocker,
     })
 
     for (const stage of processStages) {
@@ -326,6 +399,49 @@ export async function getStaffOperations() {
     }
   }
 
+  for (const followup of imescRows ?? []) {
+    const client = relationOne(followup.clients as { id: string; name: string } | Array<{ id: string; name: string }> | null)
+    const responsible = relationOne(followup.responsible_user as { id: string; name: string } | Array<{ id: string; name: string }> | null)
+    const action = deriveProcessAction({
+      processStatus: 'em_andamento',
+      nextAction: followup.next_action,
+      actionOwner: followup.action_owner,
+      actionDueDate: followup.action_due_date,
+      blockedReason: followup.blocked_reason,
+      currentStage: {
+        label: `IMESC - ${String(followup.operational_status).replaceAll('_', ' ')}`,
+        status: 'em_andamento',
+      },
+      today,
+    })
+    const category: RoutineCategory = action.actor === 'equipe'
+      ? action.priority === 'sem_acao' ? 'sem_proxima_acao' : 'acao_equipe'
+      : action.actor === 'cliente'
+        ? 'aguardando_cliente'
+        : 'aguardando_orgao'
+    pushItem({
+      id: `imesc:${followup.id}`,
+      category,
+      severity: action.isOverdue ? 'critical' : action.requiresTeamAction ? 'high' : 'medium',
+      title: action.nextAction,
+      detail: `IMESC - ${String(followup.operational_status).replaceAll('_', ' ')}`,
+      href: '/processos/imesc-operacao',
+      dueDate: action.dueDate,
+      processId: null,
+      clientName: client?.name ?? 'Cliente nao informado',
+      responsibleName: responsible?.name ?? null,
+      responsibleId: followup.responsible_user_id,
+      serviceName: 'IMESC',
+      serviceSlug: 'imesc',
+      stageName: String(followup.operational_status).replaceAll('_', ' '),
+      stageStatus: followup.operational_status,
+      actor: action.actor,
+      priority: action.priority,
+      priorityRank: action.priorityRank,
+      blocker: action.blocker,
+    })
+  }
+
   for (const document of documentResult.data ?? []) {
     const processId = document.process_id
     const process = processes.find(item => item.id === processId)
@@ -363,7 +479,37 @@ export async function getStaffOperations() {
   }
 
   const severityOrder = { critical: 0, high: 1, medium: 2 }
+  const consolidatedByProcess = new Map<string, RoutineItem>()
+  for (const item of routineItemCandidates) {
+    const key = item.processId ? `process:${item.processId}` : item.id
+    const current = consolidatedByProcess.get(key)
+    const reason = item.detail ? `${item.title}: ${item.detail}` : item.title
+    if (!current) {
+      consolidatedByProcess.set(key, { ...item, reasons: [reason] })
+      continue
+    }
+
+    const reasons = [...new Set([...(current.reasons ?? []), reason])]
+    const currentRank = current.priorityRank ?? severityOrder[current.severity]
+    const itemRank = item.priorityRank ?? severityOrder[item.severity]
+    const replace = itemRank < currentRank
+      || (itemRank === currentRank
+        && (item.dueDate ?? '9999-12-31') < (current.dueDate ?? '9999-12-31'))
+    consolidatedByProcess.set(key, {
+      ...(replace ? item : current),
+      reasons,
+      blocker: current.blocker ?? item.blocker ?? null,
+    })
+  }
+
+  const routineItems = [...consolidatedByProcess.values()]
   routineItems.sort((a, b) => {
+    if (a.priorityRank != null && b.priorityRank != null) {
+      return compareOperationalActions(
+        { priorityRank: a.priorityRank, dueDate: a.dueDate },
+        { priorityRank: b.priorityRank, dueDate: b.dueDate },
+      )
+    }
     const severity = severityOrder[a.severity] - severityOrder[b.severity]
     if (severity !== 0) return severity
     return (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31')
@@ -394,11 +540,11 @@ export async function getStaffOperations() {
       activeProcesses: activeProcesses.length,
       clientsInService: new Set(activeProcesses.map(process => process.clients?.id).filter(Boolean)).size,
       overdue: routineItems.filter(item => item.severity === 'critical').length,
-      dueSoon: routineItems.filter(item => item.category === 'prazo_proximo' && item.severity !== 'critical').length,
-      documentsForReview: routineItems.filter(item => item.category === 'documento_analise').length,
-      unassigned: routineItems.filter(item => item.category === 'sem_responsavel').length,
-      medicalRequirements: routineItems.filter(item => item.category === 'exigencia_medica').length,
-      stalled: routineItems.filter(item => item.category === 'processo_parado').length,
+      dueSoon: routineItemCandidates.filter(item => item.category === 'prazo_proximo' && item.severity !== 'critical').length,
+      documentsForReview: routineItemCandidates.filter(item => item.category === 'documento_analise').length,
+      unassigned: routineItemCandidates.filter(item => item.category === 'sem_responsavel').length,
+      medicalRequirements: routineItemCandidates.filter(item => item.category === 'exigencia_medica').length,
+      stalled: routineItemCandidates.filter(item => item.category === 'processo_parado').length,
       openLeads: leadRows?.length ?? 0,
       completedLast30Days,
     },

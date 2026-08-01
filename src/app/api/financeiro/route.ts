@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+interface AmountRow {
+  type: 'INCOME' | 'EXPENSE'
+  amount: number | string
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   const { data: _role } = await supabase.from('profiles').select('role').eq('auth_user_id', user.id).single()
-  if (_role?.role !== 'super_admin') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!['super_admin', 'admin'].includes(_role?.role ?? '')) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const type = searchParams.get('type')
@@ -38,7 +43,7 @@ export async function GET(request: NextRequest) {
   const { data: entries, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  const rows = (entries as any[]) ?? []
+  const rows = (entries ?? []) as unknown as AmountRow[]
   const totalIncome  = rows.filter(e => e.type === 'INCOME').reduce((s, e) => s + Number(e.amount), 0)
   const totalExpense = rows.filter(e => e.type === 'EXPENSE').reduce((s, e) => s + Number(e.amount), 0)
 
@@ -55,7 +60,7 @@ export async function POST(request: NextRequest) {
 
   const { data: profile } = await supabase
     .from('profiles').select('id, role').eq('auth_user_id', user.id).single()
-  if (!profile || (profile as any).role !== 'super_admin') {
+  if (!profile || !['super_admin', 'admin'].includes(profile.role)) {
     return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
   }
 
@@ -75,7 +80,7 @@ export async function POST(request: NextRequest) {
     client_id: client_id || null,
     status: status || 'CONFIRMED',
     recurrence: recurrence || 'NONE',
-    created_by: (profile as any).id,
+    created_by: profile.id,
   }).select('*, category:finance_categories(id,name,color)').single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

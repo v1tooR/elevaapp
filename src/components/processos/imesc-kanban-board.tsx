@@ -97,6 +97,13 @@ const OPERATIONAL_ORDER: ImescOperationalStatus[] = [
   'encerrado',
 ]
 
+const ACTION_OWNER_LABELS = {
+  equipe: 'Equipe Eleva',
+  cliente: 'Cliente',
+  orgao: 'IMESC / orgao',
+  terceiro: 'Terceiro',
+} as const
+
 interface FormState {
   clientId: string
   boardStatus: ImescBoardStatus
@@ -110,6 +117,10 @@ interface FormState {
   reportIssuedAt: string
   reportValidUntil: string
   sourceClassification: '' | 'grave' | 'gravissima'
+  nextAction: string
+  actionOwner: '' | 'equipe' | 'cliente' | 'orgao' | 'terceiro'
+  actionDueDate: string
+  blockedReason: string
   notes: string
 }
 
@@ -126,6 +137,10 @@ const EMPTY_FORM: FormState = {
   reportIssuedAt: '',
   reportValidUntil: '',
   sourceClassification: '',
+  nextAction: '',
+  actionOwner: '',
+  actionDueDate: '',
+  blockedReason: '',
   notes: '',
 }
 
@@ -152,6 +167,10 @@ function rowToForm(row: ImescBoardRow): FormState {
       : row.board_status === 'grave'
         ? 'grave'
         : '',
+    nextAction: row.next_action ?? '',
+    actionOwner: row.action_owner ?? '',
+    actionDueDate: row.action_due_date ?? '',
+    blockedReason: row.blocked_reason ?? '',
     notes: row.notes ?? '',
   }
 }
@@ -272,6 +291,10 @@ export function ImescKanbanBoard({
       reportIssuedAt: form.reportIssuedAt || null,
       reportValidUntil: form.reportValidUntil || null,
       sourceClassification: form.sourceClassification || null,
+      nextAction: form.nextAction || null,
+      actionOwner: form.actionOwner || null,
+      actionDueDate: form.actionDueDate || null,
+      blockedReason: form.blockedReason || null,
       notes: form.notes || null,
     }
 
@@ -470,6 +493,24 @@ export function ImescKanbanBoard({
                             {IMESC_OPERATIONAL_LABELS[row.operational_status]}
                           </span>
 
+                          {row.next_action && (
+                            <div className={cn(
+                              'dash mt-2 rounded-lg border px-2.5 py-2 text-[11px]',
+                              row.action_owner === 'equipe'
+                                ? 'border-red-200 bg-red-50 text-red-800'
+                                : 'border-slate-200 bg-slate-50 text-slate-700',
+                            )}>
+                              <p className="font-bold">{row.next_action}</p>
+                              <p className="mt-0.5 text-[10px] opacity-75">
+                                {row.action_owner ? ACTION_OWNER_LABELS[row.action_owner] : 'Ator nao definido'}
+                                {row.action_due_date ? ` · ate ${formatDate(row.action_due_date)}` : ''}
+                              </p>
+                              {row.blocked_reason && (
+                                <p className="mt-1 border-t border-current/10 pt-1 text-[10px]">Bloqueio: {row.blocked_reason}</p>
+                              )}
+                            </div>
+                          )}
+
                           <div className="mt-2.5 space-y-1 text-[10px] text-muted-foreground">
                             {row.scheduled_date && (
                               <p className="dash flex items-center gap-1">
@@ -656,6 +697,58 @@ export function ImescKanbanBoard({
                   />
                 </label>
               </div>
+
+              <fieldset className="rounded-xl border border-red-100 bg-red-50/30 p-4">
+                <legend className="dash px-1 text-xs font-bold text-foreground">Proxima acao operacional</legend>
+                <p className="dash mb-3 text-[11px] text-muted-foreground">
+                  Use vermelho somente quando a equipe Eleva precisa agir.
+                </p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="dash space-y-1 text-xs font-semibold text-muted-foreground sm:col-span-2">
+                    Proxima acao
+                    <input
+                      value={form.nextAction}
+                      onChange={event => setForm(current => ({ ...current, nextAction: event.target.value }))}
+                      placeholder="Ex.: cobrar retorno do agendamento"
+                      className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm font-normal text-foreground"
+                    />
+                  </label>
+                  <label className="dash space-y-1 text-xs font-semibold text-muted-foreground">
+                    Quem precisa agir
+                    <select
+                      value={form.actionOwner}
+                      onChange={event => setForm(current => ({
+                        ...current,
+                        actionOwner: event.target.value as FormState['actionOwner'],
+                      }))}
+                      className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm font-normal text-foreground"
+                    >
+                      <option value="">Definir automaticamente</option>
+                      {Object.entries(ACTION_OWNER_LABELS).map(([value, label]) => (
+                        <option key={value} value={value}>{label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="dash space-y-1 text-xs font-semibold text-muted-foreground">
+                    Prazo da acao
+                    <input
+                      type="date"
+                      value={form.actionDueDate}
+                      onChange={event => setForm(current => ({ ...current, actionDueDate: event.target.value }))}
+                      className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm font-normal text-foreground"
+                    />
+                  </label>
+                  <label className="dash space-y-1 text-xs font-semibold text-muted-foreground sm:col-span-2">
+                    Motivo de bloqueio
+                    <input
+                      value={form.blockedReason}
+                      onChange={event => setForm(current => ({ ...current, blockedReason: event.target.value }))}
+                      placeholder="Preencha apenas quando algo impedir o andamento"
+                      className="h-10 w-full rounded-xl border border-border bg-card px-3 text-sm font-normal text-foreground"
+                    />
+                  </label>
+                </div>
+              </fieldset>
 
               <fieldset className="rounded-xl border border-border bg-muted/25 p-4">
                 <legend className="dash px-1 text-xs font-bold text-foreground">Processos relacionados</legend>

@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     .eq('auth_user_id', user.id)
     .single()
 
-  if (profile?.role !== 'super_admin') {
+  if (!['super_admin', 'admin'].includes(profile?.role ?? '')) {
     return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
   }
 

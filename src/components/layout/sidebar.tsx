@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Users, Target, FolderOpen, FileText,
   Calendar, Bell, Settings, LogOut, Banknote, X, ChevronRight, ListTodo, ListFilter, Handshake,
-  Stethoscope,
+  Stethoscope, RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ElevaIcon } from '@/components/brand/eleva-icon'
@@ -30,12 +30,18 @@ const adminNav = [
   { href: '/documentos',   label: 'Documentos',   icon: FileText,        group: 'main'    },
   { href: '/calendario',   label: 'Calendário',   icon: Calendar,        group: 'comms'   },
   { href: '/notificacoes', label: 'Notificações', icon: Bell,            group: 'comms',  badge: true },
+  { href: '/renovacoes', label: 'Renovacoes', icon: RefreshCw, group: 'comms' },
 ]
 
 const superAdminNav = [
   ...adminNav,
   { href: '/financeiro',    label: 'Financeiro',    icon: Banknote, group: 'finance' },
   { href: '/configuracoes', label: 'Configurações', icon: Settings, group: 'system'  },
+]
+
+const administratorNav = [
+  ...adminNav,
+  { href: '/financeiro', label: 'Financeiro', icon: Banknote, group: 'finance' },
 ]
 
 const clientNav = [
@@ -75,7 +81,9 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
     ? clientNav
     : role === 'super_admin'
       ? superAdminNav
-      : adminNav
+      : role === 'admin'
+        ? administratorNav
+        : adminNav
 
   const initials = profile?.name?.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase() ?? '?'
 

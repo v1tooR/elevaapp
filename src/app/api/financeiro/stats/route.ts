@@ -3,12 +3,23 @@ import { createClient } from '@/lib/supabase/server'
 
 const MONTH_LABELS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez']
 
+interface AmountRow { type: string; amount: number | string }
+interface CategoryAmountRow {
+  amount: number | string
+  category: { id: string; name: string; color: string | null } | null
+}
+interface ReceivableRow {
+  service_value: number | string | null
+  payment_status: string
+  process: unknown
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
   const { data: _r } = await supabase.from('profiles').select('role').eq('auth_user_id', user.id).single()
-  if (_r?.role !== 'super_admin') return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!['super_admin', 'admin'].includes(_r?.role ?? '')) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { searchParams } = new URL(request.url)
   const month = searchParams.get('month') // "2025-06"
@@ -34,7 +45,7 @@ export async function GET(request: NextRequest) {
       .lte('occurred_at', end)
       .eq('status', 'CONFIRMED')
 
-    const rows = (data as any[]) ?? []
+    const rows = (data ?? []) as unknown as AmountRow[]
     months.push({
       month: `${y}-${String(m + 1).padStart(2, '0')}`,
       label: MONTH_LABELS[m],
@@ -56,7 +67,7 @@ export async function GET(request: NextRequest) {
     .lte('occurred_at', currEnd)
 
   const catMap = new Map<string, { id: string | null; name: string; color: string | null; total: number }>()
-  for (const row of (catData as any[]) ?? []) {
+  for (const row of (catData ?? []) as unknown as CategoryAmountRow[]) {
     const key = row.category?.id ?? '__none'
     const existing = catMap.get(key)
     if (existing) {
@@ -92,7 +103,9 @@ export async function GET(request: NextRequest) {
     .from('finance_entries').select('type, amount')
     .gte('occurred_at', prevStart).lte('occurred_at', prevEnd)
 
-  const sum = (rows: any[], t: string) => ((rows ?? []) as any[]).filter(r => r.type === t).reduce((s, r) => s + Number(r.amount), 0)
+  const sum = (rows: AmountRow[], type: string) => rows
+    .filter(row => row.type === type)
+    .reduce((total, row) => total + Number(row.amount), 0)
 
   // Receivables: process_financials pending/overdue
   const { data: receivables } = await supabase
@@ -100,21 +113,22 @@ export async function GET(request: NextRequest) {
     .select('service_value, payment_status, process:processes(id, title, client:clients(id, name))')
     .in('payment_status', ['pending', 'overdue'])
 
-  const totalReceivable = ((receivables as any[]) ?? []).reduce((s, r) => s + Number(r.service_value ?? 0), 0)
+  const receivableRows = (receivables ?? []) as unknown as ReceivableRow[]
+  const totalReceivable = receivableRows.reduce((total, row) => total + Number(row.service_value ?? 0), 0)
 
   return NextResponse.json({
     months,
     categoryBreakdown,
     comparison: {
-      currentIncome:  sum(currRows ?? [], 'INCOME'),
-      currentExpense: sum(currRows ?? [], 'EXPENSE'),
-      prevIncome:     sum(prevRows ?? [], 'INCOME'),
-      prevExpense:    sum(prevRows ?? [], 'EXPENSE'),
+      currentIncome:  sum((currRows ?? []) as unknown as AmountRow[], 'INCOME'),
+      currentExpense: sum((currRows ?? []) as unknown as AmountRow[], 'EXPENSE'),
+      prevIncome:     sum((prevRows ?? []) as unknown as AmountRow[], 'INCOME'),
+      prevExpense:    sum((prevRows ?? []) as unknown as AmountRow[], 'EXPENSE'),
     },
     receivables: {
       total: totalReceivable,
-      count: ((receivables as any[]) ?? []).length,
-      items: ((receivables as any[]) ?? []).slice(0, 5),
+      count: receivableRows.length,
+      items: receivableRows.slice(0, 5),
     },
   })
 }

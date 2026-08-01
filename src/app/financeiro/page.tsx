@@ -1,4 +1,5 @@
 import { FinanceiroClient } from '@/components/financeiro/financeiro-client'
+import { FinancialContractsPanel } from '@/components/financeiro/financial-contracts-panel'
 import { Banknote, ShieldCheck } from 'lucide-react'
 
 export const metadata = { title: 'Financeiro — Eleva Isenções' }
@@ -35,12 +36,16 @@ export default function FinanceiroPage() {
 
           <div className="dash inline-flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/8 px-3 py-1.5 text-[11px] font-semibold text-white/55">
             <ShieldCheck className="h-3.5 w-3.5 text-[#E5A27F]" />
-            Acesso exclusivo do Super Admin
+            Acesso restrito a administradores
           </div>
         </div>
       </section>
 
       <div className="anim anim-2">
+        <FinancialContractsPanel />
+      </div>
+
+      <div className="anim anim-2 border-t border-border pt-5">
         <FinanceiroClient />
       </div>
     </div>

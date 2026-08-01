@@ -45,6 +45,10 @@ const createFollowupSchema = z.object({
     'gravissima',
     'sem_deficiencia',
   ]).nullable().optional(),
+  nextAction: z.string().trim().max(300).nullable().optional(),
+  actionOwner: z.enum(['equipe', 'cliente', 'orgao', 'terceiro']).nullable().optional(),
+  actionDueDate: nullableDate,
+  blockedReason: z.string().trim().max(1000).nullable().optional(),
   notes: z.string().trim().max(4000).nullable().optional(),
 })
 
@@ -103,6 +107,10 @@ export async function POST(request: Request) {
     report_issued_at: parsed.data.reportIssuedAt,
     report_valid_until: parsed.data.reportValidUntil,
     source_classification: parsed.data.sourceClassification,
+    next_action: parsed.data.nextAction,
+    action_owner: parsed.data.actionOwner,
+    action_due_date: parsed.data.actionDueDate,
+    blocked_reason: parsed.data.blockedReason,
     notes: parsed.data.notes,
   })
 

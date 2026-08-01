@@ -7,14 +7,31 @@ import { LEAD_FUNNEL_STATUSES } from '@/lib/lead-funnel'
 import {
   getLeadIntendedServices,
   LEAD_SERVICE_PROCESS_TYPE_SLUGS,
+  normalizeLeadIntendedServices,
 } from '@/lib/lead-eligibility'
 import { getCnhStageTemplates } from '@/lib/cnh-stages'
 import { buildOperationalStageRows } from '@/lib/operational-workflows'
+import { buildServicePlanDefinitions, getServicePrerequisite } from '@/lib/service-plan'
 import { analyzeEligibility } from '@/lib/eligibility'
-import type { Client, Lead } from '@/types/database'
+import type { Client, Lead, LeadIntendedService, ProcessStatus } from '@/types/database'
+
+const intendedServiceValues = [
+  'cnh_especial',
+  'ipi',
+  'icms',
+  'ipva',
+  'credencial_estacionamento',
+  'cin',
+  'emplacamento',
+  'renovacao',
+  'isencao_ir',
+  'aposentadoria',
+  'alvara',
+] as const
 
 const statusSchema = z.object({
   status: z.enum(LEAD_FUNNEL_STATUSES),
+  selectedServices: z.array(z.enum(intendedServiceValues)).min(1).max(11).optional(),
 })
 
 type QueueLead = Pick<
@@ -41,6 +58,7 @@ interface QueueProcess {
   id: string
   process_type_id: string
   origin_lead_id: string | null
+  status: ProcessStatus
 }
 
 interface QueueProcessType {
@@ -48,12 +66,28 @@ interface QueueProcessType {
   slug: string
 }
 
+interface ServicePlanItemRow {
+  id: string
+  process_type_id: string
+  service_key: LeadIntendedService
+  process_id: string | null
+}
+
+const TERMINAL_PROCESS_STATUSES = new Set<ProcessStatus>([
+  'concluido',
+  'arquivado',
+  'cancelado',
+])
+
 async function ensureLeadServiceQueue(
   supabase: SupabaseClient,
   lead: QueueLead,
   clientId: string,
+  selectedServices: LeadIntendedService[],
+  commercialOwnerId: string | null,
 ) {
-  const services = getLeadIntendedServices(lead)
+  const planDefinitions = buildServicePlanDefinitions(selectedServices)
+  const services = planDefinitions.map(item => item.service)
   if (services.length === 0) return [] as string[]
 
   const slugs = services.map(service => LEAD_SERVICE_PROCESS_TYPE_SLUGS[service])
@@ -79,7 +113,7 @@ async function ensureLeadServiceQueue(
       .single(),
     supabase
       .from('processes')
-      .select('id, process_type_id, origin_lead_id')
+      .select('id, process_type_id, origin_lead_id, status')
       .eq('client_id', clientId),
   ])
 
@@ -104,6 +138,136 @@ async function ensureLeadServiceQueue(
 
   const processIds: string[] = []
 
+  if (commercialOwnerId) {
+    const { error: ownerError } = await supabase
+      .from('clients')
+      .update({ commercial_owner_id: commercialOwnerId })
+      .eq('id', clientId)
+
+    if (ownerError) throw ownerError
+  }
+
+  const { data: existingEngagement, error: engagementLookupError } = await supabase
+    .from('client_service_engagements')
+    .select('id')
+    .eq('origin_lead_id', lead.id)
+    .maybeSingle()
+
+  if (engagementLookupError) throw engagementLookupError
+
+  let engagementId = existingEngagement?.id as string | undefined
+  if (!engagementId) {
+    const { data: engagement, error: engagementError } = await supabase
+      .from('client_service_engagements')
+      .insert({
+        client_id: clientId,
+        origin_lead_id: lead.id,
+        commercial_owner_id: commercialOwnerId,
+      })
+      .select('id')
+      .single()
+
+    if (engagementError || !engagement) {
+      throw engagementError ?? new Error('Nao foi possivel criar o plano de servicos.')
+    }
+    engagementId = engagement.id as string
+  } else if (commercialOwnerId) {
+    const { error: engagementOwnerError } = await supabase
+      .from('client_service_engagements')
+      .update({ commercial_owner_id: commercialOwnerId })
+      .eq('id', engagementId)
+    if (engagementOwnerError) throw engagementOwnerError
+  }
+
+  const { data: currentPlanItems, error: currentPlanError } = await supabase
+    .from('client_service_plan_items')
+    .select('id, process_type_id, service_key, process_id')
+    .eq('engagement_id', engagementId)
+
+  if (currentPlanError) throw currentPlanError
+
+  const planItemsByService = new Map<LeadIntendedService, ServicePlanItemRow>()
+  for (const item of (currentPlanItems ?? []) as ServicePlanItemRow[]) {
+    planItemsByService.set(item.service_key, item)
+  }
+
+  for (const [index, service] of services.entries()) {
+    const processType = processTypeBySlug.get(LEAD_SERVICE_PROCESS_TYPE_SLUGS[service])
+    if (!processType) continue
+
+    const existingProcess = existingRows.find(row => (
+      row.process_type_id === processType.id
+      && row.origin_lead_id === lead.id
+      && !TERMINAL_PROCESS_STATUSES.has(row.status)
+    )) ?? existingRows.find(row => (
+      row.process_type_id === processType.id
+      && !TERMINAL_PROCESS_STATUSES.has(row.status)
+    )) ?? existingRows.find(row => (
+      row.process_type_id === processType.id
+      && row.origin_lead_id === lead.id
+    ))
+    const currentItem = planItemsByService.get(service)
+
+    if (currentItem) {
+      const { error: itemUpdateError } = await supabase
+        .from('client_service_plan_items')
+        .update({
+          sort_order: index + 1,
+          process_id: currentItem.process_id ?? existingProcess?.id ?? null,
+        })
+        .eq('id', currentItem.id)
+      if (itemUpdateError) throw itemUpdateError
+      continue
+    }
+
+    const prerequisite = getServicePrerequisite(service, services)
+    const initialStatus = existingProcess
+      ? existingProcess.status === 'concluido'
+        ? 'concluido'
+        : TERMINAL_PROCESS_STATUSES.has(existingProcess.status)
+          ? 'cancelado'
+          : 'iniciado'
+      : prerequisite
+        ? 'planejado'
+        : 'pronto_para_iniciar'
+
+    const { data: item, error: itemError } = await supabase
+      .from('client_service_plan_items')
+      .insert({
+        engagement_id: engagementId,
+        process_type_id: processType.id,
+        service_key: service,
+        sort_order: index + 1,
+        status: initialStatus,
+        process_id: existingProcess?.id ?? null,
+        ready_at: initialStatus === 'pronto_para_iniciar' ? new Date().toISOString() : null,
+        started_at: initialStatus === 'iniciado' ? new Date().toISOString() : null,
+        completed_at: initialStatus === 'concluido' ? new Date().toISOString() : null,
+        wait_reason: prerequisite ? 'Aguardando a conclusao do servico anterior' : null,
+      })
+      .select('id, process_type_id, service_key, process_id')
+      .single()
+
+    if (itemError || !item) {
+      throw itemError ?? new Error('Nao foi possivel organizar os servicos confirmados.')
+    }
+    planItemsByService.set(service, item as ServicePlanItemRow)
+  }
+
+  for (const service of services) {
+    const prerequisite = getServicePrerequisite(service, services)
+    if (!prerequisite) continue
+    const item = planItemsByService.get(service)
+    const prerequisiteItem = planItemsByService.get(prerequisite)
+    if (!item || !prerequisiteItem) continue
+
+    const { error: dependencyError } = await supabase
+      .from('client_service_plan_items')
+      .update({ prerequisite_item_id: prerequisiteItem.id })
+      .eq('id', item.id)
+    if (dependencyError) throw dependencyError
+  }
+
   for (const [index, service] of services.entries()) {
     const processTypeSlug = LEAD_SERVICE_PROCESS_TYPE_SLUGS[service]
     const processType = processTypeBySlug.get(processTypeSlug)
@@ -111,8 +275,14 @@ async function ensureLeadServiceQueue(
 
     const existingProcess = existingRows.find(row => (
       row.process_type_id === processType.id
+      && row.origin_lead_id === lead.id
+      && !TERMINAL_PROCESS_STATUSES.has(row.status)
+    )) ?? existingRows.find(row => (
+      row.process_type_id === processType.id
+      && !TERMINAL_PROCESS_STATUSES.has(row.status)
     ))
     const serviceOrder = index + 1
+    const planItem = planItemsByService.get(service)
 
     if (existingProcess) {
       const { error } = await supabase
@@ -120,6 +290,8 @@ async function ensureLeadServiceQueue(
         .update({
           service_order: serviceOrder,
           origin_lead_id: existingProcess.origin_lead_id ?? lead.id,
+          service_engagement_id: engagementId,
+          service_plan_item_id: planItem?.id ?? null,
         })
         .eq('id', existingProcess.id)
 
@@ -127,6 +299,10 @@ async function ensureLeadServiceQueue(
       processIds.push(existingProcess.id)
       continue
     }
+
+    // Na conversao, apenas o primeiro servico e iniciado. ICMS e IPVA exigem
+    // que a equipe identifique o veiculo antes de criar o processo.
+    if (index > 0 || service === 'icms' || service === 'ipva') continue
 
     const cnhStages = processTypeSlug === 'cnh_especial'
       ? getCnhStageTemplates({
@@ -170,8 +346,8 @@ async function ensureLeadServiceQueue(
         p_client_id: clientId,
         p_process_type_id: processType.id,
         p_protocol: null,
-        p_status: index === 0 ? 'em_andamento' : 'aberto',
-        p_responsible_user_id: lead.assigned_to ?? null,
+        p_status: 'em_andamento',
+        p_responsible_user_id: null,
         p_observations: `Processo criado na conversão do lead ${lead.name}.`,
         p_jurisdiction_state: clientRecord.state ?? null,
         p_vehicle_condition: null,
@@ -192,6 +368,8 @@ async function ensureLeadServiceQueue(
       .update({
         service_order: serviceOrder,
         origin_lead_id: lead.id,
+        service_engagement_id: engagementId,
+        service_plan_item_id: planItem?.id ?? null,
       })
       .eq('id', processId)
 
@@ -201,6 +379,7 @@ async function ensureLeadServiceQueue(
       id: processId as string,
       process_type_id: processType.id,
       origin_lead_id: lead.id,
+      status: 'em_andamento',
     })
   }
 
@@ -222,7 +401,7 @@ export async function PATCH(
 
   const { data: caller } = await supabase
     .from('profiles')
-    .select('role')
+    .select('id, role')
     .eq('auth_user_id', user.id)
     .eq('is_active', true)
     .maybeSingle()
@@ -248,7 +427,9 @@ export async function PATCH(
   let serviceProcessIds: string[] = []
 
   if (parsed.data.status === 'convertido') {
-    const intendedServices = getLeadIntendedServices(lead)
+    const intendedServices = normalizeLeadIntendedServices(
+      parsed.data.selectedServices ?? getLeadIntendedServices(lead),
+    )
     if (
       !convertedClientId
       && intendedServices.includes('cnh_especial')
@@ -259,6 +440,32 @@ export async function PATCH(
         { status: 422 },
       )
     }
+
+    const { error: confirmedServicesError } = await supabase
+      .from('leads')
+      .update({
+        intended_service: intendedServices[0] ?? null,
+        intended_services: intendedServices,
+      })
+      .eq('id', id)
+
+    if (confirmedServicesError) {
+      return NextResponse.json({ error: confirmedServicesError.message }, { status: 400 })
+    }
+
+    const { data: assignedProfile } = lead.assigned_to
+      ? await supabase
+          .from('profiles')
+          .select('id, role')
+          .eq('id', lead.assigned_to)
+          .maybeSingle()
+      : { data: null }
+    const commercialOwnerId = assignedProfile
+      && ['super_admin', 'admin'].includes(assignedProfile.role)
+      ? assignedProfile.id
+      : ['super_admin', 'admin'].includes(caller.role)
+        ? caller.id
+        : null
 
     if (convertedClientId) {
       const { error } = await supabase
@@ -286,6 +493,8 @@ export async function PATCH(
         supabase,
         lead as QueueLead,
         convertedClientId,
+        intendedServices,
+        commercialOwnerId,
       )
     } catch (error) {
       return NextResponse.json(

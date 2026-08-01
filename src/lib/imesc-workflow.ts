@@ -50,6 +50,10 @@ export interface ImescPayload {
   report_issued_at?: string | null
   report_valid_until?: string | null
   source_classification?: DisabilitySeverity | 'sem_deficiencia' | null
+  next_action?: string | null
+  action_owner?: 'equipe' | 'cliente' | 'orgao' | 'terceiro' | null
+  action_due_date?: string | null
+  blocked_reason?: string | null
   notes?: string | null
   completed_at?: string | null
 }
@@ -80,6 +84,14 @@ export function normalizeLegacyImescClassification(
 }
 
 export function normalizeImescPayload(input: ImescPayload): ImescPayload {
+  const defaultAction = {
+    nao_iniciado: { action: 'Preparar solicitacao do IMESC', owner: 'equipe' as const },
+    solicitacao_em_preparo: { action: 'Concluir e protocolar a solicitacao', owner: 'equipe' as const },
+    agendado: { action: 'Comparecer a pericia do IMESC', owner: 'cliente' as const },
+    pericia_realizada: { action: 'Acompanhar a emissao do laudo', owner: 'orgao' as const },
+    laudo_disponivel: { action: 'Revisar laudo e registrar classificacao', owner: 'equipe' as const },
+    encerrado: { action: null, owner: null },
+  }[input.operational_status]
   const output: ImescPayload = {
     ...input,
     responsible_user_id: emptyToNull(input.responsible_user_id),
@@ -90,6 +102,10 @@ export function normalizeImescPayload(input: ImescPayload): ImescPayload {
     examination_date: emptyToNull(input.examination_date),
     report_issued_at: emptyToNull(input.report_issued_at),
     report_valid_until: emptyToNull(input.report_valid_until),
+    next_action: emptyToNull(input.next_action) ?? defaultAction.action,
+    action_owner: input.action_owner ?? defaultAction.owner,
+    action_due_date: emptyToNull(input.action_due_date),
+    blocked_reason: emptyToNull(input.blocked_reason),
     notes: emptyToNull(input.notes),
   }
 
@@ -122,6 +138,14 @@ export function normalizeImescPayload(input: ImescPayload): ImescPayload {
   const isClosed = ['sem_deficiencia', 'indeferido', 'cancelado'].includes(output.board_status)
     || output.operational_status === 'encerrado'
   output.completed_at = isClosed ? (input.completed_at ?? new Date().toISOString()) : null
+  if (isClosed) {
+    output.next_action = null
+    output.action_owner = null
+    output.action_due_date = null
+    output.blocked_reason = null
+  } else if (output.operational_status === 'agendado' && !output.action_due_date) {
+    output.action_due_date = output.scheduled_date ?? null
+  }
 
   return output
 }

@@ -9,8 +9,10 @@ import {
   getLeadIntendedServices,
   LEAD_DISABILITY_LABELS,
   LEAD_SERVICE_LABELS,
+  LEAD_SERVICE_OPTIONS,
+  normalizeLeadIntendedServices,
 } from '@/lib/lead-eligibility'
-import type { Lead } from '@/types/database'
+import type { Lead, LeadIntendedService } from '@/types/database'
 
 export function ConvertLeadModal({ lead }: { lead: Lead }) {
   const router = useRouter()
@@ -19,15 +21,30 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
   const [error, setError] = useState('')
   const disabilityTypes = getLeadDisabilityTypes(lead)
   const intendedServices = getLeadIntendedServices(lead)
+  const [selectedServices, setSelectedServices] = useState<LeadIntendedService[]>(
+    () => intendedServices,
+  )
+
+  const toggleService = (service: LeadIntendedService) => {
+    setSelectedServices(current => normalizeLeadIntendedServices(
+      current.includes(service)
+        ? current.filter(item => item !== service)
+        : [...current, service],
+    ))
+  }
 
   const handleConvert = async () => {
+    if (selectedServices.length === 0) {
+      setError('Selecione pelo menos um servico contratado antes de converter.')
+      return
+    }
     setLoading(true)
     setError('')
 
     const response = await fetch(`/api/leads/${lead.id}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'convertido' }),
+      body: JSON.stringify({ status: 'convertido', selectedServices }),
     })
     const result = await response.json().catch(() => ({}))
 
@@ -60,7 +77,7 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
 
       {open && createPortal(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}>
-          <div className="modal-panel bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+          <div className="modal-panel max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white shadow-2xl">
 
             {/* Header */}
             <div
@@ -139,6 +156,45 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
                 </div>
               </div>
 
+              <fieldset className="space-y-2.5">
+                <div>
+                  <legend className="dash text-sm font-bold text-slate-900">
+                    Confirme os servicos contratados
+                  </legend>
+                  <p className="dash mt-0.5 text-xs text-slate-500">
+                    Marque todos os servicos que devem entrar no plano deste cliente.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {LEAD_SERVICE_OPTIONS.map(option => {
+                    const checked = selectedServices.includes(option.value)
+                    return (
+                      <label
+                        key={option.value}
+                        className={`dash inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-colors ${
+                          checked
+                            ? 'border-blue-300 bg-blue-50 text-blue-700'
+                            : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleService(option.value)}
+                          className="h-3.5 w-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        {option.label}
+                      </label>
+                    )
+                  })}
+                </div>
+                {selectedServices.includes('cnh_especial') && (
+                  <p className="dash rounded-lg bg-violet-50 px-3 py-2 text-xs text-violet-700">
+                    A CNH Especial sera iniciada primeiro. IPI e ICMS permanecem organizados conforme suas dependencias.
+                  </p>
+                )}
+              </fieldset>
+
               {!lead.email && (
                 <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
                   <Mail className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
@@ -151,7 +207,10 @@ export function ConvertLeadModal({ lead }: { lead: Lead }) {
               <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3.5">
                 <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
                 <p className="text-sm text-emerald-800 dash leading-snug">
+                  <span>O primeiro servico sera iniciado. Os demais ficarao visiveis no plano para a equipe escolher o proximo sem criar processos indevidos.</span>
+                  <span className="hidden">
                   Um novo cliente será criado e os serviços selecionados já aparecerão como processos. A CNH Especial terá prioridade; os demais ficarão organizados na fila do cliente.
+                  </span>
                 </p>
               </div>
 

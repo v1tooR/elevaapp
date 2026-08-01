@@ -1,16 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-async function isSuperAdmin(supabase: any, user: any) {
+type ServerSupabaseClient = Awaited<ReturnType<typeof createClient>>
+
+async function isFinanceAdmin(supabase: ServerSupabaseClient, user: { id: string }) {
   const { data } = await supabase.from('profiles').select('role').eq('auth_user_id', user.id).single()
-  return data?.role === 'super_admin'
+  return ['super_admin', 'admin'].includes(data?.role ?? '')
 }
 
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  if (!await isSuperAdmin(supabase, user)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!await isFinanceAdmin(supabase, user)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { data, error } = await supabase
     .from('finance_categories')
@@ -25,7 +27,7 @@ export async function POST(request: NextRequest) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
-  if (!await isSuperAdmin(supabase, user)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
+  if (!await isFinanceAdmin(supabase, user)) return NextResponse.json({ error: 'Acesso negado' }, { status: 403 })
 
   const { name, color } = await request.json()
   if (!name?.trim()) return NextResponse.json({ error: 'Nome é obrigatório' }, { status: 400 })

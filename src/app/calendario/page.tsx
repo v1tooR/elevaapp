@@ -1,6 +1,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { CalendarGridClient } from '@/components/calendario/calendar-grid-client'
 import { Calendar, RefreshCw } from 'lucide-react'
+import Link from 'next/link'
 
 export const metadata = { title: 'Calendário — Eleva Isenções' }
 
@@ -10,6 +11,13 @@ export default async function CalendarioPage() {
   const { data: profile } = await supabase.from('profiles').select('id').eq('auth_user_id', user!.id).single()
 
   const today = new Date()
+  const renewalWindowEnd = new Date(today)
+  renewalWindowEnd.setDate(renewalWindowEnd.getDate() + 30)
+  const renewalWindowEndText = [
+    renewalWindowEnd.getFullYear(),
+    String(renewalWindowEnd.getMonth() + 1).padStart(2, '0'),
+    String(renewalWindowEnd.getDate()).padStart(2, '0'),
+  ].join('-')
   const year = today.getFullYear()
   const month = today.getMonth() + 1
   const start = `${year}-${String(month).padStart(2,'0')}-01`
@@ -23,6 +31,7 @@ export default async function CalendarioPage() {
       .eq('event_type', 'renewal')
       .eq('status', 'pending')
       .gte('event_date', today.toISOString().split('T')[0])
+      .lte('event_date', renewalWindowEndText)
       .order('event_date', { ascending: true })
       .limit(5),
     supabase.from('calendar_events')
@@ -93,12 +102,15 @@ export default async function CalendarioPage() {
               <RefreshCw className="w-3.5 h-3.5 text-amber-500" />
             </div>
             <h2 className="dash text-sm font-bold text-slate-900">Próximas Renovações</h2>
-            <span className="dash ml-auto text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-0.5 rounded-full">
+            <Link href="/renovacoes" className="dash ml-auto text-xs font-semibold text-blue-700 hover:underline">
+              Consultar todas
+            </Link>
+            <span className="dash text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-100 px-2.5 py-0.5 rounded-full">
               {upcoming.length} pendente(s)
             </span>
           </div>
           <div className="divide-y divide-slate-50">
-            {upcoming.map((ev: any) => {
+            {upcoming.map(ev => {
               const daysLeft = Math.ceil(
                 (new Date(ev.event_date + 'T00:00:00').getTime() - new Date().setHours(0,0,0,0))
                 / (1000 * 60 * 60 * 24)

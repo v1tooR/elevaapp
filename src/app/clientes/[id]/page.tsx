@@ -5,12 +5,17 @@ import {
   ArrowLeft, Plus, FolderOpen, FileText,
   Phone, Mail, MapPin, Calendar, Shield, StickyNote, Clock, ArrowUpRight,
   Stethoscope, Zap,
+  UserRound,
+  ListChecks, Play,
 } from 'lucide-react'
 import { ProcessStatusBadge } from '@/components/shared/status-badge'
 import { formatCPF, formatPhone, formatDate, formatDateTime } from '@/lib/utils'
 import { EditClientModal } from '@/components/clientes/edit-client-modal'
 import { PortalAccessCard } from '@/components/clientes/portal-access-card'
 import { ProcessQueueAction } from '@/components/clientes/process-queue-action'
+import { VehicleManager } from '@/components/clientes/vehicle-manager'
+import { ClientServiceSelector } from '@/components/clientes/client-service-selector'
+import type { LeadIntendedService } from '@/types/database'
 import { canHaveCnhEspecial } from '@/lib/eligibility'
 import { normalizeGovAccessStatus, normalizeGovCredentialMetadata } from '@/lib/gov-access'
 
@@ -61,6 +66,16 @@ const GOV_ACCESS_STATUS: Record<string, { label: string; className: string }> = 
   },
 }
 
+const SERVICE_PLAN_STATUS: Record<string, { label: string; className: string }> = {
+  planejado: { label: 'Aguardando dependencia', className: 'border-amber-200 bg-amber-50 text-amber-700' },
+  pronto_para_iniciar: { label: 'Disponivel para iniciar', className: 'border-blue-200 bg-blue-50 text-blue-700' },
+  iniciado: { label: 'Processo iniciado', className: 'border-emerald-200 bg-emerald-50 text-emerald-700' },
+  concluido: { label: 'Concluido', className: 'border-slate-200 bg-slate-50 text-slate-600' },
+  adiado: { label: 'Adiado', className: 'border-orange-200 bg-orange-50 text-orange-700' },
+  recusado: { label: 'Nao contratado', className: 'border-slate-200 bg-slate-50 text-slate-500' },
+  cancelado: { label: 'Cancelado', className: 'border-red-200 bg-red-50 text-red-600' },
+}
+
 function avatarGradient(name: string) {
   const g = [
     'linear-gradient(135deg,#6B3019,#A14F2A)',
@@ -78,8 +93,14 @@ function initials(name: string) {
   return name.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
 }
 
-export default async function ClienteDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params
+export default async function ClienteDetailPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ aviso?: string }>
+}) {
+  const [{ id }, query] = await Promise.all([params, searchParams])
   const supabase = await createClient()
 
   const { data: client } = await supabase.from('clients').select('*').eq('id', id).single()
@@ -95,6 +116,8 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
     { data: documents },
     { data: linkedProfile },
     { data: govCredentialMetadataRaw },
+    { data: commercialOwner },
+    { data: clientVehicles },
   ] = await Promise.all([
     supabase.from('processes')
       .select('*, process_types(name, color, slug)')
@@ -110,7 +133,34 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
       ? supabase.from('profiles').select('email').eq('id', client.profile_id).single()
       : Promise.resolve({ data: null }),
     supabase.rpc('get_gov_credential_metadata', { p_client_id: id }),
+    client.commercial_owner_id
+      ? supabase.from('profiles').select('id, name').eq('id', client.commercial_owner_id).maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from('client_vehicles')
+      .select('*')
+      .eq('client_id', id)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false }),
   ])
+  const { data: serviceEngagements } = await supabase
+    .from('client_service_engagements')
+    .select('id')
+    .eq('client_id', id)
+    .neq('status', 'cancelado')
+
+  const engagementIds = (serviceEngagements ?? []).map(engagement => engagement.id)
+  const { data: servicePlanItems } = engagementIds.length > 0
+    ? await supabase
+        .from('client_service_plan_items')
+        .select('*, process_types(name, slug, color), processes(id, status)')
+        .in('engagement_id', engagementIds)
+        .order('sort_order')
+    : { data: [] }
+  const hasCnhInServicePlan = (servicePlanItems ?? []).some(item => (
+    item.service_key === 'cnh_especial'
+    && !['recusado', 'cancelado'].includes(item.status)
+  ))
   const govCredentialMetadata = normalizeGovCredentialMetadata(govCredentialMetadataRaw)
   const terminalProcessStatuses = new Set(['concluido', 'arquivado', 'cancelado'])
   const processRows = [...(processes ?? [])].sort((left, right) => {
@@ -151,6 +201,12 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
       `}</style>
 
       <div className="space-y-5">
+
+        {query.aviso === 'servicos' && (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            O cliente foi cadastrado, mas o plano de serviços não pôde ser salvo. Use <strong>Adicionar serviços</strong> abaixo para tentar novamente.
+          </div>
+        )}
 
         {/* ── Hero Banner ──────────────────────────────────────────── */}
         <div
@@ -207,6 +263,18 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                     {formatPhone(client.phone)}
                   </span>
                 )}
+                <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
+                    <UserRound className="h-3.5 w-3.5 text-slate-500" />
+                  </div>
+                  <div>
+                    <p className="dash text-[10px] text-slate-400">Responsavel comercial</p>
+                    <p className="dash text-sm font-semibold text-slate-800">
+                      {commercialOwner?.name ?? 'Nao definido'}
+                    </p>
+                    <p className="dash text-[10px] text-slate-400">Separado do responsavel operacional</p>
+                  </div>
+                </div>
                 {(client.city || client.state) && (
                   <span className="text-xs font-medium text-primary-foreground/75 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
                     {[client.city, client.state].filter(Boolean).join(' / ')}
@@ -506,7 +574,7 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
           <div className="lg:col-span-2 space-y-5">
 
             {/* CNH Especial shortcut */}
-            {canHaveCnhEspecial(client.client_type, client.disability_type) && client.cnh_status !== 'com_restricoes' && (
+            {!hasCnhInServicePlan && canHaveCnhEspecial(client.client_type, client.disability_type) && client.cnh_status !== 'com_restricoes' && (
               <div
                 className="anim anim-1 rounded-2xl overflow-hidden"
                 style={{ border: '1px solid #C4B5FD', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
@@ -532,6 +600,92 @@ export default async function ClienteDetailPage({ params }: { params: Promise<{ 
                   >
                     Iniciar <ArrowUpRight className="w-3.5 h-3.5" />
                   </Link>
+                </div>
+              </div>
+            )}
+
+            <VehicleManager
+              clientId={client.id}
+              initialVehicles={clientVehicles ?? []}
+            />
+
+            <ClientServiceSelector
+              clientId={client.id}
+              existingServices={[...new Set((servicePlanItems ?? []).map(item => (
+                item.service_key as LeadIntendedService
+              )))]}
+            />
+
+            {(servicePlanItems ?? []).length > 0 && (
+              <div
+                className="anim anim-2 overflow-hidden rounded-2xl bg-white"
+                style={{ border: '1px solid #DDE7F3', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
+              >
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/70 px-5 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-50">
+                      <ListChecks className="h-4 w-4 text-blue-600" />
+                    </div>
+                    <div>
+                      <h2 className="dash font-bold text-slate-900">Plano de servicos</h2>
+                      <p className="dash mt-0.5 text-xs text-slate-500">
+                        Servicos confirmados na conversao e sua ordem operacional.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="dash rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">
+                    {(servicePlanItems ?? []).length} servicos
+                  </span>
+                </div>
+                <div>
+                  {(servicePlanItems ?? []).map((item, index) => {
+                    const statusMeta = SERVICE_PLAN_STATUS[item.status] ?? SERVICE_PLAN_STATUS.planejado
+                    const processType = item.process_types as { name: string; slug: string; color: string | null } | null
+                    const linkedProcess = item.processes as { id: string; status: string } | null
+                    const canStart = item.status === 'pronto_para_iniciar' && !item.process_id
+
+                    return (
+                      <div key={item.id} className="flex flex-col gap-3 border-b border-slate-50 px-5 py-4 last:border-0 sm:flex-row sm:items-center">
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
+                          <div
+                            className="dash flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold"
+                            style={{
+                              color: processType?.color ?? '#2563EB',
+                              backgroundColor: `${processType?.color ?? '#2563EB'}16`,
+                            }}
+                          >
+                            {index + 1}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <p className="dash text-sm font-bold text-slate-900">{processType?.name ?? item.service_key}</p>
+                              <span className={`dash rounded-full border px-2 py-0.5 text-[10px] font-semibold ${statusMeta.className}`}>
+                                {statusMeta.label}
+                              </span>
+                            </div>
+                            {item.wait_reason && (
+                              <p className="dash mt-1 text-xs text-slate-500">{item.wait_reason}</p>
+                            )}
+                          </div>
+                        </div>
+                        {linkedProcess?.id ? (
+                          <Link
+                            href={`/processos/${linkedProcess.id}`}
+                            className="dash inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            Abrir processo <ArrowUpRight className="h-3 w-3" />
+                          </Link>
+                        ) : canStart && processType ? (
+                          <Link
+                            href={`/processos/novo?client_id=${client.id}&type=${processType.slug}&service_plan_item_id=${item.id}`}
+                            className="dash inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
+                          >
+                            <Play className="h-3 w-3" /> Iniciar este servico
+                          </Link>
+                        ) : null}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
             )}

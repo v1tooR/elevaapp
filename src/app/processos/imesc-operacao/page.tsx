@@ -24,6 +24,10 @@ export interface ImescBoardRow {
   report_issued_at: string | null
   report_valid_until: string | null
   source_classification: DisabilitySeverity | 'sem_deficiencia' | null
+  next_action: string | null
+  action_owner: 'equipe' | 'cliente' | 'orgao' | 'terceiro' | null
+  action_due_date: string | null
+  blocked_reason: string | null
   notes: string | null
   started_at: string
   completed_at: string | null

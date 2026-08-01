@@ -7,12 +7,14 @@ import { MaskedInput } from '@/components/ui/masked-input'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import Link from 'next/link'
-import { ArrowLeft, User, MapPin, Lock, AlertCircle, KeyRound, Eye, EyeOff, RefreshCw, Stethoscope, ShieldCheck } from 'lucide-react'
+import { ArrowLeft, User, MapPin, Lock, AlertCircle, KeyRound, Eye, EyeOff, RefreshCw, Stethoscope, ShieldCheck, ListChecks } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { ClientEligibilityFields } from '@/components/clientes/client-eligibility-fields'
 import { EMPTY_CLIENT_ELIGIBILITY, clientEligibilityPayload, type ClientEligibilityFormValue } from '@/lib/client-eligibility'
 import { GovAccessFields } from '@/components/clientes/gov-access-fields'
 import { EMPTY_GOV_ACCESS, govAccessPayload, type GovAccessFormValue } from '@/lib/gov-access'
+import { LEAD_SERVICE_OPTIONS, normalizeLeadIntendedServices } from '@/lib/lead-eligibility'
+import type { LeadIntendedService } from '@/types/database'
 
 const CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!'
 
@@ -41,6 +43,7 @@ export default function NovoClientePage() {
   const [portalEmail, setPortalEmail] = useState('')
   const [portalPassword, setPortalPassword] = useState('')
   const [showPw, setShowPw] = useState(false)
+  const [selectedServices, setSelectedServices] = useState<LeadIntendedService[]>([])
 
   const [eligi, setEligi] = useState<ClientEligibilityFormValue>(() => ({
     ...EMPTY_CLIENT_ELIGIBILITY,
@@ -80,6 +83,19 @@ export default function NovoClientePage() {
       return
     }
 
+    const confirmedServices = normalizeLeadIntendedServices(
+      selectedServices.filter(service => service !== 'cnh_especial' || eligi.client_type === 'condutor'),
+    )
+    let servicePlanWarning = false
+    if (confirmedServices.length > 0) {
+      const serviceResponse = await fetch(`/api/clientes/${data.id}/servicos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ services: confirmedServices }),
+      })
+      servicePlanWarning = !serviceResponse.ok
+    }
+
     if (govCredentialPassword) {
       const credentialResponse = await fetch(`/api/clientes/${data.id}/gov-credential`, {
         method: 'POST',
@@ -112,7 +128,7 @@ export default function NovoClientePage() {
       }
     }
 
-    router.push(`/clientes/${data.id}`)
+    router.push(`/clientes/${data.id}${servicePlanWarning ? '?aviso=servicos' : ''}`)
   }
 
   return (
@@ -270,6 +286,53 @@ export default function NovoClientePage() {
               </div>
             </div>
             <ClientEligibilityFields value={eligi} onChange={setEligi} />
+          </div>
+
+          <div className="anim anim-4 rounded-2xl p-6" style={sectionCard}>
+            <div className="mb-5 flex items-center gap-2.5">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-emerald-50">
+                <ListChecks className="h-4 w-4 text-emerald-600" />
+              </div>
+              <div>
+                <h2 className="dash text-sm font-bold text-slate-900">Serviços contratados</h2>
+                <p className="dash text-[11px] text-slate-400">Selecione todos os serviços combinados com o cliente</p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {LEAD_SERVICE_OPTIONS.map(option => {
+                const disabled = option.value === 'cnh_especial' && eligi.client_type !== 'condutor'
+                const checked = selectedServices.includes(option.value) && !disabled
+                return (
+                  <label
+                    key={option.value}
+                    className={cn(
+                      'dash inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-colors',
+                      disabled
+                        ? 'cursor-not-allowed border-slate-200 bg-slate-50 text-slate-400'
+                        : checked
+                          ? 'cursor-pointer border-emerald-300 bg-emerald-50 text-emerald-800'
+                          : 'cursor-pointer border-slate-200 bg-white text-slate-600 hover:border-emerald-200',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      disabled={disabled}
+                      checked={checked}
+                      onChange={() => setSelectedServices(current => (
+                        current.includes(option.value)
+                          ? current.filter(service => service !== option.value)
+                          : [...current, option.value]
+                      ))}
+                      className="h-3.5 w-3.5 rounded"
+                    />
+                    {option.label}
+                  </label>
+                )
+              })}
+            </div>
+            <p className="dash mt-3 text-[11px] text-slate-500">
+              A CNH Especial fica em primeiro lugar. Os demais serviços ficam visíveis no plano e são iniciados pela equipe no momento adequado.
+            </p>
           </div>
 
           {/* ── Acesso ao Portal ───────────────────────────────────── */}

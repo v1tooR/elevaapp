@@ -47,6 +47,10 @@ const updateFollowupSchema = z.object({
     'gravissima',
     'sem_deficiencia',
   ]).nullable().optional(),
+  nextAction: z.string().trim().max(300).nullable().optional(),
+  actionOwner: z.enum(['equipe', 'cliente', 'orgao', 'terceiro']).nullable().optional(),
+  actionDueDate: nullableDate.optional(),
+  blockedReason: z.string().trim().max(1000).nullable().optional(),
   notes: z.string().trim().max(4000).nullable().optional(),
 }).refine(payload => Object.keys(payload).length > 0)
 
@@ -124,6 +128,18 @@ export async function PATCH(
     source_classification: parsed.data.sourceClassification === undefined
       ? row.source_classification
       : parsed.data.sourceClassification,
+    next_action: parsed.data.nextAction === undefined
+      ? row.next_action
+      : parsed.data.nextAction,
+    action_owner: parsed.data.actionOwner === undefined
+      ? row.action_owner
+      : parsed.data.actionOwner,
+    action_due_date: parsed.data.actionDueDate === undefined
+      ? row.action_due_date
+      : parsed.data.actionDueDate,
+    blocked_reason: parsed.data.blockedReason === undefined
+      ? row.blocked_reason
+      : parsed.data.blockedReason,
     notes: parsed.data.notes === undefined ? row.notes : parsed.data.notes,
     completed_at: row.completed_at,
   })

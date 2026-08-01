@@ -10,13 +10,14 @@ import { PROCESS_TYPE_CUSTOM_FIELDS, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { getCnhStageTemplates } from '@/lib/cnh-stages'
 import { buildOperationalStageRows } from '@/lib/operational-workflows'
+import { applyStartingStage } from '@/lib/process-start-stage'
 import {
   analyzeEligibility,
   isEligibilityProcess,
   type SefazIpvaStatus,
 } from '@/lib/eligibility'
 import { EligibilityAnalysisCard } from '@/components/processos/eligibility-analysis-card'
-import type { Client, ProcessType, Profile, VehicleCondition } from '@/types/database'
+import type { Client, ClientVehicle, ProcessType, Profile, VehicleCondition } from '@/types/database'
 import Link from 'next/link'
 import {
   ArrowLeft, TrendingUp, Link2, Check,
@@ -41,6 +42,7 @@ interface ActiveProcessSummary {
   process_type_id: string
   protocol: string | null
   status: string
+  vehicle_id: string | null
 }
 
 function NovoProcessoForm() {
@@ -49,6 +51,7 @@ function NovoProcessoForm() {
   const preClientId  = searchParams.get('client_id') ?? ''
   const preTypeId    = searchParams.get('type_id')   ?? ''
   const preTypeSlug  = searchParams.get('type')      ?? ''
+  const prePlanItemId = searchParams.get('service_plan_item_id') ?? ''
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -58,10 +61,17 @@ function NovoProcessoForm() {
   const [clients, setClients] = useState<Client[]>([])
   const [profiles, setProfiles] = useState<Array<Pick<Profile, 'id' | 'name'>>>([])
   const [activeProcesses, setActiveProcesses] = useState<ActiveProcessSummary[]>([])
+  const [vehicles, setVehicles] = useState<ClientVehicle[]>([])
   const [selectedTypeSlug, setSelectedTypeSlug] = useState('')
   const [selectedTypeName, setSelectedTypeName] = useState('')
   const [selectedTypeColor, setSelectedTypeColor] = useState('')
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({})
+  const [servicePlanItem, setServicePlanItem] = useState<{
+    id: string
+    engagement_id: string
+    process_type_id: string
+    sort_order: number
+  } | null>(null)
 
   const [form, setForm] = useState({
     client_id: preClientId,
@@ -77,6 +87,8 @@ function NovoProcessoForm() {
     financial_notes: '',
     jurisdiction_state: '',
     vehicle_condition: '' as VehicleCondition | '',
+    vehicle_id: '',
+    start_stage_key: '',
   })
 
   useEffect(() => {
@@ -93,17 +105,26 @@ function NovoProcessoForm() {
       supabase.from('clients').select('id, name, state, client_type, disability_type, disability_types, disability_severity, cnh_status, cnh_restrictions, medical_assessment_status, requires_adapted_vehicle, requires_practical_exam, has_medical_report, authorized_drivers').eq('is_active', true).order('name'),
       supabase.from('profiles').select('id, name').in('role', ['admin', 'analista', 'super_admin']).order('name'),
       supabase.from('processes')
-        .select('id, client_id, process_type_id, protocol, status')
+        .select('id, client_id, process_type_id, protocol, status, vehicle_id')
         .not('status', 'in', '(concluido,arquivado,cancelado)')
         .order('created_at'),
       supabase.auth.getUser(),
-    ]).then(async ([{ data: pt }, { data: cl }, { data: pf }, { data: active }, { data: { user } }]) => {
+      prePlanItemId
+        ? supabase
+            .from('client_service_plan_items')
+            .select('id, engagement_id, process_type_id, sort_order, status, process_id')
+            .eq('id', prePlanItemId)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      supabase.from('client_vehicles').select('*').eq('is_active', true).order('created_at', { ascending: false }),
+    ]).then(async ([{ data: pt }, { data: cl }, { data: pf }, { data: active }, { data: { user } }, { data: planItem }, { data: vehicleRows }]) => {
       const processTypeRows = (pt ?? []) as ProcessType[]
       const clientRows = (cl ?? []) as Client[]
       setProcessTypes(processTypeRows)
       setClients(clientRows)
       setProfiles((pf ?? []) as Array<Pick<Profile, 'id' | 'name'>>)
       setActiveProcesses((active ?? []) as ActiveProcessSummary[])
+      setVehicles((vehicleRows ?? []) as ClientVehicle[])
       if (user) {
         const { data: prof } = await supabase.from('profiles').select('role').eq('auth_user_id', user.id).single()
         setIsSuperAdmin(prof?.role === 'super_admin')
@@ -129,14 +150,48 @@ function NovoProcessoForm() {
         ? processTypeRows.find(type => type.slug === preTypeSlug)
         : null
       if (typeToFind) {
-        setForm(prev => ({ ...prev, process_type_id: typeToFind.id }))
+        setForm(prev => ({
+          ...prev,
+          process_type_id: typeToFind.id,
+          vehicle_condition: ['processo_ipi', 'processo_icms'].includes(typeToFind.slug)
+            ? 'zero_km'
+            : prev.vehicle_condition,
+        }))
         setSelectedTypeSlug(typeToFind.slug)
         setSelectedTypeName(typeToFind.name)
         setSelectedTypeColor(typeToFind.color ?? '#3B82F6')
         setCustomFieldValues({})
       }
+
+      if (prePlanItemId) {
+        if (!planItem || planItem.status !== 'pronto_para_iniciar' || planItem.process_id) {
+          setError('Este servico nao esta mais disponivel para iniciar.')
+          return
+        }
+        const { data: engagement } = await supabase
+          .from('client_service_engagements')
+          .select('client_id')
+          .eq('id', planItem.engagement_id)
+          .maybeSingle()
+        if (
+          !engagement
+          || engagement.client_id !== preClientId
+          || !typeToFind
+          || typeToFind.id !== planItem.process_type_id
+        ) {
+          setError('O servico selecionado nao pertence a este cliente ou tipo de processo.')
+          return
+        }
+        setServicePlanItem({
+          id: planItem.id,
+          engagement_id: planItem.engagement_id,
+          process_type_id: planItem.process_type_id,
+          sort_order: planItem.sort_order,
+        })
+        setForm(prev => ({ ...prev, status: 'em_andamento' }))
+      }
     })
-  }, [preClientId, preTypeId, preTypeSlug])
+  }, [preClientId, prePlanItemId, preTypeId, preTypeSlug])
 
   const handleClientChange = (clientId: string) => {
     const found = clients.find(client => client.id === clientId)
@@ -144,13 +199,25 @@ function NovoProcessoForm() {
       ...prev,
       client_id: clientId,
       jurisdiction_state: found?.state ?? '',
+      vehicle_id: '',
+      vehicle_condition: ['processo_ipi', 'processo_icms'].includes(selectedTypeSlug)
+        ? 'zero_km'
+        : '',
+      start_stage_key: '',
     }))
   }
 
   const handleTypeSelect = (typeId: string) => {
     const type = processTypes.find(t => t.id === typeId)
     if (!type) return
-    setForm(prev => ({ ...prev, process_type_id: typeId }))
+    setForm(prev => ({
+      ...prev,
+      process_type_id: typeId,
+      vehicle_condition: ['processo_ipi', 'processo_icms'].includes(type.slug)
+        ? 'zero_km'
+        : '',
+      start_stage_key: '',
+    }))
     setSelectedTypeSlug(type.slug)
     setSelectedTypeName(type.name)
     setSelectedTypeColor(type.color ?? '#3B82F6')
@@ -158,7 +225,8 @@ function NovoProcessoForm() {
   }
 
   const clearType = () => {
-    setForm(prev => ({ ...prev, process_type_id: '' }))
+    if (prePlanItemId) return
+    setForm(prev => ({ ...prev, process_type_id: '', start_stage_key: '' }))
     setSelectedTypeSlug('')
     setSelectedTypeName('')
     setSelectedTypeColor('')
@@ -174,8 +242,37 @@ function NovoProcessoForm() {
     ? activeProcesses.find(process => (
         process.client_id === form.client_id
         && process.process_type_id === form.process_type_id
+        && (
+          selectedTypeSlug !== 'processo_ipva'
+          || process.vehicle_id === form.vehicle_id
+        )
       ))
     : null
+  const clientVehicles = vehicles.filter(vehicle => (
+    vehicle.client_id === form.client_id
+    && (
+      !['processo_ipi', 'processo_icms'].includes(selectedTypeSlug)
+      || vehicle.vehicle_condition === 'zero_km'
+    )
+  ))
+  const selectedVehicle = form.vehicle_id
+    ? clientVehicles.find(vehicle => vehicle.id === form.vehicle_id) ?? null
+    : null
+  const startStageOptions = selectedTypeSlug === 'cnh_especial'
+    ? selectedClient
+      ? (getCnhStageTemplates({
+          clientType: selectedClient.client_type,
+          medicalAssessmentStatus: selectedClient.medical_assessment_status,
+          requiresPracticalExam: null,
+        }) ?? [])
+          .filter(stage => stage.status !== 'nao_aplicavel')
+          .map(stage => ({ value: stage.stage_key, label: stage.label }))
+      : []
+    : selectedTypeSlug
+      ? buildOperationalStageRows('', selectedTypeSlug)
+          .filter(stage => stage.status !== 'nao_aplicavel')
+          .map(stage => ({ value: stage.stage_key, label: stage.label }))
+      : []
   const eligibilityAnalysis = selectedClient && isEligibilityProcess(selectedTypeSlug)
     ? analyzeEligibility({
         processTypeSlug: selectedTypeSlug,
@@ -217,6 +314,14 @@ function NovoProcessoForm() {
       setError('A CNH Especial exige que o cliente esteja cadastrado como condutor.')
       return
     }
+    if (prePlanItemId && !servicePlanItem) {
+      setError('O item do plano ainda nao foi validado. Recarregue a pagina antes de continuar.')
+      return
+    }
+    if (['processo_icms', 'processo_ipva'].includes(selectedTypeSlug) && !selectedVehicle) {
+      setError('Selecione o veiculo deste processo. Cadastre-o no cliente se ainda nao estiver na lista.')
+      return
+    }
 
     setLoading(true)
     setError('')
@@ -239,7 +344,7 @@ function NovoProcessoForm() {
           requiresPracticalExam: null,
         })
       : null
-    const stageRows = cnhStages
+    const baseStageRows = cnhStages
       ? cnhStages.map(stage => ({
           stage_key: stage.stage_key,
           label: stage.label,
@@ -251,6 +356,7 @@ function NovoProcessoForm() {
           void _processId
           return stage
         })
+    const stageRows = applyStartingStage(baseStageRows, form.start_stage_key)
     const financial = isSuperAdmin && (form.service_value || form.payment_method || form.financial_notes)
       ? {
           service_value: form.service_value ? parseCurrency(form.service_value) : null,
@@ -265,11 +371,13 @@ function NovoProcessoForm() {
       p_client_id: form.client_id,
       p_process_type_id: form.process_type_id,
       p_protocol: form.protocol || null,
-      p_status: form.status,
+      p_status: form.start_stage_key ? 'em_andamento' : form.status,
       p_responsible_user_id: form.responsible_user_id || null,
       p_observations: form.observations || null,
       p_jurisdiction_state: form.jurisdiction_state || selectedClient?.state || null,
-      p_vehicle_condition: selectedTypeSlug === 'cnh_especial' ? null : form.vehicle_condition || null,
+      p_vehicle_condition: selectedTypeSlug === 'cnh_especial'
+        ? null
+        : (selectedVehicle?.vehicle_condition ?? form.vehicle_condition) || null,
       p_eligibility_status: eligibilityAnalysis?.status ?? null,
       p_eligibility_analysis: eligibilityAnalysis ?? null,
       p_custom_fields: customFieldInserts,
@@ -281,6 +389,28 @@ function NovoProcessoForm() {
       setError('Erro ao criar processo: ' + (procErr?.message ?? 'Erro desconhecido'))
       setLoading(false)
       return
+    }
+
+    if (servicePlanItem || selectedVehicle) {
+      const { error: planLinkError } = await supabase
+        .from('processes')
+        .update({
+          service_engagement_id: servicePlanItem?.engagement_id ?? null,
+          service_plan_item_id: servicePlanItem?.id ?? null,
+          service_order: servicePlanItem?.sort_order ?? null,
+          vehicle_id: selectedVehicle?.id ?? null,
+        })
+        .eq('id', processId)
+
+      if (planLinkError) {
+        await supabase
+          .from('processes')
+          .update({ status: 'cancelado' })
+          .eq('id', processId)
+        setError('O processo nao foi vinculado ao plano: ' + planLinkError.message)
+        setLoading(false)
+        return
+      }
     }
 
     router.push(`/processos/${processId}`)
@@ -346,7 +476,7 @@ function NovoProcessoForm() {
                   {selectedTypeName ? 'Tipo selecionado — clique em alterar para mudar' : 'Selecione o tipo para continuar *'}
                 </p>
               </div>
-              {selectedTypeName && (
+              {selectedTypeName && !prePlanItemId && (
                 <button
                   type="button"
                   onClick={clearType}
@@ -433,8 +563,53 @@ function NovoProcessoForm() {
                     onStateChange={jurisdiction_state => setForm(prev => ({ ...prev, jurisdiction_state }))}
                     onVehicleConditionChange={vehicle_condition => setForm(prev => ({ ...prev, vehicle_condition }))}
                     showState={['processo_icms', 'processo_ipva'].includes(selectedTypeSlug)}
-                    showVehicleCondition={selectedTypeSlug !== 'cnh_especial'}
+                    showVehicleCondition={selectedTypeSlug === 'processo_ipva'}
                   />
+                )}
+                {['processo_ipi', 'processo_icms'].includes(selectedTypeSlug) && (
+                  <p className="dash rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
+                    Este beneficio e exclusivo para veiculo zero-quilometro; essa condicao ja foi aplicada ao processo.
+                  </p>
+                )}
+                {['processo_ipi', 'processo_icms', 'processo_ipva'].includes(selectedTypeSlug) && form.client_id && (
+                  <div className="space-y-2 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3.5">
+                    <Select
+                      label={`Veiculo${['processo_icms', 'processo_ipva'].includes(selectedTypeSlug) ? ' *' : ''}`}
+                      options={clientVehicles.map(vehicle => ({
+                        value: vehicle.id,
+                        label: [
+                          [vehicle.brand, vehicle.model].filter(Boolean).join(' ') || vehicle.description || 'Veiculo',
+                          vehicle.plate,
+                          vehicle.vehicle_condition === 'zero_km' ? 'zero km' : 'usado',
+                        ].filter(Boolean).join(' · '),
+                      }))}
+                      placeholder={selectedTypeSlug === 'processo_ipi'
+                        ? 'Escolher depois'
+                        : 'Selecione o veiculo'}
+                      value={form.vehicle_id}
+                      onChange={event => {
+                        const vehicle = clientVehicles.find(item => item.id === event.target.value)
+                        setForm(current => ({
+                          ...current,
+                          vehicle_id: event.target.value,
+                          vehicle_condition: vehicle?.vehicle_condition ?? current.vehicle_condition,
+                        }))
+                      }}
+                    />
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="dash text-[11px] text-cyan-800">
+                        {selectedTypeSlug === 'processo_ipi'
+                          ? 'Se o cliente ainda nao escolheu o veiculo, o IPI pode continuar sem essa identificacao.'
+                          : 'O vinculo evita processos duplicados e separa o IPVA de cada veiculo.'}
+                      </p>
+                      <Link
+                        href={`/clientes/${form.client_id}`}
+                        className="dash text-[11px] font-semibold text-cyan-800 underline underline-offset-2"
+                      >
+                        Cadastrar veiculo no cliente
+                      </Link>
+                    </div>
+                  </div>
                 )}
               </div>
               <Select
@@ -443,6 +618,15 @@ function NovoProcessoForm() {
                 value={form.status}
                 onChange={e => setForm(prev => ({ ...prev, status: e.target.value }))}
               />
+              {startStageOptions.length > 0 && (
+                <Select
+                  label="Etapa inicial"
+                  options={startStageOptions}
+                  placeholder="Comecar pela primeira etapa"
+                  value={form.start_stage_key}
+                  onChange={event => setForm(current => ({ ...current, start_stage_key: event.target.value }))}
+                />
+              )}
               <Input
                 label="Protocolo"
                 value={form.protocol}
