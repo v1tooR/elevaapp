@@ -86,6 +86,11 @@ test('conclusão do recurso exige data e resultado da junta', () => {
     result: 'aprovado',
   }), /data da Junta/)
 
+  assert.match(validateAppealWorkflow({
+    data: { appeal_status: 'concluido', protocolo: 'SEI-123', appeal_filed_at: '2026-07-01' },
+    scheduledDate: '2026-07-21',
+  }), /“Aprovado”.*“Reprovado”/)
+
   assert.equal(validateAppealWorkflow({
     data: { appeal_status: 'concluido', protocolo: 'SEI-123', appeal_filed_at: '2026-07-01' },
     scheduledDate: '2026-07-21',

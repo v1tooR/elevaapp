@@ -248,7 +248,7 @@ export function validateAppealWorkflow(input: {
     return 'Informe a data da Junta Médica para esta situação do recurso.'
   }
   if (status === 'concluido' && !['aprovado', 'reprovado'].includes(input.result ?? '')) {
-    return 'Informe o resultado da Junta Médica antes de concluir o recurso.'
+    return 'Selecione “Aprovado” ou “Reprovado” como resultado da Junta Médica antes de concluir o recurso.'
   }
 
   return null

@@ -154,6 +154,37 @@ export function CnhStagesPanel({ stages, processId }: Props) {
       }
     })
 
+  const updateAppealStatus = (stage: ProcessStage, appealStatus: AppealStatus) =>
+    setEdits(prev => {
+      const cur = prev[stage.id] ?? initEdit(stage)
+      const hasFinalResult = ['aprovado', 'reprovado'].includes(cur.result)
+      const isCompleted = appealStatus === 'concluido'
+      return {
+        ...prev,
+        [stage.id]: {
+          ...cur,
+          status: isCompleted && hasFinalResult ? cur.result : 'em_andamento',
+          result: isCompleted ? cur.result : '',
+          data: { ...cur.data, appeal_status: appealStatus },
+        },
+      }
+    })
+
+  const updateAppealResult = (stage: ProcessStage, result: 'aprovado' | 'reprovado') =>
+    setEdits(prev => {
+      const cur = prev[stage.id] ?? initEdit(stage)
+      return {
+        ...prev,
+        [stage.id]: {
+          ...cur,
+          status: result,
+          result,
+          attended: true,
+          data: { ...cur.data, appeal_status: 'concluido' },
+        },
+      }
+    })
+
   // ── Calendar quick-save ────────────────────────────────────────────────────
   const saveCalendarEvent = async (stage: ProcessStage, type: 'internal' | 'client') => {
     const edit = getEdit(stage)
@@ -539,49 +570,48 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                 {isActive && (
                   <div className="border-t border-slate-100 px-4 py-4 space-y-4 bg-slate-50/40">
 
-                    {/* Status selector */}
-                    <div className="space-y-2">
-                      <p className="text-xs font-semibold text-slate-600">Status da etapa</p>
-                      <div className="flex flex-wrap gap-2">
-                        {(STATUS_OPTIONS_BY_KEY[stage.stage_key] ?? ['pendente', 'em_andamento', 'concluido']).map(s => {
-                          const ss = STATUS_STYLE[s] ?? STATUS_STYLE.pendente
-                          const isSel = edit.status === s
-                          return (
-                            <button
-                              key={s}
-                              type="button"
-                              onClick={() => {
-                                const isDecision = ['pericia_medica', 'recurso_junta_medica', 'exame_pratico'].includes(stage.stage_key)
-                                setEdits(prev => {
-                                  const cur = prev[stage.id] ?? initEdit(stage)
-                                  const hasResult = isDecision && ['aprovado', 'reprovado'].includes(s)
-                                  return {
-                                    ...prev,
-                                    [stage.id]: {
-                                      ...cur,
-                                      status: s,
-                                      result: hasResult ? s : '',
-                                      attended: hasResult ? true : cur.attended,
-                                      data: stage.stage_key === 'recurso_junta_medica' && hasResult
-                                        ? { ...cur.data, appeal_status: 'concluido' }
-                                        : cur.data,
-                                    },
-                                  }
-                                })
-                              }}
-                              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                              style={isSel
-                                ? { background: ss.bg, color: ss.text, border: `1.5px solid ${ss.border}`, boxShadow: `0 0 0 2px ${ss.dot}30` }
-                                : { background: '#fff', color: '#94A3B8', border: '1px solid #E2E8F0' }
-                              }
-                            >
-                              <span className="w-1.5 h-1.5 rounded-full" style={{ background: isSel ? ss.dot : '#CBD5E1' }} />
-                              {s === 'pendente' ? 'Não iniciado' : STATUS_LABEL[s]}
-                            </button>
-                          )
-                        })}
+                    {/* O recurso usa a situação operacional e o resultado da Junta como controles únicos. */}
+                    {stage.stage_key !== 'recurso_junta_medica' && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-slate-600">Status da etapa</p>
+                        <div className="flex flex-wrap gap-2">
+                          {(STATUS_OPTIONS_BY_KEY[stage.stage_key] ?? ['pendente', 'em_andamento', 'concluido']).map(s => {
+                            const ss = STATUS_STYLE[s] ?? STATUS_STYLE.pendente
+                            const isSel = edit.status === s
+                            return (
+                              <button
+                                key={s}
+                                type="button"
+                                onClick={() => {
+                                  const isDecision = ['pericia_medica', 'exame_pratico'].includes(stage.stage_key)
+                                  setEdits(prev => {
+                                    const cur = prev[stage.id] ?? initEdit(stage)
+                                    const hasResult = isDecision && ['aprovado', 'reprovado'].includes(s)
+                                    return {
+                                      ...prev,
+                                      [stage.id]: {
+                                        ...cur,
+                                        status: s,
+                                        result: hasResult ? s : '',
+                                        attended: hasResult ? true : cur.attended,
+                                      },
+                                    }
+                                  })
+                                }}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                                style={isSel
+                                  ? { background: ss.bg, color: ss.text, border: `1.5px solid ${ss.border}`, boxShadow: `0 0 0 2px ${ss.dot}30` }
+                                  : { background: '#fff', color: '#94A3B8', border: '1px solid #E2E8F0' }
+                                }
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ background: isSel ? ss.dot : '#CBD5E1' }} />
+                                {s === 'pendente' ? 'Não iniciado' : STATUS_LABEL[s]}
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {stage.stage_key === 'exame_pratico' && (
                       <div className="space-y-2">
@@ -796,10 +826,7 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                           <p className="text-xs font-semibold text-sky-900">Situação operacional do recurso</p>
                           <select
                             value={(edit.data.appeal_status as AppealStatus) ?? inferAppealStatus(stage)}
-                            onChange={event => {
-                              updateData(stage, 'appeal_status', event.target.value)
-                              if (event.target.value !== 'concluido') updateEdit(stage, 'status', 'em_andamento')
-                            }}
+                            onChange={event => updateAppealStatus(stage, event.target.value as AppealStatus)}
                             className="block w-full rounded-lg border border-sky-200 bg-white px-3 py-2 text-sm focus:border-sky-400 focus:outline-none"
                           >
                             {APPEAL_STATUS_OPTIONS.map(option => (
@@ -807,6 +834,34 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                             ))}
                           </select>
                           <p className="text-[10px] text-sky-700">Use esta situação para acompanhar o caminho entre o cadastro no SEI e o resultado da junta.</p>
+                          {edit.data.appeal_status === 'concluido' && (
+                            <div className="space-y-2 border-t border-sky-200 pt-3">
+                              <p className="text-xs font-semibold text-sky-900">Resultado da Junta Médica *</p>
+                              <div className="flex flex-wrap gap-2">
+                                {(['aprovado', 'reprovado'] as const).map(result => {
+                                  const selected = edit.result === result
+                                  return (
+                                    <button
+                                      key={result}
+                                      type="button"
+                                      onClick={() => updateAppealResult(stage, result)}
+                                      className={cn(
+                                        'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all',
+                                        selected
+                                          ? result === 'aprovado'
+                                            ? 'border-emerald-300 bg-emerald-100 text-emerald-800 ring-2 ring-emerald-200'
+                                            : 'border-red-300 bg-red-100 text-red-800 ring-2 ring-red-200'
+                                          : 'border-sky-200 bg-white text-slate-600 hover:border-sky-300',
+                                      )}
+                                    >
+                                      {result === 'aprovado' ? 'Aprovado' : 'Reprovado'}
+                                    </button>
+                                  )
+                                })}
+                              </div>
+                              <p className="text-[10px] text-sky-700">O resultado libera a próxima etapa correta da CNH.</p>
+                            </div>
+                          )}
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">

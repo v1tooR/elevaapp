@@ -90,103 +90,103 @@ Credencial.
 
 ### P0 — Conversão e abertura correta dos serviços
 
-- [ ] Ao converter o lead, mostrar todos os serviços confirmados como processos
+- [x] Ao converter o lead, mostrar todos os serviços confirmados como processos
   visíveis no cliente; hoje apenas o primeiro processo realmente é criado e os
   demais ficam somente no plano.
-- [ ] Para o conjunto CNH + IPI + ICMS + IPVA, aplicar o comportamento:
-  - [ ] CNH inicia pronta para movimentação;
-  - [ ] IPI fica visível como “Aguardando conclusão da CNH”;
-  - [ ] ICMS fica visível como “Aguardando deferimento do IPI”;
-  - [ ] IPVA fica disponível em paralelo, sem esperar a fila anterior;
-  - [ ] apenas CNH e IPVA geram alertas imediatos nesse cenário.
-- [ ] Fazer a seção “Serviços contratados” explicar claramente o que será aberto,
+- [x] Para o conjunto CNH + IPI + ICMS + IPVA, aplicar o comportamento:
+  - [x] CNH inicia pronta para movimentação;
+  - [x] IPI fica visível como “Aguardando conclusão da CNH”;
+  - [x] ICMS fica visível como “Aguardando deferimento do IPI”;
+  - [x] IPVA fica disponível em paralelo, sem esperar a fila anterior;
+  - [x] apenas CNH e IPVA geram alertas imediatos nesse cenário.
+- [x] Fazer a seção “Serviços contratados” explicar claramente o que será aberto,
   o que ficará aguardando e qual serviço está ativo.
-- [ ] Depois de adicionar serviços no cliente, criar os respectivos cards/processos
+- [x] Depois de adicionar serviços no cliente, criar os respectivos cards/processos
   planejados e não apenas salvar seleções sem retorno operacional.
-- [ ] Manter a possibilidade de escolher manualmente o próximo serviço, registrando
+- [x] Manter a possibilidade de escolher manualmente o próximo serviço, registrando
   quem alterou a prioridade e quando.
-- [ ] Ao finalizar a CNH, liberar e iniciar o IPI selecionado sem exigir nova
+- [x] Ao finalizar a CNH, liberar e iniciar o IPI selecionado sem exigir nova
   criação manual.
-- [ ] Ao deferir o IPI, liberar/iniciar o ICMS quando contratado.
-- [ ] Ao deferir o ICMS, perguntar “Dar entrada no IPVA?” sem tornar o IPVA uma
+- [x] Ao deferir o IPI, liberar/iniciar o ICMS quando contratado.
+- [x] Ao deferir o ICMS, perguntar “Dar entrada no IPVA?” sem tornar o IPVA uma
   dependência obrigatória.
-- [ ] Evitar processos duplicados quando uma transição automática encontrar um
+- [x] Evitar processos duplicados quando uma transição automática encontrar um
   processo ou item de plano já existente.
 
 ### P0 — Retirar a exigência prematura de veículo
 
-- [ ] Permitir criar e movimentar ICMS sem veículo cadastrado; atualmente a tela
+- [x] Permitir criar e movimentar ICMS sem veículo cadastrado; atualmente a tela
   bloqueia o salvamento se não houver veículo selecionado.
-- [ ] Permitir criar e movimentar IPVA sem veículo cadastrado, possibilitando o
+- [x] Permitir criar e movimentar IPVA sem veículo cadastrado, possibilitando o
   vínculo posterior.
-- [ ] Remover de ICMS/IPVA a regra `requiresVehicleBeforeStart`.
-- [ ] Não exigir descrição temporária, chassi, placa ou RENAVAM quando o veículo
+- [x] Remover de ICMS/IPVA a regra `requiresVehicleBeforeStart`.
+- [x] Não exigir descrição temporária, chassi, placa ou RENAVAM quando o veículo
   ainda não foi escolhido/comprado.
-- [ ] Exigir identificação do veículo somente no marco operacional em que ela for
+- [x] Exigir identificação do veículo somente no marco operacional em que ela for
   realmente necessária, com validação progressiva:
-  - [ ] concessionária e vendedor podem ser informados antes do veículo;
-  - [ ] marca/modelo podem ser preenchidos quando escolhidos;
-  - [ ] chassi, placa e RENAVAM ficam para quando existirem;
-  - [ ] antes do protocolo que depende do veículo, validar os dados mínimos.
-- [ ] Preservar a regra de IPI/ICMS apenas para veículo zero-quilômetro e IPVA para
+  - [x] concessionária e vendedor podem ser informados antes do veículo;
+  - [x] marca/modelo podem ser preenchidos quando escolhidos;
+  - [x] chassi, placa e RENAVAM ficam para quando existirem;
+  - [x] antes do protocolo que depende do veículo, validar os dados mínimos.
+- [x] Preservar a regra de IPI/ICMS apenas para veículo zero-quilômetro e IPVA para
   zero-quilômetro ou usado, sem antecipar a escolha do automóvel.
 
 ### P0 — Carteiras no formato operacional da planilha
 
-- [ ] Substituir a lista simplificada de cada tipo de processo, que hoje mostra
+- [x] Substituir a lista simplificada de cada tipo de processo, que hoje mostra
   apenas cliente, protocolo, status e data, por uma visão com:
-  - [ ] cliente;
-  - [ ] CPF;
-  - [ ] telefone;
-  - [ ] etapa atual;
-  - [ ] situação da etapa;
-  - [ ] próxima ação;
-  - [ ] observações operacionais;
-  - [ ] última atualização.
-- [ ] Reutilizar a lógica da lista geral de processos para não criar duas regras
+  - [x] cliente;
+  - [x] CPF;
+  - [x] telefone;
+  - [x] etapa atual;
+  - [x] situação da etapa;
+  - [x] próxima ação;
+  - [x] observações operacionais;
+  - [x] última atualização.
+- [x] Reutilizar a lógica da lista geral de processos para não criar duas regras
   diferentes de próxima ação e prioridade.
-- [ ] Separar visualmente “status do processo”, “etapa”, “situação” e “próxima
+- [x] Separar visualmente “status do processo”, “etapa”, “situação” e “próxima
   ação”; a planilha não trata esses conceitos como sinônimos.
-- [ ] Criar um catálogo central de situações e ações sugeridas, incluindo:
-  - [ ] Não iniciado;
-  - [ ] Agendado;
-  - [ ] Solicitado;
-  - [ ] Aguardando documento/laudo;
-  - [ ] Em análise;
-  - [ ] Finalizado;
-  - [ ] Deferido/Indeferido;
-  - [ ] Agendar, Solicitar, Dar entrada, Consultar e Encerrar.
-- [ ] Ordenar cada carteira por necessidade de ação, e não somente por data de
+- [x] Criar um catálogo central de situações e ações sugeridas, incluindo:
+  - [x] Não iniciado;
+  - [x] Agendado;
+  - [x] Solicitado;
+  - [x] Aguardando documento/laudo;
+  - [x] Em análise;
+  - [x] Finalizado;
+  - [x] Deferido/Indeferido;
+  - [x] Agendar, Solicitar, Dar entrada, Consultar e Encerrar.
+- [x] Ordenar cada carteira por necessidade de ação, e não somente por data de
   criação ou status geral.
-- [ ] Adicionar busca por nome, CPF e telefone e filtros por etapa, situação,
+- [x] Adicionar busca por nome, CPF e telefone e filtros por etapa, situação,
   próxima ação, responsável e período.
-- [ ] Na visualização móvel, trocar a tabela larga por cards que mantenham etapa,
+- [x] Na visualização móvel, trocar a tabela larga por cards que mantenham etapa,
   ação e contato visíveis.
 
 ### P0 — Visão de resumo dos clientes
 
-- [ ] Criar uma visão de resumo dos clientes baseada na última seção da planilha,
+- [x] Criar uma visão de resumo dos clientes baseada na última seção da planilha,
   sem sobrecarregar a lista simples atual.
-- [ ] Exibir ou permitir escolher as colunas:
-  - [ ] cliente, CPF, telefone e data de cadastro;
-  - [ ] serviços/contrato e valor contratado;
-  - [ ] responsável comercial;
-  - [ ] indicação/vendedor-indicador de origem;
-  - [ ] concessionária e vendedor da concessionária;
-  - [ ] data da compra e próxima troca;
-  - [ ] vencimento da CNH;
-  - [ ] possui CIN;
-  - [ ] possui Credencial de estacionamento.
-- [ ] Não misturar “indicação” com “vendedor da concessionária”: são vínculos de
+- [x] Exibir ou permitir escolher as colunas:
+  - [x] cliente, CPF, telefone e data de cadastro;
+  - [x] serviços/contrato e valor contratado;
+  - [x] responsável comercial;
+  - [x] indicação/vendedor-indicador de origem;
+  - [x] concessionária e vendedor da concessionária;
+  - [x] data da compra e próxima troca;
+  - [x] vencimento da CNH;
+  - [x] possui CIN;
+  - [x] possui Credencial de estacionamento.
+- [x] Não misturar “indicação” com “vendedor da concessionária”: são vínculos de
   naturezas diferentes.
-- [ ] Normalizar concessionária, vendedor da concessionária, data da compra e
+- [x] Normalizar concessionária, vendedor da concessionária, data da compra e
   próxima troca; hoje concessionária/vendedor ficam em JSON de etapa e não são
   confiáveis para filtros e resumo.
-- [ ] Derivar contrato/valor do módulo financeiro e serviços do plano, evitando
+- [x] Derivar contrato/valor do módulo financeiro e serviços do plano, evitando
   campos duplicados no cliente.
-- [ ] Definir se “possui CIN/Credencial” significa serviço contratado, processo
+- [x] Definir se “possui CIN/Credencial” significa serviço contratado, processo
   concluído ou documento vigente e aplicar uma única regra.
-- [ ] Adicionar filtros e exportação da visão, com versão responsiva por cards.
+- [x] Adicionar filtros e exportação da visão, com versão responsiva por cards.
 
 ### P1 — Lead e cadastro do cliente
 
