@@ -1,17 +1,43 @@
-import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import {
-  Plus, FolderOpen, ArrowUpRight, ChevronLeft, ChevronRight, ArrowLeft,
-  LayoutList, Columns3,
+  ArrowLeft,
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  Columns3,
+  FolderOpen,
+  LayoutList,
+  Plus,
+  Search,
 } from 'lucide-react'
-import { ProcessStatusBadge } from '@/components/shared/status-badge'
-import { formatDate, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import { KanbanBoard } from '@/components/processos/kanban-board'
+import { ProcessStatusBadge } from '@/components/shared/status-badge'
+import {
+  deriveProcessAction,
+  OPERATIONAL_ACTION_CATALOG,
+  OPERATIONAL_ACTOR_LABELS,
+  OPERATIONAL_PRIORITY_META,
+  OPERATIONAL_SITUATION_CATALOG,
+  STAGE_STATUS_LABELS,
+} from '@/lib/process-actions'
+import { createClient } from '@/lib/supabase/server'
+import { cn, formatCPF, formatDate, formatPhone, PROCESS_STATUS_LABELS } from '@/lib/utils'
 import type { ProcessStatus } from '@/types/database'
 
-interface SearchParams { status?: string; page?: string; view?: string }
-interface Params { slug: string }
+interface SearchParams {
+  status?: string
+  situacao?: string
+  etapa?: string
+  acao?: string
+  responsavel?: string
+  de?: string
+  ate?: string
+  q?: string
+  page?: string
+  view?: string
+}
+
 interface ProcessRow {
   id: string
   status: ProcessStatus
@@ -20,24 +46,65 @@ interface ProcessRow {
   clients: { id: string; name: string } | null
 }
 
-const STATUS_COLORS: Record<string, { dot: string; pill: string; active: string }> = {
-  aberto:                 { dot: '#3B82F6', pill: 'bg-blue-50 text-blue-700 border-blue-200',      active: 'bg-blue-600 text-white border-blue-600' },
-  em_andamento:           { dot: '#F59E0B', pill: 'bg-amber-50 text-amber-700 border-amber-200',    active: 'bg-amber-500 text-white border-amber-500' },
-  aguardando_documentos:  { dot: '#F97316', pill: 'bg-orange-50 text-orange-700 border-orange-200', active: 'bg-orange-500 text-white border-orange-500' },
-  em_analise:             { dot: '#8B5CF6', pill: 'bg-purple-50 text-purple-700 border-purple-200', active: 'bg-purple-600 text-white border-purple-600' },
-  aguardando_orgao:       { dot: '#6366F1', pill: 'bg-indigo-50 text-indigo-700 border-indigo-200', active: 'bg-indigo-600 text-white border-indigo-600' },
-  concluido:              { dot: '#10B981', pill: 'bg-emerald-50 text-emerald-700 border-emerald-200', active: 'bg-emerald-600 text-white border-emerald-600' },
-  arquivado:              { dot: '#94A3B8', pill: 'bg-slate-50 text-slate-600 border-slate-200',    active: 'bg-slate-500 text-white border-slate-500' },
-  cancelado:              { dot: '#EF4444', pill: 'bg-red-50 text-red-700 border-red-200',          active: 'bg-red-600 text-white border-red-600' },
+interface WalletRow {
+  process_id: string
+  client_id: string
+  client_name: string
+  client_cpf: string | null
+  client_phone: string | null
+  protocol: string | null
+  process_status: ProcessStatus
+  next_action: string | null
+  action_owner: string | null
+  action_due_date: string | null
+  blocked_reason: string | null
+  process_observations: string | null
+  stage_key: string | null
+  stage_label: string | null
+  stage_status: string | null
+  scheduled_date: string | null
+  stage_notes: string | null
+  stage_data: Record<string, unknown> | null
+  last_updated_at: string
+  action_category: string
+  operational_priority_rank: number
+  operational_situation: string
+  responsible_user_id: string | null
+  responsible_name: string | null
 }
 
-const quickStatuses = ['aberto', 'em_andamento', 'aguardando_documentos', 'em_analise', 'aguardando_orgao', 'concluido']
+interface WalletFilterOption {
+  stage_key: string | null
+  stage_label: string | null
+}
+
+const QUICK_STATUSES: ProcessStatus[] = [
+  'aberto',
+  'em_andamento',
+  'aguardando_documentos',
+  'em_analise',
+  'aguardando_orgao',
+  'concluido',
+]
+
+function formatDateTime(value: string | null) {
+  if (!value) return '—'
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+    timeZone: 'America/Sao_Paulo',
+  }).format(new Date(value))
+}
+
+function stringValue(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value : null
+}
 
 export default async function ProcessosPorTipoPage({
   params,
   searchParams,
 }: {
-  params: Promise<Params>
+  params: Promise<{ slug: string }>
   searchParams: Promise<SearchParams>
 }) {
   const { slug } = await params
@@ -45,10 +112,16 @@ export default async function ProcessosPorTipoPage({
 
   const sp = await searchParams
   const statusFilter = sp.status ?? ''
-  const page         = parseInt(sp.page ?? '1')
-  const view         = sp.view === 'kanban' ? 'kanban' : 'lista'
-  const perPage      = 20
-
+  const situationFilter = sp.situacao ?? ''
+  const stageFilter = sp.etapa ?? ''
+  const actionFilter = sp.acao ?? ''
+  const responsibleFilter = sp.responsavel ?? ''
+  const fromFilter = /^\d{4}-\d{2}-\d{2}$/.test(sp.de ?? '') ? sp.de ?? '' : ''
+  const toFilter = /^\d{4}-\d{2}-\d{2}$/.test(sp.ate ?? '') ? sp.ate ?? '' : ''
+  const search = sp.q?.trim() ?? ''
+  const page = Math.max(1, Number.parseInt(sp.page ?? '1', 10) || 1)
+  const view = sp.view === 'kanban' ? 'kanban' : 'lista'
+  const perPage = 25
   const supabase = await createClient()
 
   const { data: processType } = await supabase
@@ -60,11 +133,10 @@ export default async function ProcessosPorTipoPage({
 
   if (!processType) notFound()
 
-  const color = processType.color ?? '#3B82F6'
-  const canCreate = processType.accepts_new_processes !== false
-
-  // Kanban fetches all (no pagination), list paginates
-  let processes: ProcessRow[] = []
+  let kanbanProcesses: ProcessRow[] = []
+  let walletRows: WalletRow[] = []
+  let stageOptions: WalletFilterOption[] = []
+  let responsibleOptions: { id: string; name: string }[] = []
   let count = 0
 
   if (view === 'kanban') {
@@ -73,278 +145,260 @@ export default async function ProcessosPorTipoPage({
       .select('id, status, protocol, created_at, clients(id, name)')
       .eq('process_type_id', processType.id)
       .not('status', 'in', '(arquivado,cancelado)')
-      .order('created_at', { ascending: false })
+      .order('updated_at', { ascending: false })
       .limit(200)
-    processes = (data ?? []) as unknown as ProcessRow[]
-    count = processes.length
+    kanbanProcesses = (data ?? []) as unknown as ProcessRow[]
+    count = kanbanProcesses.length
   } else {
-    let q = supabase
-      .from('processes')
-      .select('*, clients(id, name)', { count: 'exact' })
+    let query = supabase
+      .from('process_wallet_rows')
+      .select('*', { count: 'exact' })
       .eq('process_type_id', processType.id)
-      .order('created_at', { ascending: false })
+      .order('operational_priority_rank', { ascending: true })
+      .order('action_due_date', { ascending: true, nullsFirst: false })
+      .order('last_updated_at', { ascending: false })
       .range((page - 1) * perPage, page * perPage - 1)
-    if (statusFilter) q = q.eq('status', statusFilter)
-    const { data, count: c } = await q
-    processes = (data ?? []) as unknown as ProcessRow[]
-    count = c ?? 0
+
+    if (statusFilter) query = query.eq('process_status', statusFilter)
+    if (situationFilter) query = query.eq('operational_situation', situationFilter)
+    if (stageFilter) query = query.eq('stage_key', stageFilter)
+    if (actionFilter) query = query.eq('action_category', actionFilter)
+    if (responsibleFilter) query = query.eq('responsible_user_id', responsibleFilter)
+    if (fromFilter) query = query.gte('last_updated_at', `${fromFilter}T00:00:00`)
+    if (toFilter) query = query.lte('last_updated_at', `${toFilter}T23:59:59`)
+    if (search) query = query.ilike('search_text', `%${search}%`)
+
+    const [walletResult, stageResult, responsibleResult] = await Promise.all([
+      query,
+      supabase
+        .from('process_wallet_rows')
+        .select('stage_key, stage_label')
+        .eq('process_type_id', processType.id)
+        .not('stage_key', 'is', null)
+        .order('stage_label')
+        .limit(1000),
+      supabase
+        .from('profiles')
+        .select('id, name')
+        .in('role', ['super_admin', 'admin', 'analista'])
+        .eq('is_active', true)
+        .order('name'),
+    ])
+    const { data, count: total, error } = walletResult
+    if (error) throw new Error(`Não foi possível carregar a carteira operacional: ${error.message}`)
+    walletRows = (data ?? []) as WalletRow[]
+    const stagesByKey = new Map<string, WalletFilterOption>()
+    for (const option of (stageResult.data ?? []) as WalletFilterOption[]) {
+      if (option.stage_key && !stagesByKey.has(option.stage_key)) stagesByKey.set(option.stage_key, option)
+    }
+    stageOptions = [...stagesByKey.values()]
+    responsibleOptions = responsibleResult.data ?? []
+    count = total ?? 0
   }
 
-  const totalPages = Math.ceil(count / perPage)
+  const color = processType.color ?? '#A14F2A'
+  const canCreate = processType.accepts_new_processes !== false
+  const totalPages = Math.max(1, Math.ceil(count / perPage))
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
 
-  const viewUrl = (v: string) => {
-    const base = `/processos/tipo/${slug}`
-    return v === 'kanban' ? `${base}?view=kanban` : base
+  const makeUrl = (overrides: Record<string, string | null>) => {
+    const values: Record<string, string> = {
+      ...(search ? { q: search } : {}),
+      ...(statusFilter ? { status: statusFilter } : {}),
+      ...(situationFilter ? { situacao: situationFilter } : {}),
+      ...(stageFilter ? { etapa: stageFilter } : {}),
+      ...(actionFilter ? { acao: actionFilter } : {}),
+      ...(responsibleFilter ? { responsavel: responsibleFilter } : {}),
+      ...(fromFilter ? { de: fromFilter } : {}),
+      ...(toFilter ? { ate: toFilter } : {}),
+      ...(view === 'kanban' ? { view } : {}),
+    }
+    for (const [key, value] of Object.entries(overrides)) {
+      if (value) values[key] = value
+      else delete values[key]
+    }
+    const query = new URLSearchParams(values).toString()
+    return `/processos/tipo/${slug}${query ? `?${query}` : ''}`
   }
 
   return (
-    <>
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .anim   { animation: slideUp 0.4s ease-out both; }
-        .anim-1 { animation-delay: 0.05s; }
-        .anim-2 { animation-delay: 0.10s; }
-        .proc-row { transition: background 0.12s; }
-        .proc-row:hover { background: #F8FAFC; }
-        .status-pill { transition: all 0.15s; }
-        .view-btn { transition: all 0.15s; }
-      `}</style>
-
-      <div className="space-y-5">
-
-        {/* ── Banner ─────────────────────────────────────────────── */}
-        <div
-          className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
-        >
-          <div className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-[0.07]"
-            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
-          <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
-            style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
-
-          <div className="relative p-6 lg:p-8">
-            <Link
-              href="/processos"
-              className="dash inline-flex items-center gap-1.5 text-primary-foreground/70 text-xs font-medium hover:text-white transition-colors mb-4"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              Todos os processos
-            </Link>
-
-            <div className="flex items-center justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-4">
-                <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border border-white/20"
-                  style={{ backgroundColor: `${color}30` }}
-                >
-                  <div className="w-5 h-5 rounded-full" style={{ backgroundColor: color }} />
-                </div>
-                <div>
-                  <h1 className="dash text-white text-2xl lg:text-3xl font-bold leading-tight">
-                    {processType.name}
-                  </h1>
-                  <p className="dash text-primary-foreground/65 text-sm mt-0.5">
-                    {view === 'kanban' ? `${count} processo${count !== 1 ? 's' : ''} ativos` : `${count ?? 0} processo${count !== 1 ? 's' : ''}`}
-                    {statusFilter && view === 'lista' ? ` · ${PROCESS_STATUS_LABELS[statusFilter as keyof typeof PROCESS_STATUS_LABELS] ?? statusFilter}` : ''}
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                {/* View toggle */}
-                <div className="flex items-center bg-white/10 rounded-xl p-1 gap-1">
-                  <Link
-                    href={viewUrl('lista')}
-                    className={`view-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold dash ${view === 'lista' ? 'bg-white text-slate-800' : 'text-white/70 hover:text-white'}`}
-                  >
-                    <LayoutList className="w-3.5 h-3.5" />
-                    Lista
-                  </Link>
-                  <Link
-                    href={viewUrl('kanban')}
-                    className={`view-btn flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold dash ${view === 'kanban' ? 'bg-white text-slate-800' : 'text-white/70 hover:text-white'}`}
-                  >
-                    <Columns3 className="w-3.5 h-3.5" />
-                    Kanban
-                  </Link>
-                </div>
-
-                {canCreate ? (
-                  <Link
-                    href={`/processos/novo?type_id=${processType.id}`}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white border border-white/20 bg-white/10 hover:bg-white/20 hover:border-white/40 transition-all dash"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Novo
-                  </Link>
-                ) : (
-                  <span className="dash rounded-xl border border-amber-200/40 bg-amber-100/10 px-4 py-2.5 text-sm font-semibold text-amber-100">
-                    Apenas histórico
-                  </span>
-                )}
-              </div>
+    <div className="space-y-5">
+      <section
+        className="relative overflow-hidden rounded-2xl p-6 text-white lg:p-8"
+        style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
+      >
+        <Link href="/processos" className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-white/70 hover:text-white">
+          <ArrowLeft className="h-3.5 w-3.5" /> Todos os processos
+        </Link>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20" style={{ backgroundColor: `${color}35` }}>
+              <span className="h-5 w-5 rounded-full" style={{ backgroundColor: color }} />
+            </span>
+            <div>
+              <h1 className="text-2xl font-bold lg:text-3xl">{processType.name}</h1>
+              <p className="mt-0.5 text-sm text-white/65">{count} processo{count === 1 ? '' : 's'} na carteira</p>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-xl bg-white/10 p-1">
+              <Link href={makeUrl({ view: null, page: null })} className={cn('flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold', view === 'lista' ? 'bg-white text-slate-800' : 'text-white/70')}>
+                <LayoutList className="h-3.5 w-3.5" /> Lista
+              </Link>
+              <Link href={makeUrl({ view: 'kanban', page: null })} className={cn('flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold', view === 'kanban' ? 'bg-white text-slate-800' : 'text-white/70')}>
+                <Columns3 className="h-3.5 w-3.5" /> Kanban
+              </Link>
+            </div>
+            {canCreate && (
+              <Link href={`/processos/novo?type_id=${processType.id}`} className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold hover:bg-white/20">
+                <Plus className="h-4 w-4" /> Novo
+              </Link>
+            )}
           </div>
         </div>
+      </section>
 
-        {/* ── Kanban ─────────────────────────────────────────────── */}
-        {view === 'kanban' ? (
-          <div
-            className="anim anim-1 bg-white rounded-2xl p-4"
-            style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-          >
-            <KanbanBoard initialProcesses={processes} />
-          </div>
-        ) : (
-          <>
-            {/* ── Filtros de status ──────────────────────────────── */}
-            <div
-              className="anim anim-1 bg-white rounded-2xl p-4"
-              style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-            >
-              <div className="flex flex-wrap gap-2">
-                <Link
-                  href={`/processos/tipo/${slug}`}
-                  className={`status-pill dash text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all ${!statusFilter ? 'bg-slate-900 text-white border-slate-900' : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300'}`}
-                >
-                  Todos
-                </Link>
-                {quickStatuses.map(s => {
-                  const c = STATUS_COLORS[s]
-                  return (
-                    <Link
-                      key={s}
-                      href={`/processos/tipo/${slug}?status=${s}`}
-                      className={`status-pill dash text-xs font-semibold px-3 py-1.5 rounded-lg border transition-all flex items-center gap-1.5 ${statusFilter === s ? c.active : c.pill}`}
-                    >
-                      <div
-                        className="w-1.5 h-1.5 rounded-full"
-                        style={{ backgroundColor: statusFilter === s ? 'currentColor' : c.dot, opacity: statusFilter === s ? 0.8 : 1 }}
-                      />
-                      {PROCESS_STATUS_LABELS[s as keyof typeof PROCESS_STATUS_LABELS]}
-                    </Link>
-                  )
-                })}
-              </div>
+      {view === 'kanban' ? (
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <KanbanBoard initialProcesses={kanbanProcesses} />
+        </section>
+      ) : (
+        <>
+          <form method="get" className="grid grid-cols-1 gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-4">
+            <label className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <input name="q" defaultValue={search} placeholder="Cliente, CPF, telefone ou protocolo" className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-3 text-sm outline-none focus:border-amber-500 focus:bg-white" />
+            </label>
+            <select name="situacao" defaultValue={situationFilter} className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-amber-500">
+              <option value="">Todas as situações</option>
+              {Object.entries(OPERATIONAL_SITUATION_CATALOG).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <select name="etapa" defaultValue={stageFilter} className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-amber-500">
+              <option value="">Todas as etapas</option>
+              {stageOptions.map(option => <option key={option.stage_key} value={option.stage_key ?? ''}>{option.stage_label}</option>)}
+            </select>
+            <select name="acao" defaultValue={actionFilter} className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-amber-500">
+              <option value="">Todas as próximas ações</option>
+              {Object.entries(OPERATIONAL_ACTION_CATALOG).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <select name="responsavel" defaultValue={responsibleFilter} className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-amber-500">
+              <option value="">Todos os responsáveis</option>
+              {responsibleOptions.map(responsible => <option key={responsible.id} value={responsible.id}>{responsible.name}</option>)}
+            </select>
+            <label className="text-[10px] font-semibold uppercase text-slate-400">Atualizado de<input type="date" name="de" defaultValue={fromFilter} className="mt-1 block h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-normal text-slate-700" /></label>
+            <label className="text-[10px] font-semibold uppercase text-slate-400">Atualizado até<input type="date" name="ate" defaultValue={toFilter} className="mt-1 block h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-normal text-slate-700" /></label>
+            <div className="flex gap-2 md:items-end">
+              <button className="h-10 flex-1 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white hover:bg-slate-800">Consultar</button>
+              <Link href={`/processos/tipo/${slug}`} className="flex h-10 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600">Limpar</Link>
             </div>
+            {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
+          </form>
 
-            {/* ── Tabela ─────────────────────────────────────────── */}
-            <div
-              className="anim anim-2 bg-white rounded-2xl overflow-hidden"
-              style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-            >
-              {!processes.length ? (
-                <div className="flex flex-col items-center justify-center py-20 gap-4">
-                  <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center">
-                    <FolderOpen className="w-7 h-7 text-slate-300" />
-                  </div>
-                  <div className="text-center">
-                    <p className="dash font-semibold text-slate-700">Nenhum processo encontrado</p>
-                    <p className="text-sm text-slate-400 mt-1 dash">
-                      {statusFilter ? 'Tente ajustar o filtro de status' : `Crie o primeiro processo de ${processType.name}`}
-                    </p>
-                  </div>
-                  {canCreate && (
-                    <Link
-                      href={`/processos/novo?type_id=${processType.id}`}
-                      className="flex items-center gap-2 px-4 py-2 text-white text-sm font-semibold rounded-xl hover:opacity-90 transition-colors dash"
-                      style={{ backgroundColor: color }}
-                    >
-                      <Plus className="w-4 h-4" /> Criar processo
-                    </Link>
-                  )}
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid #F1F5F9', background: '#FAFBFC' }}>
-                        <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider">Cliente</th>
-                        <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">Protocolo</th>
-                        <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider">Status</th>
-                        <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden lg:table-cell">Data</th>
-                        <th className="px-5 py-3.5" />
+          <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <Link href={makeUrl({ status: null, page: null })} className={cn('rounded-lg border px-3 py-1.5 text-xs font-semibold', !statusFilter ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-600')}>Todos</Link>
+            {QUICK_STATUSES.map(status => (
+              <Link key={status} href={makeUrl({ status, page: null })} className={cn('rounded-lg border px-3 py-1.5 text-xs font-semibold', statusFilter === status ? 'border-amber-700 bg-amber-700 text-white' : 'border-slate-200 bg-slate-50 text-slate-600')}>
+                {PROCESS_STATUS_LABELS[status]}
+              </Link>
+            ))}
+          </div>
+
+          <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+            {walletRows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-20 text-center">
+                <FolderOpen className="h-8 w-8 text-slate-300" />
+                <div><p className="font-semibold text-slate-700">Nenhum processo encontrado</p><p className="mt-1 text-sm text-slate-400">Ajuste os filtros ou inicie um novo atendimento.</p></div>
+              </div>
+            ) : (
+              <>
+                <div className="hidden overflow-x-auto lg:block">
+                  <table className="w-full min-w-[1180px] text-sm">
+                    <thead className="border-b border-slate-200 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-4 py-3">Cliente</th>
+                        <th className="px-4 py-3">Etapa</th>
+                        <th className="px-4 py-3">Situação</th>
+                        <th className="px-4 py-3">Próxima ação</th>
+                        <th className="px-4 py-3">Observações</th>
+                        <th className="px-4 py-3">Última atualização</th>
+                        <th className="w-12 px-4 py-3" />
                       </tr>
                     </thead>
-                    <tbody>
-                      {processes.map(p => (
-                        <tr key={p.id} className="proc-row border-b border-slate-50 last:border-0">
-                          <td className="px-5 py-4">
-                            <Link
-                              href={`/clientes/${p.clients?.id}`}
-                              className="dash text-slate-800 font-semibold hover:text-blue-600 transition-colors"
-                            >
-                              {p.clients?.name}
-                            </Link>
-                          </td>
-                          <td className="px-5 py-4 text-slate-400 hidden md:table-cell dash">
-                            {p.protocol ? (
-                              <span className="font-mono text-xs bg-slate-50 px-2 py-1 rounded-lg">{p.protocol}</span>
-                            ) : (
-                              <span className="text-slate-300">—</span>
-                            )}
-                          </td>
-                          <td className="px-5 py-4"><ProcessStatusBadge status={p.status} /></td>
-                          <td className="px-5 py-4 text-slate-400 hidden lg:table-cell dash text-xs">
-                            {formatDate(p.created_at)}
-                          </td>
-                          <td className="px-5 py-4">
-                            <Link
-                              href={`/processos/${p.id}`}
-                              className="flex items-center justify-end gap-1 text-blue-600 text-xs font-semibold dash hover:text-blue-700"
-                            >
-                              <span className="hidden sm:inline">Ver</span>
-                              <ArrowUpRight className="w-3.5 h-3.5" />
-                            </Link>
-                          </td>
-                        </tr>
-                      ))}
+                    <tbody className="divide-y divide-slate-100">
+                      {walletRows.map(row => {
+                        const action = deriveProcessAction({
+                          processStatus: row.process_status,
+                          nextAction: row.next_action,
+                          actionOwner: row.action_owner,
+                          actionDueDate: row.action_due_date,
+                          blockedReason: row.blocked_reason,
+                          currentStage: row.stage_label ? {
+                            label: row.stage_label,
+                            status: row.stage_status ?? 'pendente',
+                            scheduled_date: row.scheduled_date,
+                            due_date: stringValue(row.stage_data?.due_date),
+                          } : null,
+                          today,
+                        })
+                        const observation = row.stage_notes || row.blocked_reason || row.process_observations
+                        return (
+                          <tr key={row.process_id} className="align-top hover:bg-slate-50/70">
+                            <td className="px-4 py-4">
+                              <Link href={`/clientes/${row.client_id}`} className="font-semibold text-slate-900 hover:text-amber-700">{row.client_name}</Link>
+                              <p className="mt-1 text-xs text-slate-400">{row.client_cpf ? formatCPF(row.client_cpf) : 'CPF não informado'}{row.client_phone ? ` · ${formatPhone(row.client_phone)}` : ''}</p>
+                            </td>
+                            <td className="px-4 py-4"><p className="font-medium text-slate-800">{row.stage_label ?? 'Etapas não iniciadas'}</p>{row.protocol && <p className="mt-1 font-mono text-[11px] text-slate-400">{row.protocol}</p>}</td>
+                            <td className="space-y-1.5 px-4 py-4"><ProcessStatusBadge status={row.process_status} /><p className="text-xs text-slate-500">{OPERATIONAL_SITUATION_CATALOG[row.operational_situation as keyof typeof OPERATIONAL_SITUATION_CATALOG] ?? STAGE_STATUS_LABELS[row.stage_status ?? ''] ?? row.stage_status}</p></td>
+                            <td className="px-4 py-4">
+                              <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold', OPERATIONAL_PRIORITY_META[action.priority].className)}>{OPERATIONAL_PRIORITY_META[action.priority].label}</span>
+                              <p className="mt-1.5 max-w-56 font-medium text-slate-800">{action.nextAction}</p>
+                              <p className="mt-1 text-xs text-slate-400">{OPERATIONAL_ACTOR_LABELS[action.actor]}{action.dueDate ? ` · ${formatDate(action.dueDate)}` : ''}</p>
+                            </td>
+                            <td className="px-4 py-4"><p className="max-w-72 line-clamp-3 text-xs leading-relaxed text-slate-600">{observation || 'Sem observações'}</p></td>
+                            <td className="whitespace-nowrap px-4 py-4 text-xs text-slate-500">{formatDateTime(row.last_updated_at)}</td>
+                            <td className="px-4 py-4"><Link href={`/processos/${row.process_id}`} aria-label={`Abrir processo de ${row.client_name}`} className="text-amber-700 hover:text-amber-900"><ArrowUpRight className="h-4 w-4" /></Link></td>
+                          </tr>
+                        )
+                      })}
                     </tbody>
                   </table>
                 </div>
-              )}
-            </div>
 
-            {/* ── Paginação ──────────────────────────────────────── */}
-            {totalPages > 1 && (
-              <div className="flex items-center justify-center gap-2">
-                {page > 1 ? (
-                  <Link
-                    href={`/processos/tipo/${slug}?status=${statusFilter}&page=${page - 1}`}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors dash"
-                  >
-                    <ChevronLeft className="w-4 h-4" /> Anterior
-                  </Link>
-                ) : (
-                  <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm font-medium text-slate-300 dash cursor-not-allowed">
-                    <ChevronLeft className="w-4 h-4" /> Anterior
-                  </div>
-                )}
-                <div className="px-4 py-2 bg-white border border-slate-200 rounded-xl">
-                  <span className="text-sm text-slate-500 dash">
-                    <span className="font-bold text-slate-900">{page}</span> de <span className="font-bold text-slate-900">{totalPages}</span>
-                  </span>
+                <div className="divide-y divide-slate-100 lg:hidden">
+                  {walletRows.map(row => {
+                    const action = deriveProcessAction({
+                      processStatus: row.process_status,
+                      nextAction: row.next_action,
+                      actionOwner: row.action_owner,
+                      actionDueDate: row.action_due_date,
+                      blockedReason: row.blocked_reason,
+                      currentStage: row.stage_label ? { label: row.stage_label, status: row.stage_status ?? 'pendente', scheduled_date: row.scheduled_date } : null,
+                      today,
+                    })
+                    return (
+                      <article key={row.process_id} className="space-y-3 p-4">
+                        <div className="flex items-start justify-between gap-3"><div><Link href={`/clientes/${row.client_id}`} className="font-semibold text-slate-900">{row.client_name}</Link><p className="mt-1 text-xs text-slate-400">{row.client_cpf ? formatCPF(row.client_cpf) : 'CPF não informado'}{row.client_phone ? ` · ${formatPhone(row.client_phone)}` : ''}</p></div><ProcessStatusBadge status={row.process_status} /></div>
+                        <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3 text-xs"><div><span className="text-slate-400">Etapa</span><p className="mt-1 font-semibold text-slate-700">{row.stage_label ?? 'Não iniciada'}</p></div><div><span className="text-slate-400">Situação</span><p className="mt-1 font-semibold text-slate-700">{OPERATIONAL_SITUATION_CATALOG[row.operational_situation as keyof typeof OPERATIONAL_SITUATION_CATALOG] ?? STAGE_STATUS_LABELS[row.stage_status ?? ''] ?? 'Aguardando'}</p></div></div>
+                        <div><span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold', OPERATIONAL_PRIORITY_META[action.priority].className)}>{OPERATIONAL_PRIORITY_META[action.priority].label}</span><p className="mt-1.5 text-sm font-medium text-slate-800">{action.nextAction}</p></div>
+                        {(row.stage_notes || row.blocked_reason || row.process_observations) && <p className="line-clamp-2 text-xs leading-relaxed text-slate-500">{row.stage_notes || row.blocked_reason || row.process_observations}</p>}
+                        <div className="flex items-center justify-between border-t border-slate-100 pt-3 text-xs text-slate-400"><span>Atualizado {formatDateTime(row.last_updated_at)}</span><Link href={`/processos/${row.process_id}`} className="inline-flex items-center gap-1 font-semibold text-amber-700">Abrir <ArrowUpRight className="h-3.5 w-3.5" /></Link></div>
+                      </article>
+                    )
+                  })}
                 </div>
-                {page < totalPages ? (
-                  <Link
-                    href={`/processos/tipo/${slug}?status=${statusFilter}&page=${page + 1}`}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors dash"
-                  >
-                    Próxima <ChevronRight className="w-4 h-4" />
-                  </Link>
-                ) : (
-                  <div className="flex items-center gap-1.5 px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm font-medium text-slate-300 dash cursor-not-allowed">
-                    Próxima <ChevronRight className="w-4 h-4" />
-                  </div>
-                )}
-              </div>
+              </>
             )}
-          </>
-        )}
-      </div>
-    </>
+          </section>
+
+          {totalPages > 1 && (
+            <nav className="flex items-center justify-center gap-2">
+              <Link aria-disabled={page <= 1} href={page <= 1 ? makeUrl({ page: '1' }) : makeUrl({ page: String(page - 1) })} className={cn('flex items-center gap-1 rounded-xl border px-4 py-2 text-sm font-medium', page <= 1 ? 'pointer-events-none border-slate-100 bg-slate-50 text-slate-300' : 'border-slate-200 bg-white text-slate-700')}><ChevronLeft className="h-4 w-4" /> Anterior</Link>
+              <span className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-500"><strong className="text-slate-900">{page}</strong> de {totalPages}</span>
+              <Link aria-disabled={page >= totalPages} href={page >= totalPages ? makeUrl({ page: String(totalPages) }) : makeUrl({ page: String(page + 1) })} className={cn('flex items-center gap-1 rounded-xl border px-4 py-2 text-sm font-medium', page >= totalPages ? 'pointer-events-none border-slate-100 bg-slate-50 text-slate-300' : 'border-slate-200 bg-white text-slate-700')}>Próxima <ChevronRight className="h-4 w-4" /></Link>
+            </nav>
+          )}
+        </>
+      )}
+    </div>
   )
 }

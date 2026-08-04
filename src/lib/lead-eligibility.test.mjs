@@ -33,6 +33,7 @@ test('lead condutor normaliza restrições e não mantém representante', () => 
     disability_types: ['fisica', 'auditiva'],
     has_legal_representative: true,
     legal_representative_name: 'Representante legado',
+    legal_representative_cpf: '111.222.333-44',
     has_cnh_especial: true,
     cnh_restrictions: 'b, d, B',
     receives_loas_bpc: true,
@@ -46,17 +47,18 @@ test('lead condutor normaliza restrições e não mantém representante', () => 
   assert.deepEqual(payload.cnh_restrictions, ['B', 'D'])
   assert.equal(payload.has_legal_representative, false)
   assert.equal(payload.legal_representative_name, null)
-  assert.equal(payload.report_valid, true)
+  assert.equal(payload.legal_representative_cpf, null)
   assert.deepEqual(payload.intended_services, ['cnh_especial', 'ipva', 'ipi'])
   assert.equal(payload.intended_service, 'cnh_especial')
 })
 
-test('lead não condutor limpa CNH e mantém somente o nome do representante', () => {
+test('lead não condutor limpa CNH e mantém nome e CPF do representante', () => {
   const payload = leadEligibilityPayload({
     client_type: 'nao_condutor',
     disability_types: ['visual'],
     has_legal_representative: true,
     legal_representative_name: '  Maria da Silva  ',
+    legal_representative_cpf: '123.456.789-00',
     has_cnh_especial: true,
     cnh_restrictions: 'X',
     receives_loas_bpc: false,
@@ -70,7 +72,7 @@ test('lead não condutor limpa CNH e mantém somente o nome do representante', (
   assert.deepEqual(payload.cnh_restrictions, [])
   assert.equal(payload.has_legal_representative, true)
   assert.equal(payload.legal_representative_name, 'Maria da Silva')
-  assert.equal(payload.report_valid, null)
+  assert.equal(payload.legal_representative_cpf, '123.456.789-00')
 })
 
 test('serviços pretendidos preservam o legado e priorizam a CNH Especial', () => {

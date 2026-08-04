@@ -14,6 +14,7 @@ export type OperationalFieldDefinition = {
   help?: string
   requiredOnResolve?: boolean
   mustBeTrueOnResolve?: boolean
+  visibleWhen?: { key: string; equals: unknown }
 }
 
 export type OperationalChecklistItem = {
@@ -64,6 +65,11 @@ const YES_NO_OPTIONS: OperationalFieldOption[] = [
   { value: 'sim', label: 'Sim' },
   { value: 'nao', label: 'Não' },
 ]
+const BRAZIL_STATE_OPTIONS: OperationalFieldOption[] = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS',
+  'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC',
+  'SP', 'SE', 'TO',
+].map(value => ({ value, label: value }))
 const REQUEST_STATUS_OPTIONS: OperationalFieldOption[] = [
   { value: 'nao_iniciado', label: 'Não iniciado' },
   { value: 'em_preparacao', label: 'Em preparação' },
@@ -85,11 +91,9 @@ export const IPI_DETRAN_REPORT_STATUS_VALUES = [
 export type IpiDetranReportStatus = typeof IPI_DETRAN_REPORT_STATUS_VALUES[number]
 
 export const IPI_DETRAN_REPORT_STATUS_OPTIONS: OperationalFieldOption[] = [
-  { value: 'nao_solicitado', label: 'Ainda não solicitado' },
+  { value: 'nao_solicitado', label: 'Não iniciado' },
   { value: 'solicitado', label: 'Solicitado' },
-  { value: 'em_andamento', label: 'Em andamento' },
-  { value: 'pronto', label: 'Pronto' },
-  { value: 'nao_aplicavel', label: 'Não se aplica' },
+  { value: 'pronto', label: 'Recebido' },
 ]
 
 export function getIpiDetranStageStatus(
@@ -110,6 +114,8 @@ export function getIpiDetranReportStatus(
     typeof reportStatus === 'string'
     && IPI_DETRAN_REPORT_STATUS_VALUES.includes(reportStatus as IpiDetranReportStatus)
   ) {
+    if (reportStatus === 'em_andamento') return 'solicitado'
+    if (reportStatus === 'nao_aplicavel') return 'nao_solicitado'
     return reportStatus as IpiDetranReportStatus
   }
   if (stageStatus === 'concluido' || stageStatus === 'aprovado') return 'pronto'
@@ -129,7 +135,7 @@ const COMMON_DECISION_RESULTS: OperationalResultOption[] = [
 
 const CLIENT_NOTIFIED_FIELD: OperationalFieldDefinition = {
   key: 'client_notified',
-  label: 'Cliente comunicado',
+  label: 'Cliente comunicado?',
   type: 'boolean',
   mustBeTrueOnResolve: true,
 }
@@ -159,19 +165,17 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
             label: 'Situação do laudo',
             type: 'select',
             options: IPI_DETRAN_REPORT_STATUS_OPTIONS,
-            help: '“Pronto” libera automaticamente a próxima etapa e avisa o cliente.',
+            help: '“Recebido” libera automaticamente a próxima etapa e avisa o cliente.',
           },
-          { key: 'issuing_authority', label: 'Órgão emissor', type: 'text', placeholder: 'Ex.: DETRAN-SP', requiredOnResolve: true },
-          { key: 'requested_at', label: 'Solicitado em', type: 'date' },
-          { key: 'issued_at', label: 'Emitido em', type: 'date', requiredOnResolve: true },
-          { key: 'document_number', label: 'Número/código do laudo', type: 'text', requiredOnResolve: true },
-          { key: 'valid_until', label: 'Validade, se informada', type: 'date' },
+          { key: 'issuing_authority', label: 'Órgão emissor', type: 'text', placeholder: 'Ex.: DETRAN-SP' },
+          { key: 'issued_at', label: 'Recebido em', type: 'date' },
+          { key: 'document_number', label: 'Número/código do laudo', type: 'text' },
           { key: 'document_details', label: 'Informações do documento', type: 'textarea', placeholder: 'Restrições, observações do emissor ou referência para localização.' },
         ],
       },
       {
-        stage_key: 'documentos_ipi', label: 'Documentos do pedido', sort_order: 20,
-        description: 'Liberada quando o Laudo DETRAN estiver pronto ou não for aplicável. A exigência final deve seguir o perfil do cliente no SISEN.',
+        stage_key: 'documentos_ipi', label: 'Checklist do IPI', sort_order: 20,
+        description: 'Liberada quando o Laudo DETRAN for recebido. A exigência final deve seguir o perfil do cliente no SISEN.',
         initialData: { blocked_by: 'laudo_ipi' },
         checklist: [
           { key: 'identificacao_cpf', label: 'Documento de identificação e CPF' },
@@ -181,30 +185,24 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         ],
       },
       {
-        stage_key: 'protocolo_sisen_ipi', label: 'Protocolo no SISEN', sort_order: 30,
-        description: 'Registrar o pedido sem armazenar senha ou credencial do portal.',
+        stage_key: 'protocolo_sisen_ipi', label: 'Protocolo do IPI', sort_order: 30,
+        description: 'Registrar protocolo, acompanhamento e decisão sem armazenar credenciais do portal.',
+        allowedStatuses: DECISION_STATUSES,
+        resultOptions: COMMON_DECISION_RESULTS,
+        activateOnRejected: 'recurso_ipi',
         fields: [
+          { key: 'purchase_only_with_ipi', label: 'Cliente comprará somente com IPI?', type: 'select', requiredOnResolve: true, options: YES_NO_OPTIONS, help: 'Se a resposta for “Não”, o ICMS contratado será liberado automaticamente.' },
           ...PROTOCOL_FIELDS,
           { key: 'request_scope', label: 'Escopo do pedido', type: 'select', requiredOnResolve: true, options: [
             { value: 'ipi', label: 'Somente IPI' }, { value: 'ipi_iof', label: 'IPI e IOF' },
           ] },
           { key: 'operational_status', label: 'Situação no SISEN', type: 'select', options: REQUEST_STATUS_OPTIONS },
-        ],
-      },
-      {
-        stage_key: 'analise_receita_ipi', label: 'Análise da Receita Federal', sort_order: 40,
-        description: 'Acompanhar análise, exigências e ciência da decisão.',
-        allowedStatuses: DECISION_STATUSES,
-        resultOptions: COMMON_DECISION_RESULTS,
-        activateOnRejected: 'recurso_ipi',
-        fields: [
           { key: 'requirement_details', label: 'Exigência ou pendência', type: 'textarea' },
-          { key: 'decision_notified_at', label: 'Data da ciência da decisão', type: 'date' },
           { key: 'rejection_reason', label: 'Motivo do indeferimento', type: 'textarea' },
         ],
       },
       {
-        stage_key: 'recurso_ipi', label: 'Recurso administrativo', sort_order: 50,
+        stage_key: 'recurso_ipi', label: 'Recurso administrativo', sort_order: 40,
         description: 'Usar quando houver indeferimento e decisão de recorrer.',
         initialStatus: 'nao_aplicavel',
         allowedStatuses: [...STANDARD_STATUSES, 'aprovado', 'reprovado'],
@@ -213,28 +211,6 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
           { key: 'due_date', label: 'Prazo registrado', type: 'date' },
           { key: 'grounds', label: 'Fundamentos e observações', type: 'textarea' },
           { key: 'outcome', label: 'Resultado do recurso', type: 'textarea' },
-        ],
-      },
-      {
-        stage_key: 'autorizacao_ipi', label: 'Autorização para compra', sort_order: 60,
-        description: 'Registrar a autorização emitida e conferir as condições vigentes antes da nota fiscal.',
-        fields: [
-          { key: 'authorization_number', label: 'Número da autorização', type: 'text', requiredOnResolve: true },
-          { key: 'issued_at', label: 'Emitida em', type: 'date', requiredOnResolve: true },
-          { key: 'valid_until', label: 'Validade indicada', type: 'date' },
-        ],
-      },
-      {
-        stage_key: 'transicao_compra_icms', label: 'Compra e transição para ICMS', sort_order: 70,
-        description: 'Organizar concessionária, nota fiscal e próximo benefício sem criar processos duplicados automaticamente.',
-        fields: [
-          { key: 'only_ipi', label: 'Cliente comprará somente com IPI?', type: 'select', requiredOnResolve: true, options: YES_NO_OPTIONS },
-          { key: 'vehicle_price', label: 'Valor estimado do veículo', type: 'number' },
-          { key: 'dealership', label: 'Concessionária', type: 'text' },
-          { key: 'salesperson', label: 'Vendedor', type: 'text' },
-          { key: 'invoice_requested', label: 'Nota fiscal solicitada', type: 'boolean' },
-          { key: 'licensing_offered', label: 'Emplacamento oferecido', type: 'boolean' },
-          CLIENT_NOTIFIED_FIELD,
         ],
       },
     ],
@@ -303,55 +279,53 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
     ],
     stages: [
       {
-        stage_key: 'pre_requisitos_icms', label: 'Pré-requisitos do ICMS', sort_order: 10,
-        description: 'Confirmar autorização do IPI, veículo novo e jurisdição aplicável.',
+        stage_key: 'pre_requisitos_icms', label: 'Checklist do ICMS', sort_order: 10,
+        description: 'Reunir os pré-requisitos e documentos do pedido. O veículo pode ser definido durante o atendimento.',
+        initialData: { state_scope: 'sp', state: 'SP' },
         checklist: [
           { key: 'autorizacao_ipi', label: 'Autorização do IPI válida' },
-          { key: 'laudo', label: 'Laudo aceito pela SEFAZ' },
-          { key: 'veiculo_novo', label: 'Aquisição de veículo novo' },
-        ],
-        fields: [{ key: 'state', label: 'UF do pedido', type: 'text', requiredOnResolve: true }],
-      },
-      {
-        stage_key: 'documentos_icms', label: 'Checklist de documentos', sort_order: 20,
-        description: 'Checklist interno do PDF, sujeito às exigências do SIVEI e do perfil do cliente.',
-        checklist: [
+          { key: 'laudo', label: 'Laudo DETRAN atualizado' },
           { key: 'anexo_ii', label: 'Anexo II/requerimento aplicável' },
           { key: 'comprovante_renda', label: 'Comprovante de renda' },
           { key: 'forma_pagamento', label: 'Comprovante da forma de pagamento' },
           { key: 'comprovante_endereco', label: 'Comprovante de endereço' },
           { key: 'procuracao', label: 'Procuração, quando aplicável', requiredOnResolve: false },
         ],
-      },
-      {
-        stage_key: 'dados_compra_icms', label: 'Concessionária e veículo', sort_order: 30,
-        description: 'Identificar a operação antes do protocolo.',
         fields: [
-          { key: 'dealership', label: 'Concessionária', type: 'text', requiredOnResolve: true },
-          { key: 'salesperson', label: 'Vendedor', type: 'text' },
-          { key: 'vehicle', label: 'Veículo/modelo', type: 'text' },
-          { key: 'vehicle_price', label: 'Valor do veículo', type: 'number' },
+          { key: 'state_scope', label: 'UF do pedido', type: 'select', requiredOnResolve: true, options: [
+            { value: 'sp', label: 'São Paulo' }, { value: 'outro', label: 'Outro estado' },
+          ] },
+          { key: 'state', label: 'Selecione a UF', type: 'select', requiredOnResolve: true, options: BRAZIL_STATE_OPTIONS.filter(option => option.value !== 'SP'), visibleWhen: { key: 'state_scope', equals: 'outro' } },
         ],
       },
       {
-        stage_key: 'protocolo_sivei_icms', label: 'Protocolo no SIVEI', sort_order: 40,
-        description: 'Registrar protocolo e situação operacional.',
-        fields: [...PROTOCOL_FIELDS, { key: 'operational_status', label: 'Situação', type: 'select', requiredOnResolve: true, options: REQUEST_STATUS_OPTIONS }, { key: 'requirement_details', label: 'Exigência/pendência', type: 'textarea' }],
-      },
-      {
-        stage_key: 'decisao_icms', label: 'Decisão da SEFAZ', sort_order: 50,
-        description: 'Registrar ciência, resultado e motivo.',
+        stage_key: 'protocolo_sivei_icms', label: 'Protocolo de ICMS', sort_order: 20,
+        description: 'Registrar compra, protocolo, acompanhamento e decisão no mesmo ponto operacional.',
         allowedStatuses: DECISION_STATUSES,
         resultOptions: COMMON_DECISION_RESULTS,
         activateOnRejected: 'recurso_icms',
         fields: [
-          { key: 'decision_notified_at', label: 'Data da ciência', type: 'date' },
+          ...PROTOCOL_FIELDS,
+          { key: 'dealership', label: 'Concessionária', type: 'text' },
+          { key: 'salesperson', label: 'Vendedor da concessionária', type: 'text' },
+          { key: 'vehicle', label: 'Marca/modelo escolhido', type: 'text', help: 'Informe aqui ou use os campos separados de marca e modelo antes do protocolo.' },
+          { key: 'brand', label: 'Marca', type: 'text' },
+          { key: 'model', label: 'Modelo', type: 'text' },
+          { key: 'chassis', label: 'Chassi', type: 'text', help: 'Preencha quando a concessionária disponibilizar.' },
+          { key: 'license_plate', label: 'Placa', type: 'text', help: 'Pode permanecer em branco antes do emplacamento.' },
+          { key: 'renavam', label: 'RENAVAM', type: 'text', help: 'Pode permanecer em branco enquanto ainda não existir.' },
+          { key: 'vehicle_price', label: 'Valor do veículo', type: 'number' },
+          { key: 'purchase_date', label: 'Data da compra', type: 'date' },
+          { key: 'next_vehicle_change_date', label: 'Próxima troca prevista', type: 'date' },
+          { key: 'operational_status', label: 'Situação', type: 'select', options: REQUEST_STATUS_OPTIONS },
+          { key: 'requirement_details', label: 'Exigência/pendência', type: 'textarea' },
           { key: 'rejection_reason', label: 'Motivo do indeferimento', type: 'textarea' },
-          { key: 'documents_release_authorized', label: 'Cliente autorizou envio de documentos à concessionária', type: 'boolean' },
+          CLIENT_NOTIFIED_FIELD,
+          { key: 'documents_release_authorized', label: 'Cliente autorizou o envio dos documentos para a concessionária?', type: 'boolean', mustBeTrueOnResolve: true },
         ],
       },
       {
-        stage_key: 'recurso_icms', label: 'Recurso ou novo protocolo', sort_order: 60,
+        stage_key: 'recurso_icms', label: 'Recurso ou novo protocolo', sort_order: 30,
         description: 'Controlar a providência adotada após indeferimento.',
         initialStatus: 'nao_aplicavel',
         allowedStatuses: [...STANDARD_STATUSES, 'aprovado', 'reprovado'],
@@ -800,6 +774,13 @@ function isResolvedStatus(status: string) {
   return ['concluido', 'aprovado', 'reprovado', 'nao_aplicavel'].includes(status)
 }
 
+export function isOperationalFieldVisible(
+  field: OperationalFieldDefinition,
+  data: Record<string, unknown>,
+) {
+  return !field.visibleWhen || data[field.visibleWhen.key] === field.visibleWhen.equals
+}
+
 export function validateOperationalStage(input: {
   template: OperationalStageTemplate
   status: string
@@ -821,6 +802,7 @@ export function validateOperationalStage(input: {
   }
 
   const missingField = (input.template.fields ?? []).find(field => {
+    if (!isOperationalFieldVisible(field, input.data)) return false
     const value = input.data[field.key]
     if (field.mustBeTrueOnResolve) return value !== true
     if (!field.requiredOnResolve) return false

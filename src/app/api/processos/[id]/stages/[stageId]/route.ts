@@ -88,7 +88,7 @@ export async function PATCH(
 
   const { data: processRecord, error: processError } = await supabase
     .from('processes')
-    .select('client_id, status, completed_at, process_types(slug)')
+    .select('client_id, status, completed_at, vehicle_id, process_types(slug)')
     .eq('id', id)
     .single()
   if (processError || !processRecord) {
@@ -107,6 +107,14 @@ export async function PATCH(
 
   const values = { ...parsed.data }
   const stageData = { ...values.data }
+
+  if (
+    ['pericia_medica', 'recurso_junta_medica', 'exame_pratico'].includes(stage.stage_key)
+    && ['aprovado', 'reprovado'].includes(values.status)
+  ) {
+    values.result = values.status
+    values.attended = values.attended === false ? false : true
+  }
 
   if (processTypeSlug === 'processo_ipi' && stage.stage_key === 'laudo_ipi') {
     const rawReportStatus = stageData.report_status
@@ -195,11 +203,55 @@ export async function PATCH(
     if (operationalError) return NextResponse.json({ error: operationalError }, { status: 422 })
   }
 
-  const isApprovedMedicalBoard = stage.stage_key === 'recurso_junta_medica'
-    && (values.status === 'aprovado' || values.result === 'aprovado')
-  if (isApprovedMedicalBoard && typeof stageData.requires_practical_exam !== 'boolean') {
-    return NextResponse.json({ error: 'Informe se a junta determinou exame prático.' }, { status: 422 })
+  const isIcmsProtocol = processTypeSlug === 'processo_icms'
+    && stage.stage_key === 'protocolo_sivei_icms'
+  const isIpvaProtocol = processTypeSlug === 'processo_ipva'
+    && stage.stage_key === 'sivei_protocolo'
+  const hasProtocolValue = typeof stageData.protocol === 'string' && stageData.protocol.trim().length > 0
+  const isResolvingVehicleProtocol = ['concluido', 'aprovado', 'reprovado'].includes(values.status)
+  if ((isIcmsProtocol || isIpvaProtocol) && (hasProtocolValue || isResolvingVehicleProtocol)) {
+    let hasMinimumVehicle = Boolean(processRecord.vehicle_id)
+    if (!hasMinimumVehicle && isIcmsProtocol) {
+      let purchaseData = stageData
+      const hasCurrentPurchaseData = ['vehicle', 'brand', 'model'].some(key => (
+        typeof purchaseData[key] === 'string' && purchaseData[key].trim()
+      ))
+      if (!hasCurrentPurchaseData) {
+        const { data: purchaseStage } = await supabase
+          .from('process_stages')
+          .select('data')
+          .eq('process_id', id)
+          .eq('stage_key', 'dados_compra_icms')
+          .maybeSingle()
+        purchaseData = purchaseStage?.data as Record<string, unknown> ?? {}
+      }
+      hasMinimumVehicle = Boolean(
+        typeof purchaseData.vehicle === 'string' && purchaseData.vehicle.trim()
+        || (
+          typeof purchaseData.brand === 'string' && purchaseData.brand.trim()
+          && typeof purchaseData.model === 'string' && purchaseData.model.trim()
+        ),
+      )
+    }
+    if (!hasMinimumVehicle) {
+      return NextResponse.json({
+        error: isIpvaProtocol
+          ? 'Vincule o veículo ao processo antes de concluir o protocolo do IPVA.'
+          : 'Informe ao menos a marca e o modelo no Protocolo de ICMS antes de concluir.',
+      }, { status: 422 })
+    }
   }
+
+  const isApprovedMedicalAppeal = stage.stage_key === 'recurso_junta_medica'
+    && (values.status === 'aprovado' || values.result === 'aprovado')
+
+  const { data: clientMedicalSnapshot } = ['pericia_medica', 'recurso_junta_medica'].includes(stage.stage_key)
+    ? await supabase
+        .from('clients')
+        .select('cnh_restrictions')
+        .eq('id', processRecord.client_id)
+        .maybeSingle()
+    : { data: null }
 
   const { data, error } = await supabase.rpc('save_process_stage', {
     p_stage_id: stageId,
@@ -214,13 +266,33 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
+  if (clientMedicalSnapshot) {
+    const { error: restoreError } = await supabase
+      .from('clients')
+      .update({ cnh_restrictions: clientMedicalSnapshot.cnh_restrictions ?? [] })
+      .eq('id', processRecord.client_id)
+    if (restoreError) {
+      return NextResponse.json({
+        error: `Etapa salva, mas não foi possível preservar as restrições até a emissão final: ${restoreError.message}`,
+      }, { status: 400 })
+    }
+  }
+
   const isCompletedCnhIssuance = stage.stage_key === 'emissao_cnh'
     && values.status === 'concluido'
     && typeof stageData.vencimento_cnh === 'string'
   if (isCompletedCnhIssuance) {
+    const restrictions = typeof stageData.restricoes === 'string'
+      ? stageData.restricoes.split(',').map(value => value.trim().toUpperCase()).filter(Boolean)
+      : []
     const { error: expiryError } = await supabase
       .from('clients')
-      .update({ cnh_expiry_date: stageData.vencimento_cnh })
+      .update({
+        has_cnh_especial: true,
+        cnh_status: 'com_restricoes',
+        cnh_restrictions: restrictions,
+        cnh_expiry_date: stageData.vencimento_cnh,
+      })
       .eq('id', processRecord.client_id)
 
     if (expiryError) {
@@ -231,17 +303,20 @@ export async function PATCH(
     }
   }
 
-  if (isApprovedMedicalBoard) {
+  if (isApprovedMedicalAppeal) {
     const restrictions = typeof stageData.restricoes === 'string'
       ? stageData.restricoes.split(',').map(value => value.trim().toUpperCase()).filter(Boolean)
       : []
-    const requiresPracticalExam = stageData.requires_practical_exam as boolean
+    const { data: medicalStage } = await supabase
+      .from('process_stages')
+      .select('data')
+      .eq('process_id', id)
+      .eq('stage_key', 'pericia_medica')
+      .maybeSingle()
+    const medicalData = medicalStage?.data as Record<string, unknown> | undefined
+    const requiresPracticalExam = medicalData?.requires_practical_exam === true
 
-    const [clientUpdate, practicalStageUpdate, issuanceStageUpdate] = await Promise.all([
-      supabase.from('clients').update({
-        medical_assessment_status: restrictions.length > 0 ? 'apto_com_restricoes' : 'apto',
-        cnh_restrictions: restrictions,
-      }).eq('id', processRecord.client_id),
+    const [practicalStageUpdate, issuanceStageUpdate] = await Promise.all([
       supabase.from('process_stages').update({
         status: requiresPracticalExam ? 'pendente' : 'nao_aplicavel',
         label: 'Exame Prático',
@@ -250,16 +325,20 @@ export async function PATCH(
         data: { restricoes: restrictions.join(', '), vencimento_cnh: '' },
       }).eq('process_id', id).eq('stage_key', 'emissao_cnh'),
     ])
-    const syncError = clientUpdate.error ?? practicalStageUpdate.error ?? issuanceStageUpdate.error
+    const syncError = practicalStageUpdate.error ?? issuanceStageUpdate.error
     if (syncError) {
       return NextResponse.json({ error: `Etapa salva, mas não foi possível sincronizar o resultado da junta: ${syncError.message}` }, { status: 400 })
     }
   }
 
   if (operationalWorkflow && operationalTemplate) {
+    const selectedResult = operationalTemplate.resultOptions?.find(option => option.value === values.result)
+    const effectiveStatus = selectedResult?.stageStatus ?? values.status
+    const isApprovedIpiDecision = processTypeSlug === 'processo_ipi'
+      && stage.stage_key === 'protocolo_sisen_ipi'
+      && effectiveStatus === 'aprovado'
+
     if (operationalTemplate.activateOnRejected) {
-      const selectedResult = operationalTemplate.resultOptions?.find(option => option.value === values.result)
-      const effectiveStatus = selectedResult?.stageStatus ?? values.status
       if (effectiveStatus === 'reprovado' || effectiveStatus === 'aprovado') {
         const { error: conditionalStageError } = await supabase
           .from('process_stages')
@@ -283,7 +362,10 @@ export async function PATCH(
 
     const relevantStages = (workflowStages ?? []).filter(item => workflowKeys.has(item.stage_key))
     const allStagesExist = relevantStages.length === operationalWorkflow.stages.length
-    const allResolved = allStagesExist && relevantStages.every(item => ['concluido', 'aprovado', 'reprovado', 'nao_aplicavel'].includes(item.status))
+    const allResolved = isApprovedIpiDecision || (
+      allStagesExist
+      && relevantStages.every(item => ['concluido', 'aprovado', 'reprovado', 'nao_aplicavel'].includes(item.status))
+    )
     if (!['arquivado', 'cancelado'].includes(processRecord.status)) {
       const { error: processSyncError } = await supabase
         .from('processes')

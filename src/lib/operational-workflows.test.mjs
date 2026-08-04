@@ -6,6 +6,7 @@ import {
   getIpiDetranReportStatus,
   getIpiDetranStageStatus,
   getOperationalWorkflowDefinition,
+  isOperationalFieldVisible,
   isOperationalStageBlocked,
   validateOperationalStage,
 } from './operational-workflows.ts'
@@ -31,6 +32,58 @@ test('etapas condicionais iniciam como não aplicáveis', () => {
   assert.equal(rows.find(row => row.stage_key === 'recurso_ipi').status, 'nao_aplicavel')
 })
 
+test('IPI usa apenas laudo, checklist, protocolo/decisão e recurso', () => {
+  const workflow = getOperationalWorkflowDefinition('processo_ipi')
+  assert.deepEqual(
+    workflow.stages.map(stage => stage.stage_key),
+    ['laudo_ipi', 'documentos_ipi', 'protocolo_sisen_ipi', 'recurso_ipi'],
+  )
+})
+
+test('decisao do IPI exige a escolha que controla a liberacao do ICMS', () => {
+  const workflow = getOperationalWorkflowDefinition('processo_ipi')
+  const template = workflow.stages.find(stage => stage.stage_key === 'protocolo_sisen_ipi')
+  const baseData = {
+    protocol: 'IPI-123',
+    protocol_date: '2026-08-04',
+    request_scope: 'ipi',
+  }
+
+  assert.match(validateOperationalStage({
+    template,
+    status: 'aprovado',
+    result: 'deferido',
+    data: baseData,
+  }), /somente com IPI/)
+  assert.equal(validateOperationalStage({
+    template,
+    status: 'aprovado',
+    result: 'deferido',
+    data: { ...baseData, purchase_only_with_ipi: 'nao' },
+  }), null)
+})
+
+test('ICMS concentra compra, protocolo e decisão em uma única etapa', () => {
+  const workflow = getOperationalWorkflowDefinition('processo_icms')
+  assert.deepEqual(
+    workflow.stages.map(stage => stage.stage_key),
+    ['pre_requisitos_icms', 'protocolo_sivei_icms', 'recurso_icms'],
+  )
+})
+
+test('compra do ICMS registra datas para a visão completa do cliente', () => {
+  const workflow = getOperationalWorkflowDefinition('processo_icms')
+  const purchase = workflow.stages.find(stage => stage.stage_key === 'protocolo_sivei_icms')
+  const fieldKeys = purchase.fields.map(field => field.key)
+
+  assert.ok(fieldKeys.includes('purchase_date'))
+  assert.ok(fieldKeys.includes('next_vehicle_change_date'))
+  assert.ok(fieldKeys.includes('chassis'))
+  assert.ok(fieldKeys.includes('license_plate'))
+  assert.ok(fieldKeys.includes('renavam'))
+  assert.equal(purchase.fields.find(field => field.key === 'vehicle').requiredOnResolve, undefined)
+})
+
 test('Laudo DETRAN inicia a solicitar e bloqueia os documentos do IPI', () => {
   const rows = buildOperationalStageRows('process-1', 'processo_ipi')
   const report = rows.find(row => row.stage_key === 'laudo_ipi')
@@ -39,46 +92,76 @@ test('Laudo DETRAN inicia a solicitar e bloqueia os documentos do IPI', () => {
   assert.equal(getIpiDetranReportStatus(report.data, report.status), 'nao_solicitado')
   assert.equal(getIpiDetranStageStatus('pronto'), 'concluido')
   assert.equal(getIpiDetranStageStatus('nao_aplicavel'), 'nao_aplicavel')
+  assert.equal(getIpiDetranReportStatus({ report_status: 'em_andamento' }), 'solicitado')
+  assert.equal(getIpiDetranReportStatus({ report_status: 'nao_aplicavel' }), 'nao_solicitado')
   assert.equal(isOperationalStageBlocked(documents.data), true)
 })
 
-test('Laudo DETRAN pronto exige identificação do documento', () => {
+test('Laudo DETRAN recebido aceita identificação progressiva do documento', () => {
   const workflow = getOperationalWorkflowDefinition('processo_ipi')
   const template = workflow.stages.find(stage => stage.stage_key === 'laudo_ipi')
-  assert.match(validateOperationalStage({
+  assert.equal(validateOperationalStage({
     template,
     status: 'concluido',
     data: { report_status: 'pronto' },
-  }), /Órgão emissor/)
-  assert.equal(validateOperationalStage({
-    template,
-    status: 'nao_aplicavel',
-    data: { report_status: 'nao_aplicavel' },
   }), null)
 })
 
 test('checklist obrigatório impede conclusão incompleta', () => {
   const workflow = getOperationalWorkflowDefinition('processo_icms')
-  const template = workflow.stages.find(stage => stage.stage_key === 'documentos_icms')
+  const template = workflow.stages.find(stage => stage.stage_key === 'pre_requisitos_icms')
   assert.match(validateOperationalStage({
     template,
     status: 'concluido',
-    data: { checklist: {} },
-  }), /Anexo II/)
+    data: { state_scope: 'sp', state: 'SP', checklist: {} },
+  }), /Autorização do IPI/)
 })
 
 test('campo opcional não impede conclusão do checklist', () => {
   const workflow = getOperationalWorkflowDefinition('processo_icms')
-  const template = workflow.stages.find(stage => stage.stage_key === 'documentos_icms')
+  const template = workflow.stages.find(stage => stage.stage_key === 'pre_requisitos_icms')
   assert.equal(validateOperationalStage({
     template,
     status: 'concluido',
-    data: { checklist: {
+    data: { state_scope: 'sp', state: 'SP', checklist: {
+      autorizacao_ipi: true,
+      laudo: true,
       anexo_ii: true,
       comprovante_renda: true,
       forma_pagamento: true,
       comprovante_endereco: true,
       procuracao: false,
     } },
+  }), null)
+})
+
+test('seletor de UF do ICMS aparece apenas para outro estado', () => {
+  const workflow = getOperationalWorkflowDefinition('processo_icms')
+  const template = workflow.stages.find(stage => stage.stage_key === 'pre_requisitos_icms')
+  const stateField = template.fields.find(field => field.key === 'state')
+
+  assert.equal(isOperationalFieldVisible(stateField, { state_scope: 'sp', state: 'SP' }), false)
+  assert.equal(isOperationalFieldVisible(stateField, { state_scope: 'outro' }), true)
+})
+
+test('decisão do ICMS exige comunicação e autorização antes de resolver', () => {
+  const workflow = getOperationalWorkflowDefinition('processo_icms')
+  const template = workflow.stages.find(stage => stage.stage_key === 'protocolo_sivei_icms')
+  assert.match(validateOperationalStage({
+    template,
+    status: 'aprovado',
+    result: 'deferido',
+    data: { protocol: '123', protocol_date: '2026-08-03' },
+  }), /Cliente comunicado/)
+  assert.equal(validateOperationalStage({
+    template,
+    status: 'aprovado',
+    result: 'deferido',
+    data: {
+      protocol: '123',
+      protocol_date: '2026-08-03',
+      client_notified: true,
+      documents_release_authorized: true,
+    },
   }), null)
 })

@@ -8,6 +8,7 @@ import {
   FileSearch,
   Filter,
   HeartPulse,
+  GitBranch,
   KeyRound,
   ListTodo,
   TimerOff,
@@ -25,6 +26,7 @@ import {
 
 const CATEGORY_CONFIG: Record<RoutineCategory, { label: string; icon: typeof AlertTriangle; color: string }> = {
   acao_equipe: { label: 'Ação da equipe', icon: ListTodo, color: 'text-red-700 bg-red-50 border-red-200' },
+  aguardando_dependencia: { label: 'Aguardando serviço anterior', icon: GitBranch, color: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
   aguardando_cliente: { label: 'Aguardando cliente', icon: UserRound, color: 'text-blue-700 bg-blue-50 border-blue-200' },
   aguardando_orgao: { label: 'Aguardando órgão', icon: Building2, color: 'text-violet-700 bg-violet-50 border-violet-200' },
   sem_proxima_acao: { label: 'Sem próxima ação', icon: CircleDotDashed, color: 'text-amber-700 bg-amber-50 border-amber-200' },
@@ -77,6 +79,7 @@ export default async function RotinaPage({
   const summaryCategories: RoutineCategory[] = [
     'acao_equipe',
     'etapa_vencida',
+    'aguardando_dependencia',
     'aguardando_cliente',
     'aguardando_orgao',
   ]
@@ -99,7 +102,7 @@ export default async function RotinaPage({
         </div>
       </section>
 
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Resumo da fila">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5" aria-label="Resumo da fila">
         {summaryCategories.map(key => {
           const config = CATEGORY_CONFIG[key]
           const count = operations.routineItems.filter(item => item.category === key).length

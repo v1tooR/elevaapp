@@ -201,6 +201,7 @@ export interface Lead {
   receives_loas_bpc?: boolean
   has_legal_representative?: boolean
   legal_representative_name?: string
+  legal_representative_cpf?: string
   intended_service?: LeadIntendedService
   intended_services?: LeadIntendedService[]
   lead_source?: LeadSource

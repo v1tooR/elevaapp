@@ -24,6 +24,7 @@ import {
   getIpiDetranStageStatus,
   getOperationalStageTemplate,
   getOperationalWorkflowDefinition,
+  isOperationalFieldVisible,
   isOperationalStageBlocked,
   validateOperationalStage,
   type OperationalFieldDefinition,
@@ -33,6 +34,7 @@ import type { ProcessStage } from '@/types/database'
 
 interface Props {
   processId: string
+  clientId: string
   processTypeSlug: string
   stages: ProcessStage[]
   jurisdictionState?: string | null
@@ -144,7 +146,7 @@ function FieldControl({
   )
 }
 
-export function OperationalStagesPanel({ processId, processTypeSlug, stages, jurisdictionState }: Props) {
+export function OperationalStagesPanel({ processId, clientId, processTypeSlug, stages, jurisdictionState }: Props) {
   const router = useRouter()
   const workflow = getOperationalWorkflowDefinition(processTypeSlug)
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -155,7 +157,10 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
 
   if (!workflow) return null
 
-  const sortedStages = [...stages].sort((a, b) => a.sort_order - b.sort_order)
+  const visibleStageKeys = new Set(workflow.stages.map(stage => stage.stage_key))
+  const sortedStages = stages
+    .filter(stage => visibleStageKeys.has(stage.stage_key))
+    .sort((a, b) => a.sort_order - b.sort_order)
   const completed = sortedStages.filter(stage => RESOLVED_STATUSES.has(stage.status)).length
   const progress = sortedStages.length > 0 ? Math.round((completed / sortedStages.length) * 100) : 0
 
@@ -172,28 +177,50 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
       return { ...previous, [stage.id]: { ...current, data: { ...current.data, [key]: value } } }
     })
   }
+  const updateOperationalField = (stage: ProcessStage, key: string, value: unknown) => {
+    if (processTypeSlug === 'processo_icms' && stage.stage_key === 'pre_requisitos_icms' && key === 'state_scope') {
+      setEdits(previous => {
+        const current = previous[stage.id] ?? initEdit(stage)
+        return {
+          ...previous,
+          [stage.id]: {
+            ...current,
+            data: { ...current.data, state_scope: value, state: value === 'sp' ? 'SP' : '' },
+          },
+        }
+      })
+      return
+    }
+    updateData(stage, key, value)
+  }
   const updateIpiReportStatus = (stage: ProcessStage, value: unknown) => {
     const reportStatus = getIpiDetranReportStatus({ report_status: value })
     setEdits(previous => {
       const current = previous[stage.id] ?? initEdit(stage)
-      const requestedAt = (
-        ['solicitado', 'em_andamento'].includes(reportStatus)
-        && !current.data.requested_at
-      )
-        ? new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date())
-        : current.data.requested_at
+      const data: Record<string, unknown> = { ...current.data, report_status: reportStatus }
+      if (reportStatus !== 'pronto') {
+        for (const key of ['issuing_authority', 'issued_at', 'document_number', 'document_details']) {
+          delete data[key]
+        }
+      }
       return {
         ...previous,
         [stage.id]: {
           ...current,
           status: getIpiDetranStageStatus(reportStatus),
-          data: {
-            ...current.data,
-            report_status: reportStatus,
-            requested_at: requestedAt,
-          },
+          data,
         },
       }
+    })
+  }
+  const updateDecision = (
+    stage: ProcessStage,
+    status: OperationalStageStatus,
+    result = '',
+  ) => {
+    setEdits(previous => {
+      const current = previous[stage.id] ?? initEdit(stage)
+      return { ...previous, [stage.id]: { ...current, status, result } }
     })
   }
   const updateChecklist = (stage: ProcessStage, key: string, checked: boolean) => {
@@ -263,6 +290,21 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error ?? 'Não foi possível salvar a etapa.')
+
+      const shouldOfferIpva = processTypeSlug === 'processo_icms'
+        && stage.stage_key === 'protocolo_sivei_icms'
+        && (edit.status === 'aprovado' || edit.result === 'deferido')
+      if (shouldOfferIpva && window.confirm('ICMS deferido. Dar entrada no IPVA agora?')) {
+        const ipvaResponse = await fetch(`/api/clientes/${clientId}/servicos`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ services: ['ipva'] }),
+        })
+        const ipvaResult = await ipvaResponse.json()
+        if (!ipvaResponse.ok) {
+          throw new Error(ipvaResult.error ?? 'O ICMS foi salvo, mas não foi possível abrir o IPVA.')
+        }
+      }
       setActiveId(null)
       router.refresh()
     } catch (error) {
@@ -285,11 +327,25 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
     )
   }
 
+  const icmsStateStage = sortedStages.find(stage => stage.stage_key === 'pre_requisitos_icms')
+  const icmsStateData = icmsStateStage ? getEdit(icmsStateStage).data : null
+  const isSaoPauloIcms = processTypeSlug !== 'processo_icms'
+    || icmsStateData?.state_scope === 'sp'
+    || (
+      !icmsStateData?.state_scope
+      && (icmsStateData?.state === 'SP' || jurisdictionState?.toUpperCase() === 'SP')
+    )
+  const visibleSources = isSaoPauloIcms ? workflow.sources : []
+
   return (
     <div className="space-y-4 p-5">
       <div className="rounded-xl border border-sky-200 bg-sky-50 p-3">
         <p className="text-xs font-bold text-sky-900">{workflow.title}</p>
-        <p className="mt-1 text-[11px] leading-relaxed text-sky-700">{workflow.scopeNote}</p>
+        <p className="mt-1 text-[11px] leading-relaxed text-sky-700">
+          {processTypeSlug === 'processo_icms' && !isSaoPauloIcms
+            ? 'Fluxo estadual de ICMS. Confirme documentos, limites e sistema de protocolo aplicáveis à UF selecionada.'
+            : workflow.scopeNote}
+        </p>
         {jurisdictionState && <p className="mt-1 text-[10px] font-semibold text-sky-600">Jurisdição cadastrada: {jurisdictionState}</p>}
       </div>
 
@@ -356,10 +412,10 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
                 <span className={cn('rounded-full border px-2.5 py-1 text-[10px] font-bold', STATUS_STYLES[edit.status])}>
                   {reportStatus
                     ? {
-                        nao_solicitado: 'Ainda não solicitado',
+                        nao_solicitado: 'Não iniciado',
                         solicitado: 'Solicitado',
                         em_andamento: 'Em andamento',
-                        pronto: 'Pronto',
+                        pronto: 'Recebido',
                         nao_aplicavel: 'Não se aplica',
                       }[reportStatus]
                     : isBlocked ? 'Bloqueada' : STATUS_LABELS[stage.status]}
@@ -373,7 +429,7 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
                     <p className="text-xs leading-relaxed text-slate-500">{template.description}</p>
                   </div>
 
-                  {!isIpiReportStage && <div className="space-y-2">
+                  {!isIpiReportStage && !(template.resultOptions?.length) && <div className="space-y-2">
                     <p className="text-xs font-semibold text-slate-600">Status da etapa</p>
                     <div className="flex flex-wrap gap-2">
                       {(template.allowedStatuses ?? DEFAULT_STATUSES).map(status => (
@@ -420,22 +476,44 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
                     </div>
                   )}
 
-                  {(template.fields?.length ?? 0) > 0 && (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {template.fields?.map(field => (
+                  {(template.fields?.length ?? 0) > 0 && (isIpiReportStage ? (
+                    <div className="space-y-3">
+                      {template.fields?.filter(field => field.key === 'report_status').map(field => (
                         <FieldControl
                           key={field.key}
                           field={field}
                           value={edit.data[field.key]}
-                          onChange={value => (
-                            isIpiReportStage && field.key === 'report_status'
-                              ? updateIpiReportStatus(stage, value)
-                              : updateData(stage, field.key, value)
-                          )}
+                          onChange={value => updateIpiReportStatus(stage, value)}
+                        />
+                      ))}
+                      {reportStatus === 'pronto' && (
+                        <details className="rounded-xl border border-slate-200 bg-white p-3">
+                          <summary className="cursor-pointer text-xs font-semibold text-slate-700">Identificação do laudo recebido · opcional</summary>
+                          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
+                            {template.fields?.filter(field => field.key !== 'report_status').map(field => (
+                              <FieldControl
+                                key={field.key}
+                                field={field}
+                                value={edit.data[field.key]}
+                                onChange={value => updateData(stage, field.key, value)}
+                              />
+                            ))}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {template.fields?.filter(field => isOperationalFieldVisible(field, edit.data)).map(field => (
+                        <FieldControl
+                          key={field.key}
+                          field={field}
+                          value={edit.data[field.key]}
+                          onChange={value => updateOperationalField(stage, field.key, value)}
                         />
                       ))}
                     </div>
-                  )}
+                  ))}
 
                   {(template.checklist?.length ?? 0) > 0 && (
                     <div className="space-y-2">
@@ -463,16 +541,26 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
 
                   {(template.resultOptions?.length ?? 0) > 0 && (
                     <div className="space-y-2">
-                      <p className="text-xs font-semibold text-slate-600">Resultado</p>
+                      <p className="text-xs font-semibold text-slate-600">Situação</p>
                       <div className="flex flex-wrap gap-2">
+                        {(['pendente', 'em_andamento'] as OperationalStageStatus[]).map(status => (
+                          <button
+                            key={status}
+                            type="button"
+                            onClick={() => updateDecision(stage, status)}
+                            className={cn(
+                              'rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all',
+                              edit.status === status ? STATUS_STYLES[status] : 'border-slate-200 bg-white text-slate-400',
+                            )}
+                          >
+                            {status === 'pendente' ? 'Não iniciado' : STATUS_LABELS[status]}
+                          </button>
+                        ))}
                         {template.resultOptions?.map(option => (
                           <button
                             key={option.value}
                             type="button"
-                            onClick={() => {
-                              updateEdit(stage, 'result', option.value)
-                              updateEdit(stage, 'status', option.stageStatus)
-                            }}
+                            onClick={() => updateDecision(stage, option.stageStatus, option.value)}
                             className={cn(
                               'inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold',
                               edit.result === option.value
@@ -533,13 +621,13 @@ export function OperationalStagesPanel({ processId, processTypeSlug, stages, jur
         })}
       </div>
 
-      {workflow.sources.length > 0 && (
+      {visibleSources.length > 0 && (
         <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
           <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-700">
             <Scale className="h-3.5 w-3.5" /> Referências oficiais usadas na base
           </summary>
           <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
-            {workflow.sources.map(source => (
+            {visibleSources.map(source => (
               <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-blue-700 hover:underline">
                 <ExternalLink className="h-3 w-3" /> {source.title}
               </a>

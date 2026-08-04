@@ -6,7 +6,6 @@ export interface ServicePlanDefinition {
   prerequisite: LeadIntendedService | null
   startsOnConversion: boolean
   availableToStart: boolean
-  requiresVehicleBeforeStart: boolean
 }
 
 export function getServicePrerequisite(
@@ -31,14 +30,12 @@ export function buildServicePlanDefinitions(
 
   return services.map((service, index) => {
     const prerequisite = getServicePrerequisite(service, services)
-    const requiresVehicleBeforeStart = service === 'icms' || service === 'ipva'
     return {
       service,
       sortOrder: index + 1,
       prerequisite,
-      startsOnConversion: index === 0 && !requiresVehicleBeforeStart,
+      startsOnConversion: prerequisite === null,
       availableToStart: prerequisite === null,
-      requiresVehicleBeforeStart,
     }
   })
 }

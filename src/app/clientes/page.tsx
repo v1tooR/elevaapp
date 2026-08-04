@@ -1,263 +1,225 @@
-﻿import { createClient } from '@/lib/supabase/server'
 import Link from 'next/link'
-import { Plus, Search, Users, ArrowUpRight, ChevronLeft, ChevronRight } from 'lucide-react'
-import { formatCPF, formatPhone } from '@/lib/utils'
-import type { Client } from '@/types/database'
+import type { ReactNode } from 'react'
+import {
+  ArrowUpRight,
+  ChevronLeft,
+  ChevronRight,
+  Columns3,
+  Download,
+  FileText,
+  Plus,
+  Search,
+  SlidersHorizontal,
+  Users,
+} from 'lucide-react'
+import { ProcessStatusBadge } from '@/components/shared/status-badge'
+import {
+  CLIENT_DOCUMENT_STATE_LABELS,
+  CLIENT_SUMMARY_COLUMNS,
+  normalizeClientSummaryColumns,
+  type ClientDocumentState,
+  type CompleteClientRow,
+} from '@/lib/client-summary'
+import { LEAD_SERVICE_OPTIONS } from '@/lib/lead-eligibility'
+import { createClient } from '@/lib/supabase/server'
+import { cn, formatCPF, formatCurrency, formatDate, formatPhone } from '@/lib/utils'
+import type { ProcessStatus } from '@/types/database'
 
-interface SearchParams { q?: string; page?: string }
-
-function avatarGradient(name: string) {
-  const g = [
-    'linear-gradient(135deg,#6B3019,#A14F2A)',
-    'linear-gradient(135deg,#7C3E24,#C97A52)',
-    'linear-gradient(135deg,#8A4A2E,#D08A64)',
-    'linear-gradient(135deg,#5C2A18,#9A4828)',
-    'linear-gradient(135deg,#70402E,#B86C49)',
-    'linear-gradient(135deg,#425438,#718061)',
-  ]
-  const n = [...name].reduce((s, c) => s + c.charCodeAt(0), 0)
-  return g[n % g.length]
+type ParamValue = string | string[] | undefined
+interface SearchParams {
+  q?: ParamValue
+  page?: ParamValue
+  contrato?: ParamValue
+  servico?: ParamValue
+  responsavel?: ParamValue
+  indicacao?: ParamValue
+  concessionaria?: ParamValue
+  cin?: ParamValue
+  credencial?: ParamValue
+  de?: ParamValue
+  ate?: ParamValue
+  cols?: ParamValue
 }
 
-function initials(name: string) {
-  return name.split(' ').map(w => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase()
+const SOURCE_LABELS: Record<string, string> = {
+  instagram: 'Instagram',
+  google: 'Google',
+  indicacao: 'Indicação',
+  vendedor: 'Vendedor/indicador',
+  outros: 'Outros',
+}
+
+function first(value: ParamValue) {
+  return Array.isArray(value) ? value[0] ?? '' : value ?? ''
+}
+
+function EmptyValue({ children = '—' }: { children?: ReactNode }) {
+  return <span className="text-slate-300">{children}</span>
+}
+
+function ServiceCell({ status, stage, fallback, validUntil }: {
+  status: ProcessStatus | null
+  stage: string | null
+  fallback?: string | null
+  validUntil?: string | null
+}) {
+  if (!status) {
+    if (!fallback && !validUntil) return <EmptyValue />
+    return <div className="space-y-1">{fallback && <p className="text-xs font-medium text-slate-600">{fallback}</p>}{validUntil && <p className="text-[11px] font-medium text-amber-700">Válido até {formatDate(validUntil)}</p>}</div>
+  }
+  return <div className="space-y-1.5"><ProcessStatusBadge status={status} />{stage && <p className="max-w-40 text-[11px] leading-snug text-slate-500">{stage}</p>}{validUntil && <p className="text-[11px] font-medium text-amber-700">Válido até {formatDate(validUntil)}</p>}</div>
+}
+
+function DocumentCell({ state, status, stage, validUntil }: {
+  state: ClientDocumentState
+  status: ProcessStatus | null
+  stage: string | null
+  validUntil: string | null
+}) {
+  if (state === 'em_andamento' && status) return <ServiceCell status={status} stage={stage} validUntil={validUntil} />
+  const styles: Record<ClientDocumentState, string> = {
+    vigente: 'border-emerald-200 bg-emerald-50 text-emerald-700',
+    em_andamento: 'border-blue-200 bg-blue-50 text-blue-700',
+    vencido: 'border-red-200 bg-red-50 text-red-700',
+    nao_possui: 'border-slate-200 bg-slate-50 text-slate-500',
+  }
+  return <div className="space-y-1.5"><span className={cn('inline-flex rounded-full border px-2 py-1 text-[10px] font-bold', styles[state])}>{CLIENT_DOCUMENT_STATE_LABELS[state]}</span>{validUntil && <p className="text-[11px] text-slate-500">Validade: {formatDate(validUntil)}</p>}</div>
+}
+
+function hiddenInputs(values: Record<string, string>) {
+  return Object.entries(values).filter(([, value]) => value).map(([name, value]) => <input key={name} type="hidden" name={name} value={value} />)
 }
 
 export default async function ClientesPage({ searchParams }: { searchParams: Promise<SearchParams> }) {
   const params = await searchParams
-  const q = params.q ?? ''
-  const page = parseInt(params.page ?? '1')
-  const perPage = 20
-
+  const filters = {
+    q: first(params.q).trim(),
+    contrato: first(params.contrato),
+    servico: first(params.servico),
+    responsavel: first(params.responsavel),
+    indicacao: first(params.indicacao),
+    concessionaria: first(params.concessionaria).trim(),
+    cin: first(params.cin),
+    credencial: first(params.credencial),
+    de: first(params.de),
+    ate: first(params.ate),
+  }
+  const selectedColumns = normalizeClientSummaryColumns(params.cols)
+  const visible = new Set(selectedColumns)
+  const page = Math.max(1, Number.parseInt(first(params.page) || '1', 10) || 1)
+  const perPage = 25
   const supabase = await createClient()
+
   let query = supabase
-    .from('clients')
+    .from('client_complete_rows')
     .select('*', { count: 'exact' })
     .eq('is_active', true)
-    .order('name', { ascending: true })
+    .order('client_name')
     .range((page - 1) * perPage, page * perPage - 1)
+  if (filters.q) query = query.ilike('search_text', `%${filters.q}%`)
+  if (filters.contrato === 'com') query = query.not('contract_id', 'is', null)
+  if (filters.contrato === 'sem') query = query.is('contract_id', null)
+  if (filters.servico) query = query.contains('service_keys', [filters.servico])
+  if (filters.responsavel) query = query.eq('commercial_owner_id', filters.responsavel)
+  if (filters.indicacao) query = query.eq('referral_partner_id', filters.indicacao)
+  if (filters.concessionaria) query = query.ilike('dealership', `%${filters.concessionaria}%`)
+  if (filters.cin) query = query.eq('cin_document_state', filters.cin)
+  if (filters.credencial) query = query.eq('credential_document_state', filters.credencial)
+  if (filters.de) query = query.gte('client_created_at', `${filters.de}T00:00:00`)
+  if (filters.ate) query = query.lte('client_created_at', `${filters.ate}T23:59:59`)
 
-  if (q) {
-    query = query.or(`name.ilike.%${q}%,cpf.ilike.%${q}%,phone.ilike.%${q}%,email.ilike.%${q}%`)
+  const [clientResult, ownerResult, partnerResult] = await Promise.all([
+    query,
+    supabase.from('profiles').select('id, name').in('role', ['super_admin', 'admin']).eq('is_active', true).order('name'),
+    supabase.from('referral_partners').select('id, name').eq('is_active', true).order('name'),
+  ])
+  if (clientResult.error) throw new Error(`Não foi possível carregar a visão completa de clientes: ${clientResult.error.message}`)
+  const clients = (clientResult.data ?? []) as CompleteClientRow[]
+  const count = clientResult.count ?? 0
+  const totalPages = Math.max(1, Math.ceil(count / perPage))
+
+  const appendParams = (overrides: Record<string, string | null> = {}) => {
+    const values = new URLSearchParams()
+    for (const [key, value] of Object.entries(filters)) if (value) values.set(key, value)
+    for (const column of selectedColumns) values.append('cols', column)
+    for (const [key, value] of Object.entries(overrides)) {
+      values.delete(key)
+      if (value) values.set(key, value)
+    }
+    return values
   }
-
-  const { data: clients, count } = await query
-  const totalPages = Math.ceil((count ?? 0) / perPage)
+  const pageUrl = (nextPage: number) => `/clientes?${appendParams({ page: String(nextPage) }).toString()}`
+  const exportParams = appendParams()
+  exportParams.delete('page')
+  const hasAdvancedFilters = Object.entries(filters).some(([key, value]) => key !== 'q' && Boolean(value))
 
   return (
-    <>
-      <style>{`
-        @keyframes slideUp {
-          from { opacity: 0; transform: translateY(16px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-        .anim { animation: slideUp 0.4s ease-out both; }
-        .anim-1 { animation-delay: 0.05s; }
-        .anim-2 { animation-delay: 0.10s; }
-        .anim-3 { animation-delay: 0.15s; }
-        .client-row { transition: background 0.12s; }
-        .client-row:hover { background: #F8FAFC; }
-        .client-row:hover .client-name { color: #2563EB; }
-        .client-row:hover .row-arrow { opacity: 1; transform: translate(0,0); }
-        .row-arrow { opacity: 0; transform: translate(-4px, 4px); transition: opacity 0.15s, transform 0.15s; }
-        .search-input:focus { box-shadow: 0 0 0 3px rgba(59,130,246,0.12); }
-      `}</style>
+    <div className="space-y-5">
+      <section className="relative overflow-hidden rounded-2xl p-6 text-white lg:p-8" style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}>
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-4"><span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/20 bg-white/10"><Users className="h-6 w-6 text-white/80" /></span><div><h1 className="text-2xl font-bold lg:text-3xl">Visão completa de clientes</h1><p className="mt-0.5 text-sm text-white/65">{count} cliente{count === 1 ? '' : 's'} · comercial, compra e documentos</p></div></div>
+          <div className="flex flex-wrap gap-2"><a href={`/api/clientes/resumo/export?${exportParams.toString()}`} className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold hover:bg-white/20"><Download className="h-4 w-4" /> Exportar CSV</a><Link href="/clientes/novo" className="flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold hover:bg-white/20"><Plus className="h-4 w-4" /> Novo cliente</Link></div>
+        </div>
+      </section>
 
-      <div className="space-y-5">
-
-        {/* â”€â”€ Banner â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        <div
-          className="anim relative overflow-hidden rounded-2xl"
-          style={{ background: 'linear-gradient(135deg, #1E1A17 0%, #6B3019 55%, #A14F2A 100%)' }}
-        >
-          <div className="pointer-events-none absolute -top-20 -right-20 w-72 h-72 rounded-full opacity-[0.07]"
-            style={{ background: 'radial-gradient(circle, #C97A52, transparent 70%)' }} />
-          <div className="pointer-events-none absolute inset-0 opacity-[0.03]"
-            style={{ backgroundImage: 'radial-gradient(#fff 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
-
-          <div className="relative flex items-center justify-between gap-4 p-6 lg:p-8">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-white/10 border border-white/20 flex items-center justify-center shrink-0">
-                <Users className="w-6 h-6 text-primary-foreground/75" />
-              </div>
-              <div>
-                <h1 className="dash text-white text-2xl lg:text-3xl font-bold leading-tight">Clientes</h1>
-                <p className="dash text-primary-foreground/65 text-sm mt-0.5">
-                  {count ?? 0} cliente{count !== 1 ? 's' : ''} cadastrado{count !== 1 ? 's' : ''}
-                </p>
-              </div>
-            </div>
-            <Link
-              href="/clientes/novo"
-              className="shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white border border-white/20 bg-white/10 hover:bg-white/20 hover:border-white/40 transition-all dash"
-            >
-              <Plus className="w-4 h-4" />
-              Novo Cliente
-            </Link>
+      <form method="get" className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-3 md:flex-row">
+          <label className="relative flex-1"><Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" /><input name="q" defaultValue={filters.q} placeholder="Cliente, CPF, serviço, indicação ou compra" className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-3 text-sm outline-none focus:border-amber-500 focus:bg-white" /></label>
+          <select name="servico" defaultValue={filters.servico} className="h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm"><option value="">Todos os serviços</option>{LEAD_SERVICE_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}</select>
+          <button className="h-10 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white hover:bg-slate-800">Consultar</button>
+          <Link href="/clientes" className="flex h-10 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600">Limpar</Link>
+        </div>
+        <details open={hasAdvancedFilters} className="rounded-xl border border-slate-100 bg-slate-50/70 p-3">
+          <summary className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-slate-600"><SlidersHorizontal className="h-3.5 w-3.5" /> Filtros avançados</summary>
+          <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-4">
+            <select name="contrato" defaultValue={filters.contrato} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="">Com ou sem contrato</option><option value="com">Com contrato</option><option value="sem">Sem contrato</option></select>
+            <select name="responsavel" defaultValue={filters.responsavel} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="">Todos os responsáveis</option>{(ownerResult.data ?? []).map(owner => <option key={owner.id} value={owner.id}>{owner.name}</option>)}</select>
+            <select name="indicacao" defaultValue={filters.indicacao} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="">Todas as indicações</option>{(partnerResult.data ?? []).map(partner => <option key={partner.id} value={partner.id}>{partner.name}</option>)}</select>
+            <input name="concessionaria" defaultValue={filters.concessionaria} placeholder="Concessionária" className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm" />
+            <select name="cin" defaultValue={filters.cin} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="">Qualquer situação da CIN</option>{Object.entries(CLIENT_DOCUMENT_STATE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+            <select name="credencial" defaultValue={filters.credencial} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="">Qualquer situação da Credencial</option>{Object.entries(CLIENT_DOCUMENT_STATE_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
+            <label className="text-[10px] font-semibold uppercase text-slate-400">Cadastro de<input type="date" name="de" defaultValue={filters.de} className="mt-1 block h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700" /></label>
+            <label className="text-[10px] font-semibold uppercase text-slate-400">Cadastro até<input type="date" name="ate" defaultValue={filters.ate} className="mt-1 block h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-normal text-slate-700" /></label>
           </div>
-        </div>
+        </details>
+        {selectedColumns.map(column => <input key={column} type="hidden" name="cols" value={column} />)}
+      </form>
 
-        {/* â”€â”€ Search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        <div
-          className="anim anim-1 bg-white rounded-2xl p-4"
-          style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-        >
-          <form method="GET" className="flex gap-3">
-            <div className="relative flex-1">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-              <input
-                name="q"
-                defaultValue={q}
-                placeholder="Buscar por nome, CPF, telefone ou e-mail..."
-                className="search-input w-full pl-10 pr-4 py-2.5 border border-border rounded-xl text-sm bg-muted focus:bg-card focus:border-primary focus:outline-none transition-all dash"
-              />
-            </div>
-            <button
-              type="submit"
-              className="px-5 py-2.5 bg-slate-900 text-white text-sm font-semibold rounded-xl hover:bg-slate-700 transition-colors dash"
-            >
-              Buscar
-            </button>
-            {q && (
-              <Link
-                href="/clientes"
-                className="px-4 py-2.5 border border-slate-200 text-slate-600 text-sm font-medium rounded-xl hover:bg-slate-50 transition-colors dash"
-              >
-                Limpar
-              </Link>
-            )}
-          </form>
-          {q && (
-            <p className="text-xs text-slate-400 mt-2.5 ml-1 dash">
-              {count ?? 0} resultado{count !== 1 ? 's' : ''} para &quot;{q}&quot;
-            </p>
-          )}
-        </div>
+      <details className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <summary className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-slate-700"><Columns3 className="h-4 w-4" /> Escolher colunas</summary>
+        <form method="get" className="mt-3 border-t border-slate-100 pt-3">
+          {hiddenInputs(filters)}
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">{CLIENT_SUMMARY_COLUMNS.map(([key, label]) => <label key={key} className="flex items-center gap-2 rounded-lg border border-slate-100 px-3 py-2 text-xs text-slate-600"><input type="checkbox" name="cols" value={key} defaultChecked={visible.has(key)} /> {label}</label>)}</div>
+          <button className="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white">Aplicar colunas</button>
+        </form>
+      </details>
 
-        {/* â”€â”€ Table â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        <div
-          className="anim anim-2 bg-white rounded-2xl overflow-hidden"
-          style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
-        >
-          {!clients || clients.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-20 gap-4">
-              <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center">
-                <Users className="w-7 h-7 text-slate-300" />
-              </div>
-              <div className="text-center">
-                <p className="dash font-semibold text-slate-700">
-                  {q ? 'Nenhum resultado encontrado' : 'Nenhum cliente cadastrado'}
-                </p>
-                <p className="text-sm text-slate-400 mt-1 dash">
-                  {q ? `Tente buscar por outro termo` : 'Comece adicionando o primeiro cliente'}
-                </p>
-              </div>
-              {!q && (
-                <Link
-                  href="/clientes/novo"
-                  className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground text-sm font-semibold rounded-xl hover:bg-primary/90 transition-colors dash"
-                >
-                  <Plus className="w-4 h-4" /> Cadastrar cliente
-                </Link>
-              )}
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr style={{ borderBottom: '1px solid #F1F5F9', background: '#FAFBFC' }}>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider">Cliente</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden md:table-cell">CPF</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden lg:table-cell">Telefone</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden lg:table-cell">E-mail</th>
-                    <th className="text-left px-5 py-3.5 dash font-semibold text-slate-500 text-xs uppercase tracking-wider hidden xl:table-cell">Cidade/UF</th>
-                    <th className="px-5 py-3.5" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {clients.map((client: Client) => (
-                    <tr key={client.id} className="client-row border-b border-slate-50 last:border-0">
-                      <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center text-white text-xs font-bold dash"
-                            style={{ background: avatarGradient(client.name) }}
-                          >
-                            {initials(client.name)}
-                          </div>
-                          <span className="client-name font-semibold text-slate-900 transition-colors dash">
-                            {client.name}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-500 hidden md:table-cell dash">
-                        {client.cpf ? formatCPF(client.cpf) : <span className="text-slate-300">â€”</span>}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-500 hidden lg:table-cell dash">
-                        {client.phone ? formatPhone(client.phone) : <span className="text-slate-300">â€”</span>}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-500 hidden lg:table-cell dash">
-                        {client.email ?? <span className="text-slate-300">â€”</span>}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-500 hidden xl:table-cell dash">
-                        {client.city && client.state
-                          ? `${client.city} / ${client.state}`
-                          : client.city ?? <span className="text-slate-300">â€”</span>}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <Link
-                          href={`/clientes/${client.id}`}
-                          className="flex items-center justify-end gap-1 text-blue-600 text-xs font-semibold dash hover:text-blue-700"
-                        >
-                          <span className="hidden sm:inline">Ver</span>
-                          <ArrowUpRight className="row-arrow w-3.5 h-3.5" />
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        {clients.length === 0 ? <div className="flex flex-col items-center justify-center gap-3 py-20 text-center"><Users className="h-8 w-8 text-slate-300" /><div><p className="font-semibold text-slate-700">Nenhum cliente encontrado</p><p className="mt-1 text-sm text-slate-400">Ajuste os filtros ou cadastre um novo cliente.</p></div></div> : <>
+          <div className="hidden overflow-x-auto xl:block"><table className="w-full min-w-[1900px] text-sm"><thead className="border-b border-slate-200 bg-slate-50 text-left text-[11px] uppercase tracking-wide text-slate-500"><tr><th className="sticky left-0 z-10 min-w-64 bg-slate-50 px-4 py-3">Cliente</th>{visible.has('cadastro') && <th className="px-4 py-3">Cadastro</th>}{visible.has('servicos') && <th className="min-w-56 px-4 py-3">Serviços</th>}{visible.has('contrato') && <th className="px-4 py-3">Contrato</th>}{visible.has('valor') && <th className="px-4 py-3">Valor</th>}{visible.has('responsavel') && <th className="px-4 py-3">Responsável</th>}{visible.has('indicacao') && <th className="px-4 py-3">Indicação</th>}{visible.has('concessionaria') && <th className="px-4 py-3">Concessionária</th>}{visible.has('vendedor') && <th className="px-4 py-3">Vendedor da concessionária</th>}{visible.has('compra') && <th className="px-4 py-3">Compra</th>}{visible.has('troca') && <th className="px-4 py-3">Próxima troca</th>}{visible.has('cnh') && <th className="px-4 py-3">CNH</th>}{visible.has('cin') && <th className="px-4 py-3">CIN</th>}{visible.has('credencial') && <th className="px-4 py-3">Credencial</th>}<th /></tr></thead>
+            <tbody className="divide-y divide-slate-100">{clients.map(client => <tr key={client.client_id} className="align-top hover:bg-slate-50/70"><td className="sticky left-0 z-10 bg-white px-4 py-4"><Link href={`/clientes/${client.client_id}`} className="font-semibold text-slate-900 hover:text-amber-700">{client.client_name}</Link><p className="mt-1 text-xs text-slate-400">{client.client_cpf ? formatCPF(client.client_cpf) : 'CPF não informado'}</p>{client.client_phone && <p className="mt-0.5 text-xs text-slate-500">{formatPhone(client.client_phone)}</p>}</td>
+              {visible.has('cadastro') && <td className="px-4 py-4 text-xs text-slate-500">{formatDate(client.client_created_at)}</td>}
+              {visible.has('servicos') && <td className="px-4 py-4 text-xs text-slate-700">{client.service_names?.join(', ') || <EmptyValue />}</td>}
+              {visible.has('contrato') && <td className="px-4 py-4">{client.contract_label ? <div><p className="font-medium text-slate-800">{client.contract_label}</p><p className="mt-1 text-[11px] text-slate-400">{client.contracted_at ? formatDate(client.contracted_at) : ''}{client.contract_status ? ` · ${client.contract_status}` : ''}</p></div> : <EmptyValue>Sem contrato</EmptyValue>}</td>}
+              {visible.has('valor') && <td className="px-4 py-4 font-semibold text-slate-800">{client.contract_value != null ? formatCurrency(Number(client.contract_value)) : <EmptyValue />}</td>}
+              {visible.has('responsavel') && <td className="px-4 py-4 text-slate-700">{client.commercial_owner_name ?? <EmptyValue />}</td>}
+              {visible.has('indicacao') && <td className="px-4 py-4">{client.indication_name ? <div><p className="font-medium text-slate-800">{client.indication_name}</p><p className="mt-1 text-[11px] text-slate-400">{SOURCE_LABELS[client.lead_source ?? ''] ?? client.lead_source}</p></div> : client.lead_source ? SOURCE_LABELS[client.lead_source] ?? client.lead_source : <EmptyValue />}</td>}
+              {visible.has('concessionaria') && <td className="px-4 py-4 text-slate-700">{client.dealership ?? <EmptyValue />}</td>}
+              {visible.has('vendedor') && <td className="px-4 py-4 text-slate-700">{client.salesperson ?? <EmptyValue />}</td>}
+              {visible.has('compra') && <td className="px-4 py-4">{client.purchase_vehicle ? <div><p className="font-medium text-slate-800">{client.purchase_vehicle}</p>{client.vehicle_price != null && <p className="mt-1 text-[11px] text-slate-500">{formatCurrency(Number(client.vehicle_price))}</p>}{client.purchase_date && <p className="mt-1 text-[11px] text-slate-400">Compra: {formatDate(client.purchase_date)}</p>}</div> : <EmptyValue />}</td>}
+              {visible.has('troca') && <td className="px-4 py-4 text-slate-700">{client.next_vehicle_change_date ? formatDate(client.next_vehicle_change_date) : <EmptyValue />}</td>}
+              {visible.has('cnh') && <td className="px-4 py-4"><ServiceCell status={client.cnh_process_status} stage={client.cnh_stage_label} fallback={client.cnh_expiry_date ? `Vence ${formatDate(client.cnh_expiry_date)}` : client.cnh_status} validUntil={client.cnh_process_status ? client.cnh_expiry_date : null} /></td>}
+              {visible.has('cin') && <td className="px-4 py-4"><DocumentCell state={client.cin_document_state} status={client.cin_process_status} stage={client.cin_stage_label} validUntil={client.cin_valid_until} /></td>}
+              {visible.has('credencial') && <td className="px-4 py-4"><DocumentCell state={client.credential_document_state} status={client.credential_process_status} stage={client.credential_stage_label} validUntil={client.credential_valid_until} /></td>}
+              <td className="px-4 py-4"><Link href={`/clientes/${client.client_id}`} aria-label={`Abrir ${client.client_name}`} className="text-amber-700"><ArrowUpRight className="h-4 w-4" /></Link></td></tr>)}</tbody></table></div>
 
-        {/* â”€â”€ Pagination â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
-        {totalPages > 1 && (
-          <div className="anim anim-3 flex items-center justify-center gap-2">
-            {page > 1 ? (
-              <Link
-                href={`/clientes?q=${q}&page=${page - 1}`}
-                className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors dash"
-              >
-                <ChevronLeft className="w-4 h-4" /> Anterior
-              </Link>
-            ) : (
-              <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm font-medium text-slate-300 dash cursor-not-allowed">
-                <ChevronLeft className="w-4 h-4 inline" /> Anterior
-              </div>
-            )}
+          <div className="divide-y divide-slate-100 xl:hidden">{clients.map(client => <article key={client.client_id} className="space-y-4 p-4"><div className="flex items-start justify-between gap-3"><div><Link href={`/clientes/${client.client_id}`} className="font-semibold text-slate-900">{client.client_name}</Link><p className="mt-1 text-xs text-slate-400">{client.client_cpf ? formatCPF(client.client_cpf) : 'CPF não informado'}{client.client_phone ? ` · ${formatPhone(client.client_phone)}` : ''}</p><p className="mt-1 text-[11px] text-slate-400">Cadastro: {formatDate(client.client_created_at)}{client.commercial_owner_name ? ` · ${client.commercial_owner_name}` : ''}</p></div><Link href={`/clientes/${client.client_id}`} className="text-amber-700"><ArrowUpRight className="h-4 w-4" /></Link></div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><div className="rounded-xl border border-slate-100 bg-slate-50 p-3"><span className="flex items-center gap-1 text-[10px] font-semibold uppercase text-slate-400"><FileText className="h-3 w-3" /> Contrato e serviços</span><p className="mt-1.5 text-sm font-semibold text-slate-800">{client.contract_label ?? 'Sem contrato'}</p><p className="mt-1 text-xs text-slate-500">{client.contract_value != null ? formatCurrency(Number(client.contract_value)) : 'Valor não informado'}</p><p className="mt-1 text-xs text-slate-500">{client.service_names?.join(', ') || 'Sem serviços'}</p></div><div className="rounded-xl border border-slate-100 bg-slate-50 p-3"><span className="text-[10px] font-semibold uppercase text-slate-400">Indicação</span><p className="mt-1.5 text-sm font-semibold text-slate-800">{client.indication_name ?? (client.lead_source ? SOURCE_LABELS[client.lead_source] ?? client.lead_source : 'Não informada')}</p></div><div className="rounded-xl border border-slate-100 bg-slate-50 p-3 sm:col-span-2"><span className="text-[10px] font-semibold uppercase text-slate-400">Compra</span><p className="mt-1.5 text-sm font-semibold text-slate-800">{client.purchase_vehicle ?? 'Veículo não definido'}</p><p className="mt-1 text-xs text-slate-500">{[client.dealership, client.salesperson].filter(Boolean).join(' · ') || 'Concessionária e vendedor não informados'}</p>{client.next_vehicle_change_date && <p className="mt-1 text-xs text-amber-700">Próxima troca: {formatDate(client.next_vehicle_change_date)}</p>}</div></div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-3"><div className="rounded-xl border border-slate-100 p-2.5"><p className="mb-1.5 text-[10px] font-semibold uppercase text-slate-400">CNH</p><ServiceCell status={client.cnh_process_status} stage={client.cnh_stage_label} fallback={client.cnh_status} validUntil={client.cnh_expiry_date} /></div><div className="rounded-xl border border-slate-100 p-2.5"><p className="mb-1.5 text-[10px] font-semibold uppercase text-slate-400">CIN</p><DocumentCell state={client.cin_document_state} status={client.cin_process_status} stage={client.cin_stage_label} validUntil={client.cin_valid_until} /></div><div className="rounded-xl border border-slate-100 p-2.5"><p className="mb-1.5 text-[10px] font-semibold uppercase text-slate-400">Credencial</p><DocumentCell state={client.credential_document_state} status={client.credential_process_status} stage={client.credential_stage_label} validUntil={client.credential_valid_until} /></div></div></article>)}</div>
+        </>}
+      </section>
 
-            <div className="px-4 py-2 bg-white border border-slate-200 rounded-xl">
-              <span className="text-sm text-slate-500 dash">
-                <span className="font-bold text-slate-900">{page}</span> de <span className="font-bold text-slate-900">{totalPages}</span>
-              </span>
-            </div>
-
-            {page < totalPages ? (
-              <Link
-                href={`/clientes?q=${q}&page=${page + 1}`}
-                className="flex items-center gap-1.5 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors dash"
-              >
-                PrÃ³xima <ChevronRight className="w-4 h-4" />
-              </Link>
-            ) : (
-              <div className="px-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-sm font-medium text-slate-300 dash cursor-not-allowed">
-                PrÃ³xima <ChevronRight className="w-4 h-4 inline" />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </>
+      {totalPages > 1 && <nav className="flex items-center justify-center gap-2"><Link href={pageUrl(Math.max(1, page - 1))} aria-disabled={page <= 1} className={cn('flex items-center gap-1 rounded-xl border px-4 py-2 text-sm font-medium', page <= 1 ? 'pointer-events-none border-slate-100 bg-slate-50 text-slate-300' : 'border-slate-200 bg-white text-slate-700')}><ChevronLeft className="h-4 w-4" /> Anterior</Link><span className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm text-slate-500"><strong className="text-slate-900">{page}</strong> de {totalPages}</span><Link href={pageUrl(Math.min(totalPages, page + 1))} aria-disabled={page >= totalPages} className={cn('flex items-center gap-1 rounded-xl border px-4 py-2 text-sm font-medium', page >= totalPages ? 'pointer-events-none border-slate-100 bg-slate-50 text-slate-300' : 'border-slate-200 bg-white text-slate-700')}>Próxima <ChevronRight className="h-4 w-4" /></Link></nav>}
+    </div>
   )
 }

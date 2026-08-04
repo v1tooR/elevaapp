@@ -7,6 +7,7 @@ import { IPVA_STAGE_KEYS } from '@/lib/process-workflow'
 import {
   compareOperationalActions,
   deriveProcessAction,
+  isServiceDependencyBlocker,
   type OperationalActor,
   type OperationalPriority,
 } from '@/lib/process-actions'
@@ -25,6 +26,7 @@ const OPEN_MEDICAL_STATUSES = new Set(['pendente', 'aguardando_exame', 'aguardan
 
 export type RoutineCategory =
   | 'acao_equipe'
+  | 'aguardando_dependencia'
   | 'aguardando_cliente'
   | 'aguardando_orgao'
   | 'sem_proxima_acao'
@@ -283,8 +285,12 @@ export async function getStaffOperations() {
       stages: processStages,
       lastActivityAt: historyByProcess.get(process.id),
     })
+    const isBlockedService = process.status === 'aberto'
+      && isServiceDependencyBlocker(process.blocked_reason)
 
-    const actionCategory: RoutineCategory = operational.actor === 'equipe'
+    const actionCategory: RoutineCategory = isBlockedService
+      ? 'aguardando_dependencia'
+      : operational.actor === 'equipe'
       ? operational.priority === 'sem_acao' ? 'sem_proxima_acao' : 'acao_equipe'
       : operational.actor === 'cliente'
         ? 'aguardando_cliente'
@@ -315,6 +321,8 @@ export async function getStaffOperations() {
       priorityRank: operational.priorityRank,
       blocker: operational.blocker,
     })
+
+    if (isBlockedService) continue
 
     for (const stage of processStages) {
       const due = stage.due_date ?? stage.scheduled_date
@@ -515,7 +523,13 @@ export async function getStaffOperations() {
     return (a.dueDate ?? '9999-12-31').localeCompare(b.dueDate ?? '9999-12-31')
   })
 
-  const activeProcesses = processes.filter(process => ACTIVE_STATUSES.has(process.status))
+  const waitingDependencies = processes.filter(process => (
+    process.status === 'aberto' && isServiceDependencyBlocker(process.blocked_reason)
+  ))
+  const activeProcesses = processes.filter(process => (
+    ACTIVE_STATUSES.has(process.status)
+    && !(process.status === 'aberto' && isServiceDependencyBlocker(process.blocked_reason))
+  ))
   const completedLast30Days = processes.filter(process =>
     process.status === 'concluido'
       && process.completed_at
@@ -547,6 +561,7 @@ export async function getStaffOperations() {
       stalled: routineItemCandidates.filter(item => item.category === 'processo_parado').length,
       openLeads: leadRows?.length ?? 0,
       completedLast30Days,
+      waitingDependencies: waitingDependencies.length,
     },
   }
 }

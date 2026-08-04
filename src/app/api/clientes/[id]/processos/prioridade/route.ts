@@ -35,7 +35,7 @@ export async function PATCH(
   }
 
   const { id: clientId } = await params
-  const { error } = await supabase.rpc('prioritize_client_service_process', {
+  const { error } = await supabase.rpc('prioritize_client_service_process_audited', {
     p_client_id: clientId,
     p_process_id: parsed.data.processId,
   })

@@ -22,20 +22,19 @@ const STAGE_CHECKLIST: StageTemplate = {
 
 const STAGE_AGENDAMENTO: StageTemplate = {
   stage_key: 'agendamento_poupatempo',
-  label: 'Agendamento no Poupatempo',
+  label: 'Poupatempo',
   sort_order: 20,
   data: {},
 }
 
 const STAGE_PERICIA: StageTemplate = {
   stage_key: 'pericia_medica',
-  label: 'Perícia Médica (RENACH)',
+  label: 'Perícia',
   sort_order: 30,
   data: {
     observacoes: '',
     restricoes: '',
     requires_practical_exam: null,
-    requires_adapted_vehicle: null,
     medical_requirements: [],
   },
 }
@@ -43,7 +42,7 @@ const STAGE_PERICIA: StageTemplate = {
 const STAGE_EXAME_PRATICO: StageTemplate = {
   stage_key: 'exame_pratico',
   label: 'Exame Prático',
-  sort_order: 40,
+  sort_order: 50,
   data: {
     modalidade: null, // 'autoescola' | 'veiculo_proprio'
     checklist_veiculo_proprio: {
@@ -59,16 +58,9 @@ const STAGE_EXAME_PRATICO: StageTemplate = {
 
 const STAGE_EMISSAO: StageTemplate = {
   stage_key: 'emissao_cnh',
-  label: 'Emissão da CNH Especial',
-  sort_order: 50,
-  data: { restricoes: '', vencimento_cnh: '' },
-}
-
-const STAGE_REGULARIZADA: StageTemplate = {
-  stage_key: 'cnh_regularizada',
-  label: 'CNH regularizada — revisar benefícios',
+  label: 'CNH finalizada',
   sort_order: 60,
-  data: {},
+  data: { restricoes: '', vencimento_cnh: '' },
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -95,7 +87,6 @@ export function getCnhStageTemplates(assessment: CnhAssessmentInput): StageTempl
     },
     practicalExam,
     STAGE_EMISSAO,
-    STAGE_REGULARIZADA,
   ]
 }
 

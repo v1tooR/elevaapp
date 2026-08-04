@@ -1,6 +1,7 @@
 'use client'
 
 import { Input } from '@/components/ui/input'
+import { MaskedInput } from '@/components/ui/masked-input'
 import { cn } from '@/lib/utils'
 import {
   LEAD_DISABILITY_OPTIONS,
@@ -69,6 +70,9 @@ export function LeadEligibilityFields({ value, onChange, compact = false }: Prop
         : false,
       legal_representative_name: clientType === 'nao_condutor'
         ? value.legal_representative_name
+        : '',
+      legal_representative_cpf: clientType === 'nao_condutor'
+        ? value.legal_representative_cpf
         : '',
     })
   }
@@ -192,16 +196,27 @@ export function LeadEligibilityFields({ value, onChange, compact = false }: Prop
               legal_representative_name: hasRepresentative
                 ? value.legal_representative_name
                 : '',
+              legal_representative_cpf: hasRepresentative
+                ? value.legal_representative_cpf
+                : '',
             })}
           />
           {value.has_legal_representative && (
-            <Input
-              label="Nome do representante"
-              value={value.legal_representative_name}
-              onChange={event => update('legal_representative_name', event.target.value)}
-              placeholder="Nome completo, se já estiver disponível"
-              helperText="Opcional no lead. O CPF será informado no cadastro completo do cliente."
-            />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Input
+                label="Nome do representante"
+                value={value.legal_representative_name}
+                onChange={event => update('legal_representative_name', event.target.value)}
+                placeholder="Nome completo"
+              />
+              <MaskedInput
+                mask="cpf"
+                label="CPF do representante"
+                value={value.legal_representative_cpf}
+                onChange={next => update('legal_representative_cpf', next)}
+                placeholder="000.000.000-00"
+              />
+            </div>
           )}
         </div>
       )}
@@ -213,7 +228,7 @@ export function LeadEligibilityFields({ value, onChange, compact = false }: Prop
           onChange={next => update('receives_loas_bpc', next)}
         />
         <BinaryChoice
-          label="Possui laudo médico válido para o processo?"
+          label="Possui laudo médico?"
           value={value.has_medical_report}
           onChange={next => update('has_medical_report', next)}
         />

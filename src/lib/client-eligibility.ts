@@ -4,7 +4,6 @@ import type {
   ClientType,
   CnhStatus,
   DisabilityType,
-  MedicalAssessmentStatus,
 } from '@/types/database'
 
 export interface ClientEligibilityFormValue {
@@ -13,14 +12,12 @@ export interface ClientEligibilityFormValue {
   cnh_status: CnhStatus | ''
   cnh_restrictions: string
   cnh_expiry_date: string
-  medical_assessment_status: MedicalAssessmentStatus | ''
   authorized_drivers: AuthorizedDriver[]
   has_legal_representative: boolean
   legal_representative_name: string
   legal_representative_cpf: string
   receives_loas_bpc: boolean
   has_medical_report: boolean
-  report_valid_until: string
   eligibility_notes: string
 }
 
@@ -30,14 +27,12 @@ export const EMPTY_CLIENT_ELIGIBILITY: ClientEligibilityFormValue = {
   cnh_status: '',
   cnh_restrictions: '',
   cnh_expiry_date: '',
-  medical_assessment_status: 'nao_realizada',
   authorized_drivers: [],
   has_legal_representative: false,
   legal_representative_name: '',
   legal_representative_cpf: '',
   receives_loas_bpc: false,
   has_medical_report: false,
-  report_valid_until: '',
   eligibility_notes: '',
 }
 
@@ -53,14 +48,12 @@ export function clientEligibilityFromRecord(client: Partial<Client>): ClientElig
     cnh_status: client.cnh_status ?? (client.has_cnh_especial ? 'com_restricoes' : ''),
     cnh_restrictions: (client.cnh_restrictions ?? []).join(', '),
     cnh_expiry_date: client.cnh_expiry_date ?? '',
-    medical_assessment_status: client.medical_assessment_status ?? 'nao_realizada',
     authorized_drivers: client.authorized_drivers ?? [],
     has_legal_representative: client.has_legal_representative ?? false,
     legal_representative_name: client.legal_representative_name ?? '',
     legal_representative_cpf: client.legal_representative_cpf ?? '',
     receives_loas_bpc: client.receives_loas_bpc ?? false,
     has_medical_report: client.has_medical_report ?? false,
-    report_valid_until: client.report_valid_until ?? '',
     eligibility_notes: client.eligibility_notes ?? '',
   }
 }
@@ -81,7 +74,6 @@ export function clientEligibilityPayload(value: ClientEligibilityFormValue) {
     cnh_status: value.cnh_status || null,
     cnh_restrictions: restrictions,
     cnh_expiry_date: value.cnh_expiry_date || null,
-    medical_assessment_status: value.medical_assessment_status || null,
     authorized_drivers: value.authorized_drivers.filter(driver => driver.name.trim() || driver.cnh.trim()),
     has_legal_representative:
       value.client_type === 'nao_condutor' && value.has_legal_representative,
@@ -97,6 +89,5 @@ export function clientEligibilityPayload(value: ClientEligibilityFormValue) {
     has_cnh_especial: value.cnh_status === 'com_restricoes',
     receives_loas_bpc: value.receives_loas_bpc,
     has_medical_report: value.has_medical_report,
-    report_valid_until: value.has_medical_report && value.report_valid_until ? value.report_valid_until : null,
   }
 }

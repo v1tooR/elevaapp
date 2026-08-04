@@ -23,7 +23,7 @@ const STAGE_FRIENDLY: Record<string, { title: string; desc: string; tip: string 
   pericia_medica:         { title: 'Perícia Médica',       desc: 'Avaliação médica no DETRAN (RENACH)',           tip: 'Compareça na data agendada com os documentos' },
   recurso_junta_medica:   { title: 'Recurso Médico',       desc: 'Recurso junto à Junta Médica (3 especialistas)', tip: 'Aguarde o resultado do recurso médico' },
   exame_pratico:          { title: 'Exame Prático',        desc: 'Teste de condução para adaptação veicular',     tip: 'Prepare-se para o exame com seu veículo adaptado' },
-  emissao_cnh:            { title: 'Emissão da CNH',       desc: 'Emissão da CNH com as restrições determinadas', tip: 'Sua CNH com restrições está sendo processada pelo DETRAN' },
+  emissao_cnh:            { title: 'CNH finalizada',        desc: 'Emissão da CNH com as restrições determinadas', tip: 'Sua CNH com restrições está sendo processada pelo DETRAN' },
   liberado_isencoes:      { title: 'CNH regularizada',     desc: 'CNH emitida — processo concluído',              tip: 'A equipe revisará separadamente cada benefício' },
   cnh_regularizada:       { title: 'CNH regularizada',     desc: 'CNH emitida — processo concluído',              tip: 'A equipe revisará separadamente cada benefício' },
 }
@@ -121,7 +121,12 @@ export default async function ClienteProcessoDetailPage({
   const isCnh = pt?.slug === 'cnh_especial'
   const isOperational = hasOperationalWorkflow(pt?.slug ?? '')
   const operationalWorkflow = getOperationalWorkflowDefinition(pt?.slug ?? '')
-  const stages = isCnh || isOperational ? (rawStages ?? []) : []
+  const operationalStageKeys = new Set(operationalWorkflow?.stages.map(stage => stage.stage_key) ?? [])
+  const stages = isCnh
+    ? (rawStages ?? []).filter(stage => !['cnh_regularizada', 'liberado_isencoes'].includes(stage.stage_key))
+    : isOperational
+      ? (rawStages ?? []).filter(stage => operationalStageKeys.has(stage.stage_key))
+      : []
 
   // Valores de andamento dos workflows estruturados
   const sortedStages = [...stages].sort((a: any, b: any) => a.sort_order - b.sort_order)

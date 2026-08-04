@@ -200,7 +200,7 @@ export function CnhStagesPanel({ stages, processId }: Props) {
   const saveStage = async (stage: ProcessStage) => {
     const edit = getEdit(stage)
     if (
-      ['pericia_medica', 'recurso_junta_medica'].includes(stage.stage_key) &&
+      stage.stage_key === 'pericia_medica' &&
       (edit.result === 'aprovado' || edit.status === 'aprovado') &&
       typeof edit.data.requires_practical_exam !== 'boolean'
     ) {
@@ -308,7 +308,9 @@ export function CnhStagesPanel({ stages, processId }: Props) {
     }
   }
 
-  const sorted = [...stages].sort((a, b) => a.sort_order - b.sort_order)
+  const sorted = stages
+    .filter(stage => stage.stage_key !== 'cnh_regularizada')
+    .sort((a, b) => a.sort_order - b.sort_order)
   const doneCount = sorted.filter(s => isResolved(s.status)).length
   const pct = sorted.length > 0 ? Math.round((doneCount / sorted.length) * 100) : 0
   const currentStage = sorted.find(s => s.status === 'em_andamento') ?? sorted.find(s => s.status === 'pendente')
@@ -548,7 +550,25 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                             <button
                               key={s}
                               type="button"
-                              onClick={() => updateEdit(stage, 'status', s)}
+                              onClick={() => {
+                                const isDecision = ['pericia_medica', 'recurso_junta_medica', 'exame_pratico'].includes(stage.stage_key)
+                                setEdits(prev => {
+                                  const cur = prev[stage.id] ?? initEdit(stage)
+                                  const hasResult = isDecision && ['aprovado', 'reprovado'].includes(s)
+                                  return {
+                                    ...prev,
+                                    [stage.id]: {
+                                      ...cur,
+                                      status: s,
+                                      result: hasResult ? s : '',
+                                      attended: hasResult ? true : cur.attended,
+                                      data: stage.stage_key === 'recurso_junta_medica' && hasResult
+                                        ? { ...cur.data, appeal_status: 'concluido' }
+                                        : cur.data,
+                                    },
+                                  }
+                                })
+                              }}
                               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
                               style={isSel
                                 ? { background: ss.bg, color: ss.text, border: `1.5px solid ${ss.border}`, boxShadow: `0 0 0 2px ${ss.dot}30` }
@@ -556,12 +576,37 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                               }
                             >
                               <span className="w-1.5 h-1.5 rounded-full" style={{ background: isSel ? ss.dot : '#CBD5E1' }} />
-                              {STATUS_LABEL[s]}
+                              {s === 'pendente' ? 'Não iniciado' : STATUS_LABEL[s]}
                             </button>
                           )
                         })}
                       </div>
                     </div>
+
+                    {stage.stage_key === 'exame_pratico' && (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-slate-600">Modalidade</p>
+                        <div className="flex gap-2">
+                          {[
+                            { value: 'autoescola', label: 'Autoescola' },
+                            { value: 'veiculo_proprio', label: 'Veículo próprio' },
+                          ].map(option => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => updateData(stage, 'modalidade', edit.data.modalidade === option.value ? null : option.value)}
+                              className="rounded-lg border px-3 py-1.5 text-xs font-semibold transition-all"
+                              style={edit.data.modalidade === option.value
+                                ? { background: '#FFF7ED', color: '#C2410C', borderColor: '#FED7AA' }
+                                : { background: '#fff', color: '#94A3B8', borderColor: '#E2E8F0' }}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-[10px] text-slate-400">Defina a modalidade antes de informar o agendamento.</p>
+                      </div>
+                    )}
 
                     {/* ── Scheduled date + calendar buttons ─────── */}
                     {HAS_SCHEDULED_DATE.has(stage.stage_key) && (
@@ -680,51 +725,6 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                       </div>
                     )}
 
-                    {/* Result buttons — pericia, recurso, exame */}
-                    {['pericia_medica', 'recurso_junta_medica', 'exame_pratico'].includes(stage.stage_key) && (
-                      <div className="space-y-2">
-                        <p className="text-xs font-semibold text-slate-600">Resultado</p>
-                        <div className="flex gap-2">
-                          {['aprovado', 'reprovado'].map(r => (
-                            <button
-                              key={r}
-                              type="button"
-                              onClick={() => {
-                                const newResult = edit.result === r ? '' : r
-                                setEdits(prev => {
-                                  const cur = prev[stage.id] ?? initEdit(stage)
-                                  return {
-                                    ...prev,
-                                    [stage.id]: {
-                                      ...cur,
-                                      result: newResult,
-                                      status: newResult || cur.status,
-                                      data: stage.stage_key === 'recurso_junta_medica' && newResult
-                                        ? { ...cur.data, appeal_status: 'concluido' }
-                                        : cur.data,
-                                    },
-                                  }
-                                })
-                              }}
-                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all border"
-                              style={edit.result === r
-                                ? r === 'aprovado'
-                                  ? { background: '#F0FDF4', color: '#15803D', borderColor: '#BBF7D0' }
-                                  : { background: '#FEF2F2', color: '#DC2626', borderColor: '#FECACA' }
-                                : { background: '#fff', color: '#94A3B8', borderColor: '#E2E8F0' }
-                              }
-                            >
-                              {r === 'aprovado'
-                                ? <CheckCircle2 className="w-3.5 h-3.5" />
-                                : <XCircle className="w-3.5 h-3.5" />
-                              }
-                              {r === 'aprovado' ? 'Aprovado' : 'Reprovado'}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
                     {isMedicalStage(stage.stage_key) && (
                       <MedicalRequirementsEditor
                         requirements={(edit.data.medical_requirements as MedicalRequirement[]) ?? []}
@@ -749,7 +749,6 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           {[
                             { key: 'requires_practical_exam', label: 'Exame prático determinado?' },
-                            { key: 'requires_adapted_vehicle', label: 'Veículo adaptado determinado?' },
                           ].map(field => (
                             <div key={field.key} className="space-y-1.5">
                               <p className="text-xs font-semibold text-slate-600">{field.label}</p>
@@ -852,54 +851,12 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                           />
                           <p className="text-[10px] text-slate-400">Copie os códigos do resultado; não os deduza pela deficiência.</p>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                          {[
-                            { key: 'requires_practical_exam', label: 'Exame prático determinado?' },
-                            { key: 'requires_adapted_vehicle', label: 'Veículo adaptado determinado?' },
-                          ].map(field => (
-                            <div key={field.key} className="space-y-1.5">
-                              <p className="text-xs font-semibold text-slate-600">{field.label}</p>
-                              <select
-                                value={typeof edit.data[field.key] === 'boolean' ? String(edit.data[field.key]) : ''}
-                                onChange={e => updateData(stage, field.key, e.target.value === '' ? null : e.target.value === 'true')}
-                                className="block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none"
-                              >
-                                <option value="">Aguardando definição</option>
-                                <option value="true">Sim</option>
-                                <option value="false">Não</option>
-                              </select>
-                            </div>
-                          ))}
-                        </div>
                       </div>
                     )}
 
                     {/* exame_pratico */}
                     {stage.stage_key === 'exame_pratico' && (
                       <div className="space-y-3">
-                        <div className="space-y-2">
-                          <p className="text-xs font-semibold text-slate-600">Modalidade</p>
-                          <div className="flex gap-2">
-                            {[
-                              { value: 'autoescola',      label: 'Autoescola' },
-                              { value: 'veiculo_proprio', label: 'Veículo Próprio' },
-                            ].map(opt => (
-                              <button
-                                key={opt.value}
-                                type="button"
-                                onClick={() => updateData(stage, 'modalidade', edit.data.modalidade === opt.value ? null : opt.value)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all"
-                                style={edit.data.modalidade === opt.value
-                                  ? { background: '#FFF7ED', color: '#C2410C', borderColor: '#FED7AA' }
-                                  : { background: '#fff', color: '#94A3B8', borderColor: '#E2E8F0' }
-                                }
-                              >
-                                {opt.label}
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-
                         {edit.data.modalidade === 'veiculo_proprio' && (
                           <div className="space-y-1.5">
                             <p className="text-xs font-semibold text-slate-600">Checklist veículo próprio</p>

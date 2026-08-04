@@ -12,27 +12,21 @@ import { InitCnhStagesButton } from '@/components/processos/init-cnh-stages-butt
 import { IpvaStagesPanel } from '@/components/processos/ipva-stages-panel'
 import { OperationalStagesPanel } from '@/components/processos/operational-stages-panel'
 import { ProcessCommunicationForm } from '@/components/processos/process-communication-form'
-import { EligibilityReviewPanel } from '@/components/processos/eligibility-review-panel'
 import { hasOperationalWorkflow } from '@/lib/operational-workflows'
-import { IMESC_BOARD_LABELS, mapFollowupToEligibility } from '@/lib/imesc-workflow'
+import { IMESC_BOARD_LABELS, IMESC_OPERATIONAL_LABELS } from '@/lib/imesc-workflow'
 import { getProcessOperationalSummary, type OperationalProcessSummary, type OperationalStageSummary } from '@/lib/staff-operations'
-import {
-  analyzeEligibility,
-  isEligibilityProcess,
-  type EligibilityAnalysis,
-  type SefazIpvaStatus,
-} from '@/lib/eligibility'
-import type { Document, EligibilityStatus, LegalRuleVersion, ProcessCustomField, ProcessStage } from '@/types/database'
-
-const ACTION_ICONS: Record<string, string> = {
-  created: '🟢',
-  status_changed: '🔄',
-  updated: '✏️',
-  document_uploaded: '📎',
-  document_approved: '✅',
-  document_rejected: '❌',
-  completed: '🏁',
-}
+import type {
+  CalendarEvent,
+  Client,
+  ClientVehicle,
+  Document,
+  LegalRuleVersion,
+  ProcessCustomField,
+  ProcessHistory,
+  ProcessStage,
+  ProcessType,
+  Profile,
+} from '@/types/database'
 
 export default async function ProcessoDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -72,17 +66,25 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
   }
   if (!process) notFound()
 
-  const pt = process.process_types as any
-  const client = process.clients as any
-  const { data: imescFollowup } = client?.id
-    ? await supabase
-        .from('imesc_followups')
-        .select('id, board_status, operational_status, report_issued_at, source_classification')
-        .eq('client_id', client.id)
-        .maybeSingle()
-    : { data: null }
-  const imescEligibility = mapFollowupToEligibility(imescFollowup)
-  const responsible = process.responsible_user as any
+  const pt = process.process_types as unknown as ProcessType | null
+  const client = process.clients as unknown as Client | null
+  const [{ data: imescFollowup }, { data: clientVehicles }] = client?.id
+    ? await Promise.all([
+        supabase
+          .from('imesc_followups')
+          .select('id, board_status, operational_status, scheduled_date, report_issued_at, source_classification')
+          .eq('client_id', client.id)
+          .maybeSingle(),
+        supabase
+          .from('client_vehicles')
+          .select('*')
+          .eq('client_id', client.id)
+          .eq('is_active', true)
+          .order('created_at', { ascending: false }),
+      ])
+    : [{ data: null }, { data: [] }]
+  const responsible = process.responsible_user as unknown as Pick<Profile, 'id' | 'name'> | null
+  const linkedVehicle = ((clientVehicles ?? []) as ClientVehicle[]).find(vehicle => vehicle.id === process.vehicle_id)
   const financials = Array.isArray(process.financials) ? process.financials[0] : process.financials
   const sensitiveFieldNames = new Set(['senha_gov', 'gov_password', 'senha_sei', 'senha_email', 'senha_portal'])
   const customFields = ((Array.isArray(process.custom_fields) ? process.custom_fields : []) as ProcessCustomField[])
@@ -90,40 +92,11 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
   const sanitizedProcess = { ...process, custom_fields: customFields }
   const processStages = (stages ?? []) as ProcessStage[]
   const processDocuments = (documents ?? []) as Document[]
+  const processHistory = (history ?? []) as Array<ProcessHistory & {
+    changer?: Pick<Profile, 'id' | 'name'> | null
+  }>
+  const processEvents = (events ?? []) as CalendarEvent[]
   const typeColor = pt?.color ?? '#3B82F6'
-  const customFieldValues = Object.fromEntries(
-    customFields.map(field => [field.field_name, field.field_value ?? '']),
-  ) as Record<string, string>
-  const liveEligibilityAnalysis = isEligibilityProcess(pt?.slug ?? '')
-    ? analyzeEligibility({
-        processTypeSlug: pt.slug,
-        state: process.jurisdiction_state || client?.state,
-        vehicleCondition: process.vehicle_condition,
-        clientType: client?.client_type,
-        disabilityType: client?.disability_type,
-        disabilityTypes: client?.disability_types,
-        disabilitySeverity: client?.disability_severity,
-        cnhStatus: client?.cnh_status,
-        cnhRestrictions: client?.cnh_restrictions,
-        medicalAssessmentStatus: client?.medical_assessment_status,
-        requiresAdaptedVehicle: client?.requires_adapted_vehicle,
-        requiresPracticalExam: client?.requires_practical_exam,
-        hasMedicalReport: client?.has_medical_report,
-        authorizedDrivers: client?.authorized_drivers,
-        ...imescEligibility,
-        sefazIpvaStatus: (customFieldValues.sefaz_ipva_status || null) as SefazIpvaStatus | null,
-        sefazDecisionNotifiedAt: customFieldValues.sefaz_data_ciencia || null,
-        ipvaAppealFiledAt: customFieldValues.recurso_ipva_protocolado_em || null,
-        ipvaAppealProtocol: customFieldValues.recurso_ipva_protocolo || null,
-      })
-    : null
-  const eligibilityAnalysis = liveEligibilityAnalysis
-    ?? ((process.eligibility_analysis as unknown as EligibilityAnalysis) ?? null)
-  const displayedEligibilityStatus = (
-    process.eligibility_status === 'elegibilidade_confirmada'
-      ? process.eligibility_status
-      : eligibilityAnalysis?.status ?? process.eligibility_status
-  ) as EligibilityStatus | null
   const operational = getProcessOperationalSummary({
     process: {
       ...process,
@@ -132,7 +105,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
       responsible_user: responsible ?? null,
     } as OperationalProcessSummary,
     stages: processStages as unknown as OperationalStageSummary[],
-    lastActivityAt: history?.[0]?.created_at ?? null,
+    lastActivityAt: processHistory[0]?.created_at ?? null,
   })
   const actionOwnerLabels: Record<string, string> = {
     equipe: 'Equipe Eleva',
@@ -141,7 +114,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
     terceiro: 'Terceiro',
   }
   const lastClientUpdate = process.last_client_update_at
-    ?? history?.find(item => item.client_visible)?.created_at
+    ?? processHistory.find(item => item.client_visible)?.created_at
     ?? null
 
   return (
@@ -181,10 +154,11 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
               <ArrowLeft className="w-3.5 h-3.5" /> Voltar a Processos
             </Link>
             <EditProcessModal
-              process={sanitizedProcess as any}
+              process={sanitizedProcess}
               isSuperAdmin={isSuperAdmin}
               canAssign={profile?.role === 'super_admin' || profile?.role === 'admin'}
               staff={(staffProfiles ?? []) as Array<{ id: string; name: string }>}
+              vehicles={(clientVehicles ?? []) as ClientVehicle[]}
             />
           </div>
 
@@ -239,11 +213,11 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
             </div>
 
             {/* Renewal alert */}
-            {(process as any).renewal_date && (
+            {process.renewal_date && (
               <div className="mt-4 flex items-center gap-2 bg-amber-500/20 border border-amber-400/30 rounded-xl px-4 py-2.5">
                 <RefreshCw className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                 <p className="text-xs font-medium text-amber-200 dash">
-                  Renovação prevista para <span className="font-bold text-amber-100">{formatDate((process as any).renewal_date)}</span>
+                  Renovação prevista para <span className="font-bold text-amber-100">{formatDate(process.renewal_date)}</span>
                 </p>
               </div>
             )}
@@ -321,7 +295,9 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                 {process.vehicle_condition && (
                   <div className="flex items-center justify-between">
                     <span className="text-slate-400 dash text-xs">Veículo</span>
-                    <span className="dash font-semibold text-slate-700 text-xs">{process.vehicle_condition === 'zero_km' ? 'Zero-quilômetro' : 'Usado'}</span>
+                    <span className="dash max-w-48 text-right text-xs font-semibold text-slate-700">{linkedVehicle
+                      ? [linkedVehicle.description || [linkedVehicle.brand, linkedVehicle.model].filter(Boolean).join(' '), linkedVehicle.plate].filter(Boolean).join(' · ')
+                      : process.vehicle_condition === 'zero_km' ? 'Zero-quilômetro ainda não definido' : 'Usado ainda não definido'}</span>
                   </div>
                 )}
                 {process.completed_at && (
@@ -354,7 +330,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                   <h2 className="dash font-bold text-slate-900 text-sm">Campos Específicos</h2>
                 </div>
                 <div className="space-y-3">
-                  {customFields.sort((a: any, b: any) => a.sort_order - b.sort_order).map((field: any) => (
+                  {customFields.sort((a, b) => a.sort_order - b.sort_order).map(field => (
                     <div key={field.id} className="flex justify-between items-start gap-3 text-sm">
                       <span className="text-slate-400 dash text-xs shrink-0">{field.field_label}</span>
                       <span className="dash font-semibold text-slate-900 text-xs text-right">
@@ -423,17 +399,6 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
           {/* ── Right Column ─────────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-5">
 
-            {isEligibilityProcess(pt?.slug ?? '') && displayedEligibilityStatus && profile?.id && (
-              <EligibilityReviewPanel
-                processId={process.id}
-                reviewerId={profile.id}
-                status={displayedEligibilityStatus}
-                analysis={eligibilityAnalysis}
-                reviewNotes={process.eligibility_review_notes}
-                reviewedAt={process.eligibility_reviewed_at}
-              />
-            )}
-
             {pt?.slug === 'processo_ipva' && (process.jurisdiction_state || client?.state)?.toUpperCase() === 'SP' && (
               <div className="anim anim-1 overflow-hidden rounded-2xl bg-white" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
                 <div className="flex items-center gap-2.5 border-b border-slate-50 px-5 py-4">
@@ -445,19 +410,26 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                     <p className="dash mt-0.5 text-xs text-slate-400">Protocolo, SEFAZ, recurso e conclusão</p>
                   </div>
                 </div>
-                {imescFollowup && (
-                  <div className="mx-5 mt-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-violet-100 bg-violet-50 px-3 py-2.5">
+                <div className="mx-5 mt-4 rounded-xl border border-violet-100 bg-violet-50 px-3 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <p className="dash text-xs font-semibold text-violet-900">Acompanhamento IMESC vinculado</p>
-                      <p className="dash mt-0.5 text-[11px] text-violet-700">
-                        {IMESC_BOARD_LABELS[imescFollowup.board_status as keyof typeof IMESC_BOARD_LABELS]}
-                      </p>
+                      <p className="dash text-xs font-semibold text-violet-900">Resumo IMESC</p>
+                      <p className="dash mt-0.5 text-[10px] text-violet-600">Referência vinculada; o IPVA continua independente.</p>
                     </div>
                     <Link href="/processos/imesc-operacao" className="dash text-xs font-semibold text-violet-700 hover:underline">
-                      Abrir operação
+                      Abrir operação IMESC
                     </Link>
                   </div>
-                )}
+                  {imescFollowup ? (
+                    <div className="mt-3 grid grid-cols-1 gap-2 border-t border-violet-100 pt-3 text-[11px] sm:grid-cols-3">
+                      <div><span className="text-violet-500">Situação</span><p className="mt-0.5 font-semibold text-violet-900">{IMESC_OPERATIONAL_LABELS[imescFollowup.operational_status as keyof typeof IMESC_OPERATIONAL_LABELS]}</p></div>
+                      <div><span className="text-violet-500">Agendamento</span><p className="mt-0.5 font-semibold text-violet-900">{imescFollowup.scheduled_date ? formatDate(imescFollowup.scheduled_date) : 'Não agendado'}</p></div>
+                      <div><span className="text-violet-500">Classificação</span><p className="mt-0.5 font-semibold text-violet-900">{imescFollowup.source_classification === 'gravissima' ? 'Gravíssima' : IMESC_BOARD_LABELS[imescFollowup.board_status as keyof typeof IMESC_BOARD_LABELS]}</p></div>
+                    </div>
+                  ) : (
+                    <p className="mt-3 border-t border-violet-100 pt-3 text-[11px] text-violet-700">Nenhum acompanhamento IMESC iniciado para este cliente.</p>
+                  )}
+                </div>
                 <IpvaStagesPanel
                   processId={process.id}
                   stages={processStages}
@@ -477,26 +449,26 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                   <div className="flex-1">
                     <h2 className="dash font-bold text-slate-900">Etapas CNH Especial</h2>
                     <p className="text-xs text-slate-400 mt-0.5 dash">
-                      {stages && stages.length > 0
-                        ? `${stages.length} etapa${stages.length !== 1 ? 's' : ''} — clique para expandir e editar`
+                      {processStages.length > 0
+                        ? `${processStages.length} etapa${processStages.length !== 1 ? 's' : ''} — clique para expandir e editar`
                         : 'Nenhuma etapa criada ainda'
                       }
                     </p>
                   </div>
-                  {stages && stages.length > 0 && (
+                  {processStages.length > 0 && (
                     <span className="text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg dash">
-                      {stages.filter((s: any) => ['concluido', 'aprovado'].includes(s.status)).length}/{stages.length} concluídas
+                      {processStages.filter(stage => ['concluido', 'aprovado'].includes(stage.status)).length}/{processStages.length} concluídas
                     </span>
                   )}
                 </div>
                 <div className="p-4">
-                  {stages && stages.length > 0 ? (
+                  {processStages.length > 0 ? (
                     <CnhStagesPanel
                       stages={processStages}
                       processId={process.id}
                       clientId={client?.id ?? ''}
                       clientName={client?.name ?? ''}
-                      responsibleUserId={(responsible as any)?.id ?? null}
+                      responsibleUserId={responsible?.id ?? null}
                     />
                   ) : (
                     <InitCnhStagesButton
@@ -521,7 +493,8 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                 </div>
                 <OperationalStagesPanel
                   processId={process.id}
-                  processTypeSlug={pt.slug}
+                  clientId={client?.id ?? process.client_id}
+                  processTypeSlug={pt?.slug ?? ''}
                   stages={processStages}
                   jurisdictionState={process.jurisdiction_state || client?.state || null}
                 />
@@ -535,11 +508,11 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                 <p className="text-xs text-slate-400 mt-0.5 dash">{documents?.length ?? 0} arquivo{documents?.length !== 1 ? 's' : ''} enviado{documents?.length !== 1 ? 's' : ''}</p>
               </div>
               <div className="p-4">
-                <DocumentUploader processId={process.id} clientId={client?.id} stages={processStages} />
+                <DocumentUploader processId={process.id} clientId={client?.id ?? process.client_id} stages={processStages} />
               </div>
-              {documents && documents.length > 0 && (
+              {processDocuments.length > 0 && (
                 <div className="border-t border-slate-50">
-                  {(documents as any[]).map(doc => (
+                  {processDocuments.map(doc => (
                     <div key={doc.id} className="doc-row flex items-center gap-3 px-5 py-3.5 border-b border-slate-50 last:border-0">
                       <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
                         <FileText className="w-3.5 h-3.5 text-blue-500" />
@@ -577,10 +550,10 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
             <div className="anim anim-3 bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
               <div className="px-5 py-4 border-b border-slate-50">
                 <h2 className="dash font-bold text-slate-900">Histórico</h2>
-                <p className="text-xs text-slate-400 mt-0.5 dash">{history?.length ?? 0} evento{history?.length !== 1 ? 's' : ''}</p>
+                <p className="text-xs text-slate-400 mt-0.5 dash">{processHistory.length} evento{processHistory.length !== 1 ? 's' : ''}</p>
               </div>
 
-              {!history || history.length === 0 ? (
+              {processHistory.length === 0 ? (
                 <div className="py-12 flex flex-col items-center gap-3">
                   <div className="w-12 h-12 bg-slate-50 rounded-2xl flex items-center justify-center">
                     <Clock className="w-5 h-5 text-slate-300" />
@@ -590,10 +563,10 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
               ) : (
                 <div className="p-5">
                   <div className="relative">
-                    {(history as any[]).map((h, idx) => (
+                    {processHistory.map((h, idx) => (
                       <div key={h.id} className="timeline-item relative flex gap-4 pb-5 last:pb-0">
                         {/* Line */}
-                        {idx < history.length - 1 && (
+                        {idx < processHistory.length - 1 && (
                           <div className="timeline-line absolute left-4 top-8 bottom-0 w-px bg-slate-100" />
                         )}
                         {/* Dot */}
@@ -631,13 +604,13 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
             </div>
 
             {/* Calendar events */}
-            {events && events.length > 0 && (
+            {processEvents.length > 0 && (
               <div className="anim anim-4 bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
                 <div className="px-5 py-4 border-b border-slate-50">
                   <h2 className="dash font-bold text-slate-900">Eventos Vinculados</h2>
                 </div>
                 <div>
-                  {(events as any[]).map(ev => {
+                  {processEvents.map(ev => {
                     const evDate = new Date(ev.event_date + 'T00:00:00')
                     const day = evDate.getDate()
                     const month = evDate.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '')

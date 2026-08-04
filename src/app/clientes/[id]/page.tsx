@@ -42,15 +42,6 @@ const CNH_STATUS_LABEL: Record<string, string> = {
   inapto: 'Inapto',
 }
 
-const MEDICAL_STATUS_LABEL: Record<string, string> = {
-  nao_realizada: 'Não realizada',
-  agendada: 'Agendada',
-  apto: 'Apto',
-  apto_com_restricoes: 'Apto com restrições',
-  inapto_temporario: 'Inapto temporariamente',
-  inapto: 'Inapto',
-}
-
 const GOV_ACCESS_STATUS: Record<string, { label: string; className: string }> = {
   aguardando: {
     label: 'Aguardando',
@@ -172,6 +163,10 @@ export default async function ClienteDetailPage({
     if (rightOrder != null) return 1
     return new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
   })
+  const hasActiveCnhProcess = processRows.some(process => (
+    process.process_types?.slug === 'cnh_especial'
+    && !terminalProcessStatuses.has(process.status)
+  ))
   const activeQueueProcesses = processRows.filter(process => (
     process.service_order != null
     && !terminalProcessStatuses.has(process.status)
@@ -524,12 +519,6 @@ export default async function ClienteDetailPage({
                       </span>
                     </div>
                   )}
-                  {client.medical_assessment_status && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-xs text-slate-400 dash">Avaliação pericial</span>
-                      <span className="text-right text-xs font-semibold text-slate-700 dash">{MEDICAL_STATUS_LABEL[client.medical_assessment_status]}</span>
-                    </div>
-                  )}
                   {client.client_type === 'nao_condutor' && (
                     <div className="flex justify-between gap-3">
                       <span className="text-xs text-slate-400 dash">Representante legal</span>
@@ -552,9 +541,7 @@ export default async function ClienteDetailPage({
                   <div className="flex justify-between">
                     <span className="text-xs text-slate-400 dash">Laudo médico</span>
                     <span className="text-xs font-semibold dash" style={{ color: client.has_medical_report ? '#16A34A' : '#94A3B8' }}>
-                      {client.has_medical_report
-                        ? client.report_valid_until ? `Válido até ${formatDate(client.report_valid_until)}` : 'Sim'
-                        : 'Não'}
+                      {client.has_medical_report ? 'Sim' : 'Não'}
                     </span>
                   </div>
                 </div>
@@ -574,7 +561,7 @@ export default async function ClienteDetailPage({
           <div className="lg:col-span-2 space-y-5">
 
             {/* CNH Especial shortcut */}
-            {!hasCnhInServicePlan && canHaveCnhEspecial(client.client_type, client.disability_type) && client.cnh_status !== 'com_restricoes' && (
+            {!hasCnhInServicePlan && !hasActiveCnhProcess && canHaveCnhEspecial(client.client_type, client.disability_type) && client.cnh_status !== 'com_restricoes' && (
               <div
                 className="anim anim-1 rounded-2xl overflow-hidden"
                 style={{ border: '1px solid #C4B5FD', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}
@@ -627,15 +614,20 @@ export default async function ClienteDetailPage({
                       <ListChecks className="h-4 w-4 text-blue-600" />
                     </div>
                     <div>
-                      <h2 className="dash font-bold text-slate-900">Plano de servicos</h2>
+                      <h2 className="dash font-bold text-slate-900">Serviços contratados</h2>
                       <p className="dash mt-0.5 text-xs text-slate-500">
-                        Servicos confirmados na conversao e sua ordem operacional.
+                        Todos os serviços confirmados possuem processo. Ativos podem ser movimentados; os demais mostram exatamente qual dependência estão aguardando.
                       </p>
                     </div>
                   </div>
                   <span className="dash rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[10px] font-bold text-blue-700">
                     {(servicePlanItems ?? []).length} servicos
                   </span>
+                </div>
+                <div className="grid grid-cols-1 gap-2 border-b border-slate-100 bg-white px-5 py-3 text-[11px] sm:grid-cols-3">
+                  <p className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-emerald-700"><strong>Ativo:</strong> atendimento liberado para movimentação.</p>
+                  <p className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-amber-700"><strong>Aguardando:</strong> processo visível, bloqueado pela etapa anterior.</p>
+                  <p className="rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-blue-700"><strong>Pronto:</strong> pode ser escolhido como próximo serviço.</p>
                 </div>
                 <div>
                   {(servicePlanItems ?? []).map((item, index) => {

@@ -12,7 +12,7 @@ import { PROCESS_STATUS_LABELS, PROCESS_TYPE_CUSTOM_FIELDS } from '@/lib/utils'
 import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { syncProcessFinancial } from '@/lib/sync-process-financial'
 import { calculateProcessRenewalDate } from '@/lib/process-workflow'
-import type { Process } from '@/types/database'
+import type { ClientVehicle, Process } from '@/types/database'
 
 const STATUS_OPTIONS = Object.entries(PROCESS_STATUS_LABELS).map(([v, l]) => ({ value: v, label: l }))
 const ACTION_OWNER_OPTIONS = [
@@ -30,11 +30,13 @@ export function EditProcessModal({
   isSuperAdmin = false,
   canAssign = false,
   staff = [],
+  vehicles = [],
 }: {
   process: Process & { process_types?: any; custom_fields?: any[]; financials?: any }
   isSuperAdmin?: boolean
   canAssign?: boolean
   staff?: Array<{ id: string; name: string }>
+  vehicles?: ClientVehicle[]
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -51,6 +53,7 @@ export function EditProcessModal({
     action_due_date: process.action_due_date ?? '',
     blocked_reason: process.blocked_reason ?? '',
     responsible_user_id: process.responsible_user_id ?? '',
+    vehicle_id: process.vehicle_id ?? '',
   })
 
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>(() => {
@@ -95,6 +98,7 @@ export function EditProcessModal({
       action_owner: form.action_owner || null,
       action_due_date: form.action_due_date || null,
       blocked_reason: form.blocked_reason || null,
+      vehicle_id: form.vehicle_id || null,
       ...(canAssign ? { responsible_user_id: form.responsible_user_id || null } : {}),
     }).eq('id', process.id)
 
@@ -291,6 +295,25 @@ export function EditProcessModal({
                     {canAssign && (
                       <div className="col-span-2">
                         <Select label="Responsável" options={staff.map(item => ({ value: item.id, label: item.name }))} placeholder="Sem responsável" value={form.responsible_user_id} onChange={e => setForm(p => ({ ...p, responsible_user_id: e.target.value }))} />
+                      </div>
+                    )}
+                    {['processo_ipi', 'processo_icms', 'processo_ipva'].includes(slug) && (
+                      <div className="col-span-2">
+                        <Select
+                          label="Veículo vinculado"
+                          options={vehicles.map(vehicle => ({
+                            value: vehicle.id,
+                            label: [
+                              vehicle.description || [vehicle.brand, vehicle.model].filter(Boolean).join(' '),
+                              vehicle.plate,
+                              vehicle.vehicle_condition === 'zero_km' ? 'zero-quilômetro' : 'usado',
+                            ].filter(Boolean).join(' · '),
+                          }))}
+                          placeholder="Vincular depois"
+                          value={form.vehicle_id}
+                          onChange={e => setForm(previous => ({ ...previous, vehicle_id: e.target.value }))}
+                        />
+                        <p className="mt-1 text-[11px] text-slate-400">O atendimento pode começar sem veículo. Vincule-o somente quando já estiver definido.</p>
                       </div>
                     )}
                     <div className="col-span-2">

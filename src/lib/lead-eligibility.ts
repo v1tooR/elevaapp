@@ -27,10 +27,10 @@ export const LEAD_SERVICE_OPTIONS: Array<{
   { value: 'ipi', label: 'IPI', processTypeSlug: 'processo_ipi' },
   { value: 'icms', label: 'ICMS', processTypeSlug: 'processo_icms' },
   { value: 'ipva', label: 'IPVA', processTypeSlug: 'processo_ipva' },
-  { value: 'credencial_estacionamento', label: 'Credencial de estacionamento', processTypeSlug: 'estacionamento' },
-  { value: 'cin', label: 'CIN', processTypeSlug: 'cin' },
+  { value: 'credencial_estacionamento', label: 'Credencial de estacionamento PCD', processTypeSlug: 'estacionamento' },
+  { value: 'cin', label: 'CIN PCD', processTypeSlug: 'cin' },
   { value: 'emplacamento', label: 'Emplacamento', processTypeSlug: 'emplacamento' },
-  { value: 'renovacao', label: 'Renovação', processTypeSlug: 'renovacao' },
+  { value: 'renovacao', label: 'Renovação de CNH', processTypeSlug: 'renovacao' },
   { value: 'isencao_ir', label: 'Isenção de IR', processTypeSlug: 'imposto_de_renda' },
   { value: 'aposentadoria', label: 'Aposentadoria', processTypeSlug: 'aposentadoria' },
   { value: 'alvara', label: 'Alvará', processTypeSlug: 'alvara' },
@@ -49,6 +49,7 @@ export interface LeadEligibilityFormValue {
   disability_types: DisabilityType[]
   has_legal_representative: boolean
   legal_representative_name: string
+  legal_representative_cpf: string
   has_cnh_especial: boolean
   cnh_restrictions: string
   receives_loas_bpc: boolean
@@ -61,6 +62,7 @@ export const EMPTY_LEAD_ELIGIBILITY: LeadEligibilityFormValue = {
   disability_types: [],
   has_legal_representative: false,
   legal_representative_name: '',
+  legal_representative_cpf: '',
   has_cnh_especial: false,
   cnh_restrictions: '',
   receives_loas_bpc: false,
@@ -106,6 +108,7 @@ export function leadEligibilityFromRecord(lead: Partial<Lead>): LeadEligibilityF
     disability_types: getLeadDisabilityTypes(lead),
     has_legal_representative: lead.has_legal_representative ?? false,
     legal_representative_name: lead.legal_representative_name ?? '',
+    legal_representative_cpf: lead.legal_representative_cpf ?? '',
     has_cnh_especial: lead.has_cnh_especial ?? false,
     cnh_restrictions: (lead.cnh_restrictions ?? []).join(', '),
     receives_loas_bpc: lead.receives_loas_bpc ?? false,
@@ -142,11 +145,11 @@ export function leadEligibilityPayload(value: LeadEligibilityFormValue) {
     legal_representative_name: hasRepresentative
       ? value.legal_representative_name.trim() || null
       : null,
+    legal_representative_cpf: hasRepresentative
+      ? value.legal_representative_cpf.trim() || null
+      : null,
     receives_loas_bpc: value.receives_loas_bpc,
     has_medical_report: value.has_medical_report,
-    // Compatibilidade com o campo legado: "possui laudo" agora significa
-    // que há um laudo válido para o processo.
-    report_valid: value.has_medical_report ? true : null,
     intended_service: intendedServices[0] ?? null,
     intended_services: intendedServices,
   }

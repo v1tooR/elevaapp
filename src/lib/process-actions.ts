@@ -1,6 +1,24 @@
 import type { ProcessStatus } from '@/types/database'
 
 export type OperationalActor = 'equipe' | 'cliente' | 'orgao' | 'terceiro'
+export type OperationalActionCategory =
+  | 'agendar'
+  | 'solicitar'
+  | 'dar_entrada'
+  | 'consultar'
+  | 'encerrar'
+  | 'dar_andamento'
+export type OperationalSituation =
+  | 'nao_iniciado'
+  | 'aguardando_dependencia'
+  | 'agendado'
+  | 'solicitado'
+  | 'aguardando_documento'
+  | 'em_andamento'
+  | 'em_analise'
+  | 'finalizado'
+  | 'deferido'
+  | 'indeferido'
 export type OperationalPriority =
   | 'vencido'
   | 'acao_equipe_com_prazo'
@@ -15,6 +33,28 @@ export const OPERATIONAL_ACTOR_LABELS: Record<OperationalActor, string> = {
   cliente: 'Cliente',
   orgao: 'Órgão público',
   terceiro: 'Terceiro',
+}
+
+export const OPERATIONAL_ACTION_CATALOG: Record<OperationalActionCategory, string> = {
+  agendar: 'Agendar',
+  solicitar: 'Solicitar',
+  dar_entrada: 'Dar entrada',
+  consultar: 'Consultar',
+  encerrar: 'Encerrar',
+  dar_andamento: 'Dar andamento',
+}
+
+export const OPERATIONAL_SITUATION_CATALOG: Record<OperationalSituation, string> = {
+  nao_iniciado: 'Não iniciado',
+  aguardando_dependencia: 'Aguardando serviço anterior',
+  agendado: 'Agendado',
+  solicitado: 'Solicitado',
+  aguardando_documento: 'Aguardando documento/laudo',
+  em_andamento: 'Em andamento',
+  em_analise: 'Em análise',
+  finalizado: 'Finalizado',
+  deferido: 'Deferido',
+  indeferido: 'Indeferido',
 }
 
 export const STAGE_STATUS_LABELS: Record<string, string> = {
@@ -76,6 +116,17 @@ const TERMINAL_PROCESS_STATUSES = new Set<ProcessStatus>([
   'cancelado',
 ])
 
+const SERVICE_DEPENDENCY_PREFIXES = [
+  'aguardando conclusão',
+  'aguardando deferimento',
+  'cliente optou por comprar somente',
+]
+
+export function isServiceDependencyBlocker(value?: string | null) {
+  const normalized = value?.trim().toLocaleLowerCase('pt-BR') ?? ''
+  return SERVICE_DEPENDENCY_PREFIXES.some(prefix => normalized.startsWith(prefix))
+}
+
 interface StageActionInput {
   label: string
   status: string
@@ -102,6 +153,20 @@ export interface ProcessActionSummary {
   priorityRank: number
   requiresTeamAction: boolean
   isOverdue: boolean
+  category: OperationalActionCategory
+}
+
+export function getOperationalActionCategory(
+  nextAction: string,
+  processStatus: ProcessStatus,
+): OperationalActionCategory {
+  if (TERMINAL_PROCESS_STATUSES.has(processStatus)) return 'encerrar'
+  const normalized = nextAction.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  if (normalized.includes('agend')) return 'agendar'
+  if (normalized.includes('solicit')) return 'solicitar'
+  if (normalized.includes('dar entrada') || normalized.includes('protocol') || normalized.includes('iniciar')) return 'dar_entrada'
+  if (normalized.includes('consult') || normalized.includes('acompanhar') || normalized.includes('aguardar')) return 'consultar'
+  return 'dar_andamento'
 }
 
 function validActor(value: string | null | undefined): OperationalActor | null {
@@ -113,6 +178,7 @@ function validActor(value: string | null | undefined): OperationalActor | null {
 function inferredActor(input: ProcessActionInput): OperationalActor {
   const explicit = validActor(input.actionOwner)
   if (explicit) return explicit
+  if (input.blockedReason?.trim()) return 'terceiro'
   if (input.processStatus === 'aguardando_documentos') return 'cliente'
   if (input.processStatus === 'aguardando_orgao' || input.processStatus === 'em_analise') {
     return 'orgao'
@@ -125,6 +191,7 @@ function inferredAction(input: ProcessActionInput, actor: OperationalActor): str
   const explicit = input.nextAction?.trim()
   if (explicit) return explicit
   if (TERMINAL_PROCESS_STATUSES.has(input.processStatus)) return 'Processo encerrado'
+  if (input.blockedReason?.trim()) return `Aguardar: ${input.blockedReason.trim()}`
 
   if (input.processStatus === 'aguardando_documentos') return 'Aguardar documentos do cliente'
   if (input.processStatus === 'aguardando_orgao' || input.processStatus === 'em_analise') {
@@ -176,6 +243,7 @@ export function deriveProcessAction(input: ProcessActionInput): ProcessActionSum
     priorityRank: OPERATIONAL_PRIORITY_ORDER[priority],
     requiresTeamAction: !closed && actor === 'equipe',
     isOverdue,
+    category: getOperationalActionCategory(nextAction, input.processStatus),
   }
 }
 

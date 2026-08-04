@@ -297,7 +297,9 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                       <span className="text-xs text-slate-400 dash">Representante legal</span>
                       <span className="text-right text-xs font-semibold text-slate-700 dash">
                         {lead.has_legal_representative
-                          ? lead.legal_representative_name || 'Sim, nome não informado'
+                          ? [lead.legal_representative_name, lead.legal_representative_cpf]
+                              .filter(Boolean)
+                              .join(' · ') || 'Sim, dados não informados'
                           : 'Não'}
                       </span>
                     </div>
@@ -312,7 +314,7 @@ export default async function LeadDetailPage({ params }: { params: Promise<{ id:
                 <div className="flex justify-between gap-4">
                   <span className="text-xs text-slate-400 dash">Laudo médico</span>
                   <span className="text-xs font-semibold dash" style={{ color: lead.has_medical_report ? '#16A34A' : '#94A3B8' }}>
-                    {lead.has_medical_report ? 'Sim, válido para o processo' : 'Não'}
+                    {lead.has_medical_report ? 'Sim' : 'Não'}
                   </span>
                 </div>
                 <div className="space-y-1.5">

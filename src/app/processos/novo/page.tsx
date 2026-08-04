@@ -318,11 +318,6 @@ function NovoProcessoForm() {
       setError('O item do plano ainda nao foi validado. Recarregue a pagina antes de continuar.')
       return
     }
-    if (['processo_icms', 'processo_ipva'].includes(selectedTypeSlug) && !selectedVehicle) {
-      setError('Selecione o veiculo deste processo. Cadastre-o no cliente se ainda nao estiver na lista.')
-      return
-    }
-
     setLoading(true)
     setError('')
 
@@ -574,7 +569,7 @@ function NovoProcessoForm() {
                 {['processo_ipi', 'processo_icms', 'processo_ipva'].includes(selectedTypeSlug) && form.client_id && (
                   <div className="space-y-2 rounded-xl border border-cyan-100 bg-cyan-50/60 p-3.5">
                     <Select
-                      label={`Veiculo${['processo_icms', 'processo_ipva'].includes(selectedTypeSlug) ? ' *' : ''}`}
+                      label="Veículo (opcional nesta etapa)"
                       options={clientVehicles.map(vehicle => ({
                         value: vehicle.id,
                         label: [
@@ -583,9 +578,7 @@ function NovoProcessoForm() {
                           vehicle.vehicle_condition === 'zero_km' ? 'zero km' : 'usado',
                         ].filter(Boolean).join(' · '),
                       }))}
-                      placeholder={selectedTypeSlug === 'processo_ipi'
-                        ? 'Escolher depois'
-                        : 'Selecione o veiculo'}
+                      placeholder="Escolher depois"
                       value={form.vehicle_id}
                       onChange={event => {
                         const vehicle = clientVehicles.find(item => item.id === event.target.value)
@@ -598,9 +591,7 @@ function NovoProcessoForm() {
                     />
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <p className="dash text-[11px] text-cyan-800">
-                        {selectedTypeSlug === 'processo_ipi'
-                          ? 'Se o cliente ainda nao escolheu o veiculo, o IPI pode continuar sem essa identificacao.'
-                          : 'O vinculo evita processos duplicados e separa o IPVA de cada veiculo.'}
+                        O atendimento pode começar agora. Vincule o veículo quando a compra ou a identificação estiver definida.
                       </p>
                       <Link
                         href={`/clientes/${form.client_id}`}

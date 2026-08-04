@@ -22,14 +22,12 @@ test('triagem preserva compatibilidade sem gravar decisões exclusivas do proces
     cnh_status: 'com_restricoes',
     cnh_restrictions: 'b, d',
     cnh_expiry_date: '2030-07-30',
-    medical_assessment_status: 'nao_realizada',
     authorized_drivers: [],
     has_legal_representative: false,
     legal_representative_name: '',
     legal_representative_cpf: '',
     receives_loas_bpc: false,
     has_medical_report: false,
-    report_valid_until: '',
     eligibility_notes: '',
   })
 
@@ -41,4 +39,6 @@ test('triagem preserva compatibilidade sem gravar decisões exclusivas do proces
   assert.equal('requires_adapted_vehicle' in payload, false)
   assert.equal('disability_severity' in payload, false)
   assert.equal('disability_details' in payload, false)
+  assert.equal('medical_assessment_status' in payload, false)
+  assert.equal('report_valid_until' in payload, false)
 })

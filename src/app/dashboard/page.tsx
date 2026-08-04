@@ -7,6 +7,7 @@ import {
   Clock3,
   FileSearch,
   HeartPulse,
+  GitBranch,
   ListTodo,
   Plus,
   Target,
@@ -38,6 +39,7 @@ export default async function DashboardPage() {
         { label: 'Pendências críticas', value: metrics.overdue, hint: 'etapas ou prazos vencidos', href: '/rotina', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 border-red-200' },
         { label: 'Documentos para revisar', value: metrics.documentsForReview, hint: 'recebidos ou em análise', href: '/documentos?status=received', icon: FileSearch, tone: 'text-blue-700 bg-blue-50 border-blue-200' },
         { label: 'Concluídos em 30 dias', value: metrics.completedLast30Days, hint: 'ritmo de entrega da equipe', href: '/processos/lista?status=concluido', icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
+        { label: 'Aguardando dependência', value: metrics.waitingDependencies, hint: 'serviços visíveis, ainda bloqueados', href: '/rotina?tipo=aguardando_dependencia', icon: GitBranch, tone: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
       ]
     : isAdmin
       ? [
@@ -45,12 +47,14 @@ export default async function DashboardPage() {
           { label: 'Prazos críticos', value: metrics.overdue, hint: 'vencidos e exigindo ação', href: '/rotina', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 border-red-200' },
           { label: 'Documentos para revisar', value: metrics.documentsForReview, hint: 'fila documental da operação', href: '/documentos', icon: FileSearch, tone: 'text-blue-700 bg-blue-50 border-blue-200' },
           { label: 'Leads em aberto', value: metrics.openLeads, hint: 'novos, frios ou quentes', href: '/leads', icon: Target, tone: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { label: 'Aguardando dependência', value: metrics.waitingDependencies, hint: 'serviços visíveis, ainda bloqueados', href: '/rotina?tipo=aguardando_dependencia', icon: GitBranch, tone: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
         ]
       : [
           { label: 'Meus processos ativos', value: metrics.activeProcesses, hint: `${metrics.clientsInService} clientes sob sua responsabilidade`, href: '/processos/lista', icon: Activity, tone: 'text-primary bg-primary/10 border-primary/20' },
           { label: 'Vencidos', value: metrics.overdue, hint: 'ações que precisam ser resolvidas hoje', href: '/rotina', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 border-red-200' },
           { label: 'Próximos 7 dias', value: metrics.dueSoon, hint: 'prazos e compromissos', href: '/rotina?tipo=prazo_proximo', icon: Clock3, tone: 'text-amber-700 bg-amber-50 border-amber-200' },
           { label: 'Exigências médicas', value: metrics.medicalRequirements, hint: 'acompanhamentos em aberto', href: '/rotina?tipo=exigencia_medica', icon: HeartPulse, tone: 'text-rose-700 bg-rose-50 border-rose-200' },
+          { label: 'Aguardando dependência', value: metrics.waitingDependencies, hint: 'serviços visíveis, ainda bloqueados', href: '/rotina?tipo=aguardando_dependencia', icon: GitBranch, tone: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
         ]
 
   const maxWorkload = Math.max(1, ...operations.workload.map(item => item.activeProcesses))
@@ -77,7 +81,7 @@ export default async function DashboardPage() {
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" aria-label={`Indicadores para ${roleTitle}`}>
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5" aria-label={`Indicadores para ${roleTitle}`}>
         {kpis.map(({ label, value, hint, href, icon: Icon, tone }) => (
           <Link key={label} href={href} className={`group rounded-2xl border bg-card p-5 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md ${tone.split(' ').at(-1)}`}>
             <div className="flex items-start justify-between">

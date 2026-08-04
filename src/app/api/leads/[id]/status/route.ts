@@ -300,9 +300,13 @@ async function ensureLeadServiceQueue(
       continue
     }
 
-    // Na conversao, apenas o primeiro servico e iniciado. ICMS e IPVA exigem
-    // que a equipe identifique o veiculo antes de criar o processo.
-    if (index > 0 || service === 'icms' || service === 'ipva') continue
+    const prerequisite = getServicePrerequisite(service, services)
+    const processStatus: ProcessStatus = prerequisite ? 'aberto' : 'em_andamento'
+    const blockedReason = prerequisite === 'cnh_especial'
+      ? 'Aguardando conclusão da CNH Especial'
+      : prerequisite === 'ipi'
+        ? 'Aguardando deferimento do IPI'
+        : null
 
     const cnhStages = processTypeSlug === 'cnh_especial'
       ? getCnhStageTemplates({
@@ -346,7 +350,7 @@ async function ensureLeadServiceQueue(
         p_client_id: clientId,
         p_process_type_id: processType.id,
         p_protocol: null,
-        p_status: 'em_andamento',
+        p_status: processStatus,
         p_responsible_user_id: null,
         p_observations: `Processo criado na conversão do lead ${lead.name}.`,
         p_jurisdiction_state: clientRecord.state ?? null,
@@ -370,6 +374,10 @@ async function ensureLeadServiceQueue(
         origin_lead_id: lead.id,
         service_engagement_id: engagementId,
         service_plan_item_id: planItem?.id ?? null,
+        next_action: prerequisite ? null : 'Iniciar atendimento',
+        action_owner: prerequisite ? null : 'equipe',
+        blocked_reason: blockedReason,
+        started_at: prerequisite ? null : new Date().toISOString(),
       })
       .eq('id', processId)
 
@@ -379,7 +387,7 @@ async function ensureLeadServiceQueue(
       id: processId as string,
       process_type_id: processType.id,
       origin_lead_id: lead.id,
-      status: 'em_andamento',
+      status: processStatus,
     })
   }
 

@@ -19,19 +19,21 @@ test('IPVA permanece independente das dependencias de IPI e ICMS', () => {
   assert.equal(ipva?.availableToStart, true)
 })
 
-test('somente o primeiro servico apto e iniciado durante a conversao', () => {
+test('todos os servicos independentes iniciam durante a conversao', () => {
   const plan = buildServicePlanDefinitions(['cin', 'ipva', 'aposentadoria'])
 
   assert.deepEqual(
     plan.filter(item => item.startsOnConversion).map(item => item.service),
-    ['cin'],
+    ['cin', 'ipva', 'aposentadoria'],
   )
   assert.equal(plan.every(item => item.availableToStart), true)
 })
 
-test('IPVA e ICMS aguardam a identificacao do veiculo antes de iniciar', () => {
+test('veiculo nao bloqueia a abertura de IPVA ou ICMS', () => {
   const plan = buildServicePlanDefinitions(['ipva', 'icms'])
 
-  assert.equal(plan.some(item => item.startsOnConversion), false)
-  assert.equal(plan.every(item => item.requiresVehicleBeforeStart), true)
+  assert.deepEqual(
+    plan.filter(item => item.startsOnConversion).map(item => item.service),
+    ['ipva', 'icms'],
+  )
 })

@@ -6,8 +6,11 @@ import {
   LEAD_SERVICE_PROCESS_TYPE_SLUGS,
   normalizeLeadIntendedServices,
 } from '@/lib/lead-eligibility'
+import { getCnhStageTemplates } from '@/lib/cnh-stages'
+import { analyzeEligibility } from '@/lib/eligibility'
+import { buildOperationalStageRows } from '@/lib/operational-workflows'
 import { getServicePrerequisite } from '@/lib/service-plan'
-import type { LeadIntendedService } from '@/types/database'
+import type { LeadIntendedService, ProcessStatus } from '@/types/database'
 
 const serviceValues = [
   'cnh_especial', 'ipi', 'icms', 'ipva', 'credencial_estacionamento',
@@ -40,7 +43,11 @@ export async function POST(
 
   const { data: client } = await supabase
     .from('clients')
-    .select('id, client_type, commercial_owner_id')
+    .select(`
+      id, state, client_type, commercial_owner_id, disability_type,
+      disability_types, disability_severity, cnh_status, cnh_restrictions,
+      medical_assessment_status, has_medical_report, authorized_drivers
+    `)
     .eq('id', clientId.data)
     .eq('is_active', true)
     .maybeSingle()
@@ -103,12 +110,20 @@ export async function POST(
   }
 
   const inserted = new Map<LeadIntendedService, string>()
+  const blockedServices = new Set<LeadIntendedService>()
   const existingInEngagement = new Map(allCurrentItems.map(item => [item.service_key as LeadIntendedService, item.id]))
   for (const service of newServices) {
     const prerequisite = getServicePrerequisite(service, mergedServices)
+    const existingPrerequisite = prerequisite
+      ? allCurrentItems.find(item => item.service_key === prerequisite)
+      : null
     const prerequisiteId = prerequisite
       ? existingInEngagement.get(prerequisite) ?? inserted.get(prerequisite) ?? null
       : null
+    const prerequisiteBlocks = Boolean(
+      prerequisiteId
+      && (!existingPrerequisite || existingPrerequisite.status !== 'concluido'),
+    )
     const processTypeId = processTypeBySlug.get(LEAD_SERVICE_PROCESS_TYPE_SLUGS[service])
     if (!processTypeId) continue
     const { data: item, error } = await supabase
@@ -118,15 +133,16 @@ export async function POST(
         process_type_id: processTypeId,
         service_key: service,
         sort_order: mergedServices.indexOf(service) + 1,
-        status: prerequisiteId ? 'planejado' : 'pronto_para_iniciar',
+        status: prerequisiteBlocks ? 'planejado' : 'pronto_para_iniciar',
         prerequisite_item_id: prerequisiteId,
-        ready_at: prerequisiteId ? null : new Date().toISOString(),
-        wait_reason: prerequisiteId ? 'Aguardando a conclusao do servico anterior' : null,
+        ready_at: prerequisiteBlocks ? null : new Date().toISOString(),
+        wait_reason: prerequisiteBlocks ? 'Aguardando a conclusão do serviço anterior' : null,
       })
       .select('id')
       .single()
     if (error || !item) return NextResponse.json({ error: error?.message ?? 'Nao foi possivel adicionar o servico.' }, { status: 400 })
     inserted.set(service, item.id)
+    if (prerequisiteBlocks) blockedServices.add(service)
   }
 
   for (const [index, service] of mergedServices.entries()) {
@@ -139,6 +155,117 @@ export async function POST(
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
+  const processIds: string[] = []
+  for (const service of newServices) {
+    const processTypeSlug = LEAD_SERVICE_PROCESS_TYPE_SLUGS[service]
+    const processTypeId = processTypeBySlug.get(processTypeSlug)
+    const planItemId = inserted.get(service)
+    if (!processTypeId || !planItemId) continue
+
+    const prerequisite = getServicePrerequisite(service, mergedServices)
+    const isBlocked = blockedServices.has(service)
+    const processStatus: ProcessStatus = isBlocked ? 'aberto' : 'em_andamento'
+    const blockedReason = isBlocked && prerequisite === 'cnh_especial'
+      ? 'Aguardando conclusão da CNH Especial'
+      : isBlocked && prerequisite === 'ipi'
+        ? 'Aguardando deferimento do IPI'
+        : null
+    const { data: existingProcess, error: existingProcessError } = await supabase
+      .from('processes')
+      .select('id')
+      .eq('client_id', clientId.data)
+      .eq('process_type_id', processTypeId)
+      .not('status', 'in', '(concluido,arquivado,cancelado)')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (existingProcessError) {
+      return NextResponse.json({ error: existingProcessError.message }, { status: 400 })
+    }
+    if (existingProcess) {
+      const { error: existingLinkError } = await supabase
+        .from('processes')
+        .update({
+          service_order: mergedServices.indexOf(service) + 1,
+          service_engagement_id: engagementId,
+          service_plan_item_id: planItemId,
+        })
+        .eq('id', existingProcess.id)
+      if (existingLinkError) return NextResponse.json({ error: existingLinkError.message }, { status: 400 })
+      processIds.push(existingProcess.id)
+      continue
+    }
+    const cnhStages = processTypeSlug === 'cnh_especial'
+      ? getCnhStageTemplates({
+          clientType: client.client_type,
+          medicalAssessmentStatus: client.medical_assessment_status,
+          requiresPracticalExam: null,
+        })
+      : null
+    const stages = cnhStages
+      ? cnhStages.map(stage => ({
+          stage_key: stage.stage_key,
+          label: stage.label,
+          sort_order: stage.sort_order,
+          status: stage.status ?? 'pendente',
+          data: stage.data,
+        }))
+      : buildOperationalStageRows('', processTypeSlug).map(({ process_id: _processId, ...stage }) => {
+          void _processId
+          return stage
+        })
+    const eligibilityAnalysis = analyzeEligibility({
+      processTypeSlug,
+      state: client.state,
+      clientType: client.client_type,
+      disabilityType: client.disability_type,
+      disabilityTypes: client.disability_types,
+      disabilitySeverity: client.disability_severity,
+      cnhStatus: client.cnh_status,
+      cnhRestrictions: client.cnh_restrictions,
+      medicalAssessmentStatus: client.medical_assessment_status,
+      hasMedicalReport: client.has_medical_report,
+      authorizedDrivers: client.authorized_drivers,
+    })
+    const { data: processId, error: processError } = await supabase.rpc('create_process_atomic', {
+      p_client_id: clientId.data,
+      p_process_type_id: processTypeId,
+      p_protocol: null,
+      p_status: processStatus,
+      p_responsible_user_id: null,
+      p_observations: 'Processo criado a partir do plano de serviços do cliente.',
+      p_jurisdiction_state: client.state ?? null,
+      p_vehicle_condition: null,
+      p_eligibility_status: eligibilityAnalysis?.status ?? null,
+      p_eligibility_analysis: eligibilityAnalysis ?? null,
+      p_custom_fields: [],
+      p_stages: stages,
+      p_financial: null,
+    })
+    if (processError || !processId) {
+      return NextResponse.json({
+        error: processError?.message ?? `O serviço ${service} foi adicionado, mas o processo não pôde ser criado.`,
+      }, { status: 400 })
+    }
+
+    const { error: linkError } = await supabase
+      .from('processes')
+      .update({
+        service_order: mergedServices.indexOf(service) + 1,
+        service_engagement_id: engagementId,
+        service_plan_item_id: planItemId,
+        next_action: isBlocked ? null : 'Iniciar atendimento',
+        action_owner: isBlocked ? null : 'equipe',
+        blocked_reason: blockedReason,
+        started_at: isBlocked ? null : new Date().toISOString(),
+      })
+      .eq('id', processId)
+    if (linkError) return NextResponse.json({ error: linkError.message }, { status: 400 })
+    processIds.push(processId as string)
+  }
+
   revalidatePath(`/clientes/${clientId.data}`)
-  return NextResponse.json({ added: [...inserted.keys()] }, { status: 201 })
+  revalidatePath('/processos')
+  revalidatePath('/processos/lista')
+  return NextResponse.json({ added: [...inserted.keys()], processIds }, { status: 201 })
 }

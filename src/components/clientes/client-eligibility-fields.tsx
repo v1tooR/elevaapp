@@ -74,24 +74,13 @@ export function ClientEligibilityFields({ value, onChange, compact = false }: Pr
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         <div className="space-y-1">
           <label className="block text-sm font-medium text-slate-700 dash">Perfil do cliente</label>
           <select value={value.client_type} onChange={event => update('client_type', event.target.value as ClientEligibilityFormValue['client_type'])} className={SELECT_CLASS}>
             <option value="">Não informado</option>
             <option value="condutor">Condutor</option>
             <option value="nao_condutor">Não condutor</option>
-          </select>
-        </div>
-        <div className="space-y-1">
-          <label className="block text-sm font-medium text-slate-700 dash">Situação da avaliação médico-pericial</label>
-          <select value={value.medical_assessment_status} onChange={event => update('medical_assessment_status', event.target.value as ClientEligibilityFormValue['medical_assessment_status'])} className={SELECT_CLASS}>
-            <option value="nao_realizada">Não realizada</option>
-            <option value="agendada">Agendada</option>
-            <option value="apto">Apto</option>
-            <option value="apto_com_restricoes">Apto com restrições</option>
-            <option value="inapto_temporario">Inapto temporariamente</option>
-            <option value="inapto">Inapto</option>
           </select>
         </div>
       </div>
@@ -220,18 +209,13 @@ export function ClientEligibilityFields({ value, onChange, compact = false }: Pr
       <div className="space-y-3">
         {[
           { key: 'receives_loas_bpc' as const, label: 'Recebe LOAS/BPC' },
-          { key: 'has_medical_report' as const, label: 'Possui laudo para análise' },
+          { key: 'has_medical_report' as const, label: 'Possui laudo médico' },
         ].map(item => (
           <div key={item.key} className="flex items-center justify-between py-0.5">
             <p className="text-sm font-medium text-slate-700 dash">{item.label}</p>
             <Toggle enabled={value[item.key]} onToggle={() => update(item.key, !value[item.key])} />
           </div>
         ))}
-        {value.has_medical_report && (
-          <div className="pl-4 border-l-2 border-purple-100">
-            <Input label="Validade do laudo" type="date" value={value.report_valid_until} onChange={event => update('report_valid_until', event.target.value)} />
-          </div>
-        )}
       </div>
 
       <Textarea
