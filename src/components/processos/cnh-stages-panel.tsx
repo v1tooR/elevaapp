@@ -4,24 +4,19 @@ import { useRouter } from 'next/navigation'
 import {
   ChevronDown, ChevronUp, AlertCircle, Calendar,
   CheckCircle2, XCircle, Clock, FileCheck, Car,
-  Stethoscope, ClipboardList, BadgeCheck, Bell,
+  Stethoscope, ClipboardList, Bell,
   CalendarCheck, CalendarPlus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { MedicalRequirementsEditor } from '@/components/processos/medical-requirements-editor'
 import type { ProcessStage } from '@/types/database'
 import { formatDate } from '@/lib/utils'
 import {
   APPEAL_STATUS_LABELS,
   APPEAL_STATUS_OPTIONS,
-  getMedicalRequirements,
-  getMedicalRequirementsSummary,
   inferAppealStatus,
-  isMedicalStage,
   validateAppealWorkflow,
   type AppealStatus,
-  type MedicalRequirement,
 } from '@/lib/cnh-medical-workflow'
 
 interface Props {
@@ -66,8 +61,6 @@ const STATUS_OPTIONS_BY_KEY: Record<string, string[]> = {
   recurso_junta_medica:   ['pendente', 'em_andamento', 'aprovado', 'reprovado'],
   exame_pratico:          ['pendente', 'em_andamento', 'aprovado', 'reprovado', 'nao_aplicavel'],
   emissao_cnh:            ['pendente', 'em_andamento', 'concluido'],
-  liberado_isencoes:      ['pendente', 'concluido'],
-  cnh_regularizada:       ['pendente', 'concluido'],
 }
 
 const HAS_SCHEDULED_DATE = new Set([
@@ -91,15 +84,10 @@ const STAGE_ICONS: Record<string, React.ElementType> = {
   recurso_junta_medica:   AlertCircle,
   exame_pratico:          Car,
   emissao_cnh:            FileCheck,
-  liberado_isencoes:      BadgeCheck,
-  cnh_regularizada:       BadgeCheck,
 }
 
 function initEdit(stage: ProcessStage): EditState {
   const data = { ...(stage.data as Record<string, unknown>) }
-  if (isMedicalStage(stage.stage_key)) {
-    data.medical_requirements = getMedicalRequirements(stage)
-  }
   if (stage.stage_key === 'recurso_junta_medica') {
     data.appeal_status = inferAppealStatus(stage)
   }
@@ -119,6 +107,20 @@ function isComplete(status: string) {
 
 function isResolved(status: string) {
   return isComplete(status) || status === 'reprovado'
+}
+
+function isConditionalAppealResolved(stage: ProcessStage, stages: ProcessStage[]) {
+  if (stage.stage_key !== 'recurso_junta_medica' || stage.status !== 'nao_aplicavel') {
+    return isResolved(stage.status)
+  }
+  return stages.some(item => item.stage_key === 'pericia_medica' && item.status === 'aprovado')
+}
+
+function isConditionalAppealComplete(stage: ProcessStage, stages: ProcessStage[]) {
+  if (stage.stage_key !== 'recurso_junta_medica' || stage.status !== 'nao_aplicavel') {
+    return isComplete(stage.status)
+  }
+  return stages.some(item => item.stage_key === 'pericia_medica' && item.status === 'aprovado')
 }
 
 export function CnhStagesPanel({ stages, processId }: Props) {
@@ -252,39 +254,6 @@ export function CnhStagesPanel({ stages, processId }: Props) {
       }))
       return
     }
-    const medicalRequirements = Array.isArray(edit.data.medical_requirements)
-      ? edit.data.medical_requirements as MedicalRequirement[]
-      : []
-    const invalidMedicalRequirement = medicalRequirements.find(requirement => (
-      !requirement.title.trim() ||
-      !/^\d{4}-\d{2}-\d{2}$/.test(requirement.requested_at) ||
-      (['concluida', 'cancelada'].includes(requirement.status) && !requirement.result.trim())
-    ))
-    if (isMedicalStage(stage.stage_key) && invalidMedicalRequirement) {
-      setErrors(prev => ({
-        ...prev,
-        [stage.id]: !invalidMedicalRequirement.title.trim()
-          ? 'Informe qual exame ou exigência médica foi solicitado.'
-          : !invalidMedicalRequirement.requested_at
-            ? 'Informe a data da solicitação médica.'
-            : 'Informe o resultado ou motivo para encerrar a exigência médica.',
-      }))
-      return
-    }
-    const hasOpenMedicalRequirement = medicalRequirements.some(requirement => (
-      !['concluida', 'cancelada'].includes(requirement.status)
-    ))
-    if (
-      isMedicalStage(stage.stage_key) &&
-      hasOpenMedicalRequirement &&
-      (['aprovado', 'reprovado'].includes(edit.status) || ['aprovado', 'reprovado'].includes(edit.result))
-    ) {
-      setErrors(prev => ({
-        ...prev,
-        [stage.id]: 'Conclua ou cancele todas as exigências médicas antes de registrar o resultado definitivo.',
-      }))
-      return
-    }
     if (stage.stage_key === 'recurso_junta_medica') {
       const appealError = validateAppealWorkflow({
         data: edit.data,
@@ -340,12 +309,11 @@ export function CnhStagesPanel({ stages, processId }: Props) {
   }
 
   const sorted = stages
-    .filter(stage => stage.stage_key !== 'cnh_regularizada')
+    .filter(stage => !['cnh_regularizada', 'liberado_isencoes'].includes(stage.stage_key))
     .sort((a, b) => a.sort_order - b.sort_order)
-  const doneCount = sorted.filter(s => isResolved(s.status)).length
+  const doneCount = sorted.filter(stage => isConditionalAppealResolved(stage, sorted)).length
   const pct = sorted.length > 0 ? Math.round((doneCount / sorted.length) * 100) : 0
   const currentStage = sorted.find(s => s.status === 'em_andamento') ?? sorted.find(s => s.status === 'pendente')
-  const currentStageDetail = currentStage ? getMedicalRequirementsSummary(currentStage) : null
 
   return (
     <div className="space-y-5">
@@ -402,9 +370,10 @@ export function CnhStagesPanel({ stages, processId }: Props) {
         {/* Stage dots */}
         <div className="flex items-center gap-0">
           {sorted.map((stage, idx) => {
-            const done = isComplete(stage.status)
+            const done = isConditionalAppealComplete(stage, sorted)
             const active = stage.status === 'em_andamento'
             const failed = stage.status === 'reprovado'
+            const conditionalAppeal = stage.stage_key === 'recurso_junta_medica' && stage.status === 'nao_aplicavel'
             const Icon = STAGE_ICONS[stage.stage_key] ?? Clock
             const isLast = idx === sorted.length - 1
 
@@ -412,9 +381,10 @@ export function CnhStagesPanel({ stages, processId }: Props) {
               <div key={stage.id} className="flex items-center" style={{ flex: isLast ? 'none' : 1 }}>
                 <button
                   type="button"
-                  onClick={() => setActiveId(activeId === stage.id ? null : stage.id)}
-                  title={stage.label}
-                  className="relative flex flex-col items-center gap-1 group"
+                  onClick={() => !conditionalAppeal && setActiveId(activeId === stage.id ? null : stage.id)}
+                  disabled={conditionalAppeal}
+                  title={conditionalAppeal ? 'Recurso somente em caso de reprovação na perícia' : stage.label}
+                  className="relative flex flex-col items-center gap-1 group disabled:cursor-default"
                 >
                   <div
                     className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200"
@@ -458,7 +428,6 @@ export function CnhStagesPanel({ stages, processId }: Props) {
               <p className="text-xs text-white/70">
                 Em andamento: <span className="font-semibold text-white/90">{currentStage.label}</span>
               </p>
-              {currentStageDetail && <p className="mt-0.5 text-[11px] font-medium text-amber-200">{currentStageDetail}</p>}
             </div>
           </div>
         )}
@@ -480,9 +449,9 @@ export function CnhStagesPanel({ stages, processId }: Props) {
           const err = errors[stage.id]
           const calMsg = calSuccess[stage.id]
           const isLast = idx === sorted.length - 1
-          const done = isComplete(stage.status)
+          const done = isConditionalAppealComplete(stage, sorted)
+          const conditionalAppeal = stage.stage_key === 'recurso_junta_medica' && stage.status === 'nao_aplicavel'
           const Icon = STAGE_ICONS[stage.stage_key] ?? Clock
-          const medicalFollowUpSummary = getMedicalRequirementsSummary(stage)
           const appealStatus = stage.stage_key === 'recurso_junta_medica' ? inferAppealStatus(stage) : null
 
           return (
@@ -507,8 +476,9 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                 {/* Stage header */}
                 <button
                   type="button"
-                  onClick={() => setActiveId(isActive ? null : stage.id)}
-                  className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50/60 transition-colors"
+                  onClick={() => !conditionalAppeal && setActiveId(isActive ? null : stage.id)}
+                  disabled={conditionalAppeal}
+                  className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-slate-50/60 transition-colors disabled:cursor-default disabled:hover:bg-white"
                 >
                   <div
                     className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
@@ -525,6 +495,9 @@ export function CnhStagesPanel({ stages, processId }: Props) {
 
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-900 leading-tight">{stage.label}</p>
+                    {conditionalAppeal && (
+                      <p className="mt-0.5 text-[10px] font-medium text-slate-400">Disponível somente se houver reprovação na perícia</p>
+                    )}
                     <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                       {stage.scheduled_date && (
                         <p className="text-[11px] text-slate-400 flex items-center gap-1">
@@ -542,9 +515,6 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                           {stage.notes}
                         </p>
                       )}
-                      {medicalFollowUpSummary && (
-                        <p className="text-[10px] font-semibold text-amber-700">{medicalFollowUpSummary}</p>
-                      )}
                       {appealStatus && (
                         <p className="text-[10px] font-semibold text-sky-700">{APPEAL_STATUS_LABELS[appealStatus]}</p>
                       )}
@@ -556,10 +526,10 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                     style={{ background: st.bg, color: st.text, border: `1px solid ${st.border}` }}
                   >
                     <span className="w-1.5 h-1.5 rounded-full" style={{ background: st.dot }} />
-                    {STATUS_LABEL[stage.status]}
+                    {conditionalAppeal ? 'Se necessário' : STATUS_LABEL[stage.status]}
                   </span>
 
-                  {isActive ? (
+                  {conditionalAppeal ? null : isActive ? (
                     <ChevronUp className="w-4 h-4 text-slate-300 shrink-0" />
                   ) : (
                     <ChevronDown className="w-4 h-4 text-slate-300 shrink-0" />
@@ -755,14 +725,7 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                       </div>
                     )}
 
-                    {isMedicalStage(stage.stage_key) && (
-                      <MedicalRequirementsEditor
-                        requirements={(edit.data.medical_requirements as MedicalRequirement[]) ?? []}
-                        onChange={requirements => updateData(stage, 'medical_requirements', requirements)}
-                      />
-                    )}
-
-                    {/* pericia_medica: observacoes */}
+                    {/* pericia_medica */}
                     {stage.stage_key === 'pericia_medica' && (
                       <div className="space-y-3">
                         <div className="space-y-1.5">
@@ -806,16 +769,6 @@ export function CnhStagesPanel({ stages, processId }: Props) {
                             <p className="text-[10px] text-amber-700">O prazo de 30 dias e os alertas serão calculados a partir desta data.</p>
                           </div>
                         )}
-                        <div className="space-y-1.5">
-                          <p className="text-xs font-semibold text-slate-600">Observações da perícia</p>
-                          <textarea
-                            value={(edit.data.observacoes as string) ?? ''}
-                            onChange={e => updateData(stage, 'observacoes', e.target.value)}
-                            placeholder="Notas do médico perito..."
-                            rows={2}
-                            className="block w-full rounded-xl border border-slate-200 px-3 py-2 text-sm bg-white focus:border-amber-400 focus:outline-none resize-none"
-                          />
-                        </div>
                       </div>
                     )}
 

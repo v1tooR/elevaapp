@@ -1,10 +1,16 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import {
   buildAppealSchedule,
   calculateProcessRenewalDate,
   getIpvaOperationalBucket,
+  getIpvaStageLabel,
+  getIpvaStageStatusLabel,
+  IPVA_STAGE_KEYS,
 } from './process-workflow.ts'
+
+const ipvaPresentationMigration = new URL('../../supabase/migrations/035_ipva_vehicle_and_stage_presentation.sql', import.meta.url)
 
 test('prazo recursal usa a ciência e cria alertas D-10, D-3 e D-1', () => {
   assert.deepEqual(buildAppealSchedule('2026-07-20'), {
@@ -52,6 +58,12 @@ test('fila IPVA prioriza recurso aberto', () => {
 })
 
 test('fila IPVA distingue protocolo, SEFAZ, recurso e conclusão sem depender do IMESC', () => {
+  assert.deepEqual(IPVA_STAGE_KEYS, [
+    'sivei_protocolo',
+    'sefaz_decisao',
+    'ipva_recurso',
+    'ipva_conclusao',
+  ])
   assert.equal(getIpvaOperationalBucket([]), 'configuracao')
   assert.equal(getIpvaOperationalBucket([
     { stage_key: 'imesc_pericia', status: 'pendente' },
@@ -67,4 +79,23 @@ test('fila IPVA distingue protocolo, SEFAZ, recurso e conclusão sem depender do
     { stage_key: 'ipva_recurso', status: 'nao_aplicavel' },
     { stage_key: 'ipva_conclusao', status: 'concluido' },
   ]), 'concluido')
+})
+
+test('IPVA apresenta etapas e situações no vocabulário da planilha', () => {
+  assert.equal(getIpvaStageLabel('sivei_protocolo', 'legado'), 'Protocolo do IPVA')
+  assert.equal(getIpvaStageLabel('sefaz_decisao', 'legado'), 'Análise da SEFAZ')
+  assert.equal(getIpvaStageStatusLabel('sivei_protocolo', 'pendente'), 'Não iniciado')
+  assert.equal(getIpvaStageStatusLabel('sivei_protocolo', 'em_andamento'), 'Aguardando documento')
+  assert.equal(getIpvaStageStatusLabel('sefaz_decisao', 'em_andamento'), 'Em análise')
+  assert.equal(getIpvaStageStatusLabel('sefaz_decisao', 'aprovado'), 'Deferido')
+  assert.equal(getIpvaStageStatusLabel('sefaz_decisao', 'reprovado'), 'Indeferido')
+  assert.equal(getIpvaStageStatusLabel('ipva_conclusao', 'concluido'), 'Finalizado')
+})
+
+test('migration preserva documentos antigos fora da operação principal do IPVA', async () => {
+  const sql = await readFile(ipvaPresentationMigration, 'utf8')
+
+  assert.match(sql, /Documentos legados do IPVA/)
+  assert.match(sql, /normalize_ipva_stage_presentation/)
+  assert.match(sql, /NEW\.status := 'nao_aplicavel'/)
 })

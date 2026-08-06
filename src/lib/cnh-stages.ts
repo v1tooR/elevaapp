@@ -15,7 +15,7 @@ interface StageTemplate {
 
 const STAGE_CHECKLIST: StageTemplate = {
   stage_key: 'checklist_documentos',
-  label: 'Checklist de documentos',
+  label: 'Checklist',
   sort_order: 10,
   data: { cnh: false, laudo_medico: false, acesso_gov_validado: false, comprovante_endereco: false, email: false },
 }
@@ -32,11 +32,17 @@ const STAGE_PERICIA: StageTemplate = {
   label: 'Perícia',
   sort_order: 30,
   data: {
-    observacoes: '',
     restricoes: '',
     requires_practical_exam: null,
-    medical_requirements: [],
   },
+}
+
+const STAGE_RECURSO: StageTemplate = {
+  stage_key: 'recurso_junta_medica',
+  label: 'Recurso',
+  sort_order: 40,
+  status: 'nao_aplicavel',
+  data: { conditional_on: 'pericia_reprovada' },
 }
 
 const STAGE_EXAME_PRATICO: StageTemplate = {
@@ -71,7 +77,6 @@ export function getCnhStageTemplates(assessment: CnhAssessmentInput): StageTempl
 
   const practicalExam: StageTemplate = {
     ...STAGE_EXAME_PRATICO,
-    label: subflow === 'aguardando_pericia' ? 'Exame Prático (se determinado)' : STAGE_EXAME_PRATICO.label,
     status: subflow === 'sem_exame_pratico' ? 'nao_aplicavel' : 'pendente',
   }
 
@@ -85,6 +90,7 @@ export function getCnhStageTemplates(assessment: CnhAssessmentInput): StageTempl
         requires_practical_exam: assessment.requiresPracticalExam ?? null,
       },
     },
+    STAGE_RECURSO,
     practicalExam,
     STAGE_EMISSAO,
   ]

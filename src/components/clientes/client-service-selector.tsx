@@ -21,7 +21,7 @@ export function ClientServiceSelector({
 
   const save = async () => {
     if (selected.length === 0) {
-      setError('Selecione pelo menos um novo servico.')
+      setError('Selecione pelo menos um novo serviço.')
       return
     }
     setLoading(true)
@@ -33,7 +33,7 @@ export function ClientServiceSelector({
     })
     const result = await response.json().catch(() => ({}))
     if (!response.ok) {
-      setError(result.error ?? 'Nao foi possivel atualizar o plano.')
+      setError(result.error ?? 'Não foi possível criar os processos selecionados.')
       setLoading(false)
       return
     }
@@ -47,12 +47,12 @@ export function ClientServiceSelector({
     <div className="rounded-2xl border border-blue-100 bg-blue-50/50 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="dash text-sm font-bold text-slate-900">Servicos contratados</p>
-          <p className="dash mt-0.5 text-xs text-slate-500">Inclua varios servicos sem criar processos automaticamente.</p>
+          <p className="dash text-sm font-bold text-slate-900">Serviços contratados</p>
+          <p className="dash mt-0.5 text-xs text-slate-500">Selecione um ou mais serviços. Cada novo serviço cria seu processo e informa se está ativo ou aguardando uma dependência.</p>
         </div>
         <button type="button" onClick={() => { setOpen(current => !current); setError('') }} className="dash inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-blue-700">
           {open ? <X className="h-3.5 w-3.5" /> : <ListPlus className="h-3.5 w-3.5" />}
-          {open ? 'Fechar' : 'Adicionar servicos'}
+          {open ? 'Fechar' : 'Adicionar serviços'}
         </button>
       </div>
       {open && (
@@ -69,9 +69,9 @@ export function ClientServiceSelector({
               )
             })}
           </div>
-          <p className="dash mt-3 text-[11px] text-slate-500">Servicos ja contratados ficam preservados. Cancelamentos devem ser registrados no fluxo do servico.</p>
+          <p className="dash mt-3 text-[11px] text-slate-500">Serviços já contratados ficam preservados. Cancelamentos devem ser registrados no fluxo do serviço.</p>
           {error && <p className="dash mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
-          <button type="button" disabled={loading} onClick={() => void save()} className="dash mt-3 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-60">{loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Salvar no plano</button>
+          <button type="button" disabled={loading} onClick={() => void save()} className="dash mt-3 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:opacity-60">{loading && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Criar processos</button>
         </div>
       )}
     </div>

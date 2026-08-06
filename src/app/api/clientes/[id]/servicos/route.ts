@@ -7,7 +7,6 @@ import {
   normalizeLeadIntendedServices,
 } from '@/lib/lead-eligibility'
 import { getCnhStageTemplates } from '@/lib/cnh-stages'
-import { analyzeEligibility } from '@/lib/eligibility'
 import { buildOperationalStageRows } from '@/lib/operational-workflows'
 import { getServicePrerequisite } from '@/lib/service-plan'
 import type { LeadIntendedService, ProcessStatus } from '@/types/database'
@@ -214,19 +213,6 @@ export async function POST(
           void _processId
           return stage
         })
-    const eligibilityAnalysis = analyzeEligibility({
-      processTypeSlug,
-      state: client.state,
-      clientType: client.client_type,
-      disabilityType: client.disability_type,
-      disabilityTypes: client.disability_types,
-      disabilitySeverity: client.disability_severity,
-      cnhStatus: client.cnh_status,
-      cnhRestrictions: client.cnh_restrictions,
-      medicalAssessmentStatus: client.medical_assessment_status,
-      hasMedicalReport: client.has_medical_report,
-      authorizedDrivers: client.authorized_drivers,
-    })
     const { data: processId, error: processError } = await supabase.rpc('create_process_atomic', {
       p_client_id: clientId.data,
       p_process_type_id: processTypeId,
@@ -236,8 +222,8 @@ export async function POST(
       p_observations: 'Processo criado a partir do plano de serviços do cliente.',
       p_jurisdiction_state: client.state ?? null,
       p_vehicle_condition: null,
-      p_eligibility_status: eligibilityAnalysis?.status ?? null,
-      p_eligibility_analysis: eligibilityAnalysis ?? null,
+      p_eligibility_status: null,
+      p_eligibility_analysis: null,
       p_custom_fields: [],
       p_stages: stages,
       p_financial: null,

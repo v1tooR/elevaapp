@@ -3,14 +3,8 @@ import { z } from 'zod'
 import { createClient } from '@/lib/supabase/server'
 import {
   APPEAL_STATUS_VALUES,
-  MEDICAL_REQUIREMENT_STATUS_VALUES,
-  MEDICAL_REQUIREMENT_TYPE_VALUES,
-  getMedicalRequirements,
   inferAppealStatus,
-  isMedicalStage,
-  mergeMedicalRequirementAudit,
   validateAppealWorkflow,
-  type MedicalRequirement,
 } from '@/lib/cnh-medical-workflow'
 import {
   getIpiDetranReportStatus,
@@ -30,28 +24,6 @@ function getProcessTypeSlug(relation: unknown) {
     ? String((value as ProcessTypeRelation).slug)
     : ''
 }
-
-const dateOrEmptySchema = z.union([z.literal(''), z.string().regex(/^\d{4}-\d{2}-\d{2}$/)])
-
-const medicalRequirementSchema = z.object({
-  id: z.string().min(1).max(100),
-  type: z.enum(MEDICAL_REQUIREMENT_TYPE_VALUES),
-  title: z.string().trim().min(1).max(200),
-  details: z.string().max(5000).default(''),
-  requested_at: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  due_date: dateOrEmptySchema.default(''),
-  follow_up_date: dateOrEmptySchema.default(''),
-  status: z.enum(MEDICAL_REQUIREMENT_STATUS_VALUES),
-  result: z.string().max(5000).default(''),
-  created_at: z.string().max(50).default(''),
-  updated_at: z.string().max(50).default(''),
-  history: z.array(z.object({
-    id: z.string().min(1).max(200),
-    event: z.enum(['created', 'updated', 'status_changed', 'migrated']),
-    status: z.enum(MEDICAL_REQUIREMENT_STATUS_VALUES),
-    occurred_at: z.string().max(50),
-  })).max(200).default([]),
-})
 
 const stageUpdateSchema = z.object({
   status: z.enum(['pendente', 'em_andamento', 'concluido', 'aprovado', 'reprovado', 'nao_aplicavel']),
@@ -88,7 +60,7 @@ export async function PATCH(
 
   const { data: processRecord, error: processError } = await supabase
     .from('processes')
-    .select('client_id, status, completed_at, vehicle_id, process_types(slug)')
+    .select('client_id, status, completed_at, process_types(slug)')
     .eq('id', id)
     .single()
   if (processError || !processRecord) {
@@ -132,45 +104,6 @@ export async function PATCH(
     if (reportStatus === 'pronto') values.notifyClient = true
   }
 
-  if (isMedicalStage(stage.stage_key)) {
-    const parsedRequirements = z.array(medicalRequirementSchema).max(50).safeParse(stageData.medical_requirements ?? [])
-    if (!parsedRequirements.success) {
-      return NextResponse.json({
-        error: 'Revise os dados das exigências e exames complementares.',
-        details: parsedRequirements.error.flatten(),
-      }, { status: 422 })
-    }
-
-    const requirementIds = new Set(parsedRequirements.data.map(requirement => requirement.id))
-    if (requirementIds.size !== parsedRequirements.data.length) {
-      return NextResponse.json({ error: 'Existem exigências médicas duplicadas. Atualize a página e tente novamente.' }, { status: 422 })
-    }
-
-    const resolvedStatuses = new Set(['concluida', 'cancelada'])
-    const unresolved = parsedRequirements.data.some(requirement => !resolvedStatuses.has(requirement.status))
-    const hasFinalMedicalResult = ['aprovado', 'reprovado'].includes(values.status)
-      || ['aprovado', 'reprovado'].includes(values.result ?? '')
-    if (unresolved && hasFinalMedicalResult) {
-      return NextResponse.json({
-        error: 'Conclua ou cancele todas as exigências médicas antes de registrar o resultado definitivo.',
-      }, { status: 422 })
-    }
-
-    const missingResolution = parsedRequirements.data.some(requirement => (
-      resolvedStatuses.has(requirement.status) && !requirement.result.trim()
-    ))
-    if (missingResolution) {
-      return NextResponse.json({ error: 'Informe o resultado ou motivo das exigências encerradas.' }, { status: 422 })
-    }
-
-    const existingRequirements = getMedicalRequirements(stage)
-    stageData.medical_requirements = mergeMedicalRequirementAudit(
-      existingRequirements,
-      parsedRequirements.data as MedicalRequirement[],
-      new Date().toISOString(),
-    )
-  }
-
   if (stage.stage_key === 'recurso_junta_medica') {
     const appealStatus = typeof stageData.appeal_status === 'string' && APPEAL_STATUS_VALUES.includes(stageData.appeal_status as typeof APPEAL_STATUS_VALUES[number])
       ? stageData.appeal_status
@@ -201,45 +134,6 @@ export async function PATCH(
       data: stageData,
     })
     if (operationalError) return NextResponse.json({ error: operationalError }, { status: 422 })
-  }
-
-  const isIcmsProtocol = processTypeSlug === 'processo_icms'
-    && stage.stage_key === 'protocolo_sivei_icms'
-  const isIpvaProtocol = processTypeSlug === 'processo_ipva'
-    && stage.stage_key === 'sivei_protocolo'
-  const hasProtocolValue = typeof stageData.protocol === 'string' && stageData.protocol.trim().length > 0
-  const isResolvingVehicleProtocol = ['concluido', 'aprovado', 'reprovado'].includes(values.status)
-  if ((isIcmsProtocol || isIpvaProtocol) && (hasProtocolValue || isResolvingVehicleProtocol)) {
-    let hasMinimumVehicle = Boolean(processRecord.vehicle_id)
-    if (!hasMinimumVehicle && isIcmsProtocol) {
-      let purchaseData = stageData
-      const hasCurrentPurchaseData = ['vehicle', 'brand', 'model'].some(key => (
-        typeof purchaseData[key] === 'string' && purchaseData[key].trim()
-      ))
-      if (!hasCurrentPurchaseData) {
-        const { data: purchaseStage } = await supabase
-          .from('process_stages')
-          .select('data')
-          .eq('process_id', id)
-          .eq('stage_key', 'dados_compra_icms')
-          .maybeSingle()
-        purchaseData = purchaseStage?.data as Record<string, unknown> ?? {}
-      }
-      hasMinimumVehicle = Boolean(
-        typeof purchaseData.vehicle === 'string' && purchaseData.vehicle.trim()
-        || (
-          typeof purchaseData.brand === 'string' && purchaseData.brand.trim()
-          && typeof purchaseData.model === 'string' && purchaseData.model.trim()
-        ),
-      )
-    }
-    if (!hasMinimumVehicle) {
-      return NextResponse.json({
-        error: isIpvaProtocol
-          ? 'Vincule o veículo ao processo antes de concluir o protocolo do IPVA.'
-          : 'Informe ao menos a marca e o modelo no Protocolo de ICMS antes de concluir.',
-      }, { status: 422 })
-    }
   }
 
   const isApprovedMedicalAppeal = stage.stage_key === 'recurso_junta_medica'

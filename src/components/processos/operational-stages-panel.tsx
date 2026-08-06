@@ -71,6 +71,13 @@ const STATUS_STYLES: Record<OperationalStageStatus, string> = {
 const DEFAULT_STATUSES: OperationalStageStatus[] = ['pendente', 'em_andamento', 'concluido', 'nao_aplicavel']
 const RESOLVED_STATUSES = new Set<OperationalStageStatus>(['concluido', 'aprovado', 'reprovado', 'nao_aplicavel'])
 
+function getStageStatusLabel(
+  status: OperationalStageStatus,
+  labels?: Partial<Record<OperationalStageStatus, string>>,
+) {
+  return labels?.[status] ?? STATUS_LABELS[status]
+}
+
 function initEdit(stage: ProcessStage): EditState {
   const reportStatus = stage.stage_key === 'laudo_ipi'
     ? getIpiDetranReportStatus(stage.data, stage.status)
@@ -418,7 +425,7 @@ export function OperationalStagesPanel({ processId, clientId, processTypeSlug, s
                         pronto: 'Recebido',
                         nao_aplicavel: 'Não se aplica',
                       }[reportStatus]
-                    : isBlocked ? 'Bloqueada' : STATUS_LABELS[stage.status]}
+                    : isBlocked ? 'Bloqueada' : getStageStatusLabel(stage.status, template?.statusLabels)}
                 </span>
                 {isActive ? <ChevronUp className="h-4 w-4 text-slate-400" /> : <ChevronDown className="h-4 w-4 text-slate-400" />}
               </button>
@@ -442,7 +449,7 @@ export function OperationalStagesPanel({ processId, clientId, processTypeSlug, s
                             edit.status === status ? STATUS_STYLES[status] : 'border-slate-200 bg-white text-slate-400',
                           )}
                         >
-                          {STATUS_LABELS[status]}
+                          {getStageStatusLabel(status, template.statusLabels)}
                         </button>
                       ))}
                     </div>
@@ -553,7 +560,7 @@ export function OperationalStagesPanel({ processId, clientId, processTypeSlug, s
                               edit.status === status ? STATUS_STYLES[status] : 'border-slate-200 bg-white text-slate-400',
                             )}
                           >
-                            {status === 'pendente' ? 'Não iniciado' : STATUS_LABELS[status]}
+                            {getStageStatusLabel(status, template.statusLabels)}
                           </button>
                         ))}
                         {template.resultOptions?.map(option => (

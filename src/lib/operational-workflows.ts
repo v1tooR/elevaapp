@@ -37,6 +37,7 @@ export type OperationalStageTemplate = {
   initialStatus?: OperationalStageStatus
   initialData?: Record<string, unknown>
   allowedStatuses?: OperationalStageStatus[]
+  statusLabels?: Partial<Record<OperationalStageStatus, string>>
   fields?: OperationalFieldDefinition[]
   checklist?: OperationalChecklistItem[]
   hasScheduledDate?: boolean
@@ -282,6 +283,12 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         stage_key: 'pre_requisitos_icms', label: 'Checklist do ICMS', sort_order: 10,
         description: 'Reunir os pré-requisitos e documentos do pedido. O veículo pode ser definido durante o atendimento.',
         initialData: { state_scope: 'sp', state: 'SP' },
+        allowedStatuses: ['pendente', 'em_andamento', 'concluido'],
+        statusLabels: {
+          pendente: 'Não iniciado',
+          em_andamento: 'Aguardando documento',
+          concluido: 'Finalizado',
+        },
         checklist: [
           { key: 'autorizacao_ipi', label: 'Autorização do IPI válida' },
           { key: 'laudo', label: 'Laudo DETRAN atualizado' },
@@ -302,6 +309,12 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         stage_key: 'protocolo_sivei_icms', label: 'Protocolo de ICMS', sort_order: 20,
         description: 'Registrar compra, protocolo, acompanhamento e decisão no mesmo ponto operacional.',
         allowedStatuses: DECISION_STATUSES,
+        statusLabels: {
+          pendente: 'Não iniciado',
+          em_andamento: 'Em análise',
+          aprovado: 'Deferido',
+          reprovado: 'Indeferido',
+        },
         resultOptions: COMMON_DECISION_RESULTS,
         activateOnRejected: 'recurso_icms',
         fields: [
@@ -329,6 +342,14 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         description: 'Controlar a providência adotada após indeferimento.',
         initialStatus: 'nao_aplicavel',
         allowedStatuses: [...STANDARD_STATUSES, 'aprovado', 'reprovado'],
+        statusLabels: {
+          pendente: 'Não iniciado',
+          em_andamento: 'Em análise',
+          concluido: 'Finalizado',
+          aprovado: 'Deferido',
+          reprovado: 'Indeferido',
+          nao_aplicavel: 'Não aplicável',
+        },
         fields: [
           { key: 'action', label: 'Providência', type: 'select', requiredOnResolve: true, options: [
             { value: 'recurso', label: 'Interpor recurso' }, { value: 'novo_pedido', label: 'Dar entrada novamente' }, { value: 'encerrar', label: 'Encerrar sem nova medida' },

@@ -1,7 +1,6 @@
 import type { ProcessStage } from '@/types/database'
 
 export const IPVA_STAGE_KEYS = [
-  'ipva_documentos',
   'sivei_protocolo',
   'sefaz_decisao',
   'ipva_recurso',
@@ -17,11 +16,37 @@ export type IpvaOperationalBucket =
   | 'concluido'
 
 export const IPVA_OPERATIONAL_BUCKETS: Record<IpvaOperationalBucket, string> = {
-  configuracao: 'Inicializar workflow',
-  protocolo: 'Preparar protocolo',
-  sefaz: 'Aguardando SEFAZ',
+  configuracao: 'Não iniciado',
+  protocolo: 'Protocolo',
+  sefaz: 'Em análise na SEFAZ',
   recurso: 'Recurso',
-  concluido: 'Concluído',
+  concluido: 'Finalizado',
+}
+
+const IPVA_STAGE_LABELS: Record<IpvaStageKey, string> = {
+  sivei_protocolo: 'Protocolo do IPVA',
+  sefaz_decisao: 'Análise da SEFAZ',
+  ipva_recurso: 'Recurso',
+  ipva_conclusao: 'Conclusão do IPVA',
+}
+
+const DEFAULT_IPVA_STATUS_LABELS: Record<string, string> = {
+  pendente: 'Não iniciado',
+  em_andamento: 'Em análise',
+  concluido: 'Finalizado',
+  aprovado: 'Deferido',
+  reprovado: 'Indeferido',
+  nao_aplicavel: 'Não necessário',
+}
+
+export function getIpvaStageLabel(stageKey: string, fallback: string) {
+  return IPVA_STAGE_LABELS[stageKey as IpvaStageKey] ?? fallback
+}
+
+export function getIpvaStageStatusLabel(stageKey: string, status: string) {
+  if (stageKey === 'sivei_protocolo' && status === 'em_andamento') return 'Aguardando documento'
+  if (stageKey === 'ipva_recurso' && status === 'pendente') return 'Aguardando documento'
+  return DEFAULT_IPVA_STATUS_LABELS[status] ?? status
 }
 
 function isFinished(stage?: Pick<ProcessStage, 'status'>): boolean {

@@ -11,12 +11,6 @@ import { maskCurrency, parseCurrency } from '@/lib/masks'
 import { getCnhStageTemplates } from '@/lib/cnh-stages'
 import { buildOperationalStageRows } from '@/lib/operational-workflows'
 import { applyStartingStage } from '@/lib/process-start-stage'
-import {
-  analyzeEligibility,
-  isEligibilityProcess,
-  type SefazIpvaStatus,
-} from '@/lib/eligibility'
-import { EligibilityAnalysisCard } from '@/components/processos/eligibility-analysis-card'
 import type { Client, ClientVehicle, ProcessType, Profile, VehicleCondition } from '@/types/database'
 import Link from 'next/link'
 import {
@@ -273,29 +267,6 @@ function NovoProcessoForm() {
           .filter(stage => stage.status !== 'nao_aplicavel')
           .map(stage => ({ value: stage.stage_key, label: stage.label }))
       : []
-  const eligibilityAnalysis = selectedClient && isEligibilityProcess(selectedTypeSlug)
-    ? analyzeEligibility({
-        processTypeSlug: selectedTypeSlug,
-        state: form.jurisdiction_state || selectedClient.state,
-        vehicleCondition: form.vehicle_condition || null,
-        clientType: selectedClient.client_type,
-        disabilityType: selectedClient.disability_type,
-        disabilityTypes: selectedClient.disability_types,
-        disabilitySeverity: selectedClient.disability_severity,
-        cnhStatus: selectedClient.cnh_status,
-        cnhRestrictions: selectedClient.cnh_restrictions,
-        medicalAssessmentStatus: selectedClient.medical_assessment_status,
-        requiresAdaptedVehicle: selectedClient.requires_adapted_vehicle,
-        requiresPracticalExam: selectedClient.requires_practical_exam,
-        hasMedicalReport: selectedClient.has_medical_report,
-        authorizedDrivers: selectedClient.authorized_drivers,
-        sefazIpvaStatus: (customFieldValues.sefaz_ipva_status || null) as SefazIpvaStatus | null,
-        sefazDecisionNotifiedAt: customFieldValues.sefaz_data_ciencia || null,
-        ipvaAppealFiledAt: customFieldValues.recurso_ipva_protocolado_em || null,
-        ipvaAppealProtocol: customFieldValues.recurso_ipva_protocolo || null,
-      })
-    : null
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!form.client_id || !form.process_type_id) {
@@ -373,8 +344,10 @@ function NovoProcessoForm() {
       p_vehicle_condition: selectedTypeSlug === 'cnh_especial'
         ? null
         : (selectedVehicle?.vehicle_condition ?? form.vehicle_condition) || null,
-      p_eligibility_status: eligibilityAnalysis?.status ?? null,
-      p_eligibility_analysis: eligibilityAnalysis ?? null,
+      // Campos legados permanecem nulos em novos processos. A viabilidade
+      // comercial ja foi definida durante a venda/conversao do lead.
+      p_eligibility_status: null,
+      p_eligibility_analysis: null,
       p_custom_fields: customFieldInserts,
       p_stages: stageRows,
       p_financial: financial,
@@ -550,17 +523,6 @@ function NovoProcessoForm() {
                   onChange={e => handleClientChange(e.target.value)}
                   required
                 />
-                {eligibilityAnalysis && (
-                  <EligibilityAnalysisCard
-                    analysis={eligibilityAnalysis}
-                    state={form.jurisdiction_state}
-                    vehicleCondition={form.vehicle_condition}
-                    onStateChange={jurisdiction_state => setForm(prev => ({ ...prev, jurisdiction_state }))}
-                    onVehicleConditionChange={vehicle_condition => setForm(prev => ({ ...prev, vehicle_condition }))}
-                    showState={['processo_icms', 'processo_ipva'].includes(selectedTypeSlug)}
-                    showVehicleCondition={selectedTypeSlug === 'processo_ipva'}
-                  />
-                )}
                 {['processo_ipi', 'processo_icms'].includes(selectedTypeSlug) && (
                   <p className="dash rounded-lg border border-blue-100 bg-blue-50 px-3 py-2 text-xs text-blue-700">
                     Este beneficio e exclusivo para veiculo zero-quilometro; essa condicao ja foi aplicada ao processo.

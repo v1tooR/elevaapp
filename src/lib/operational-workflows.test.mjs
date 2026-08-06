@@ -110,11 +110,33 @@ test('Laudo DETRAN recebido aceita identificação progressiva do documento', ()
 test('checklist obrigatório impede conclusão incompleta', () => {
   const workflow = getOperationalWorkflowDefinition('processo_icms')
   const template = workflow.stages.find(stage => stage.stage_key === 'pre_requisitos_icms')
+  const checklistKeys = template.checklist.map(item => item.key)
+
+  assert.ok(checklistKeys.includes('autorizacao_ipi'))
+  assert.ok(checklistKeys.includes('laudo'))
+  assert.equal(template.checklist.find(item => item.key === 'autorizacao_ipi').label, 'Autorização do IPI válida')
+  assert.equal(template.checklist.find(item => item.key === 'laudo').label, 'Laudo DETRAN atualizado')
   assert.match(validateOperationalStage({
     template,
     status: 'concluido',
     data: { state_scope: 'sp', state: 'SP', checklist: {} },
   }), /Autorização do IPI/)
+})
+
+test('ICMS apresenta as situações operacionais da planilha', () => {
+  const workflow = getOperationalWorkflowDefinition('processo_icms')
+  const checklist = workflow.stages.find(stage => stage.stage_key === 'pre_requisitos_icms')
+  const protocol = workflow.stages.find(stage => stage.stage_key === 'protocolo_sivei_icms')
+
+  assert.deepEqual(checklist.allowedStatuses, ['pendente', 'em_andamento', 'concluido'])
+  assert.deepEqual(checklist.statusLabels, {
+    pendente: 'Não iniciado',
+    em_andamento: 'Aguardando documento',
+    concluido: 'Finalizado',
+  })
+  assert.equal(protocol.statusLabels.em_andamento, 'Em análise')
+  assert.equal(protocol.statusLabels.aprovado, 'Deferido')
+  assert.equal(protocol.statusLabels.reprovado, 'Indeferido')
 })
 
 test('campo opcional não impede conclusão do checklist', () => {

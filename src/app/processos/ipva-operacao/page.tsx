@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { formatDate } from '@/lib/utils'
 import {
   getIpvaOperationalBucket,
+  getIpvaStageLabel,
   IPVA_OPERATIONAL_BUCKETS,
   IPVA_STAGE_KEYS,
   type IpvaOperationalBucket,
@@ -142,7 +143,7 @@ export default async function IpvaOperationsPage({
                       <p className="truncate text-sm font-semibold text-slate-900">{process.clients?.name ?? 'Cliente não informado'}</p>
                       <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">{IPVA_OPERATIONAL_BUCKETS[process.bucket]}</span>
                     </div>
-                    <p className="mt-1 text-xs text-slate-500">{currentStage?.label ?? 'Workflow concluído'} · Resp.: {process.responsible_user?.name ?? 'Não atribuído'}</p>
+                    <p className="mt-1 text-xs text-slate-500">{currentStage ? getIpvaStageLabel(currentStage.stage_key, currentStage.label) : 'Workflow finalizado'} · Resp.: {process.responsible_user?.name ?? 'Não atribuído'}</p>
                   </div>
                   <div className="hidden text-right sm:block">
                     {appealStage?.due_date ? (

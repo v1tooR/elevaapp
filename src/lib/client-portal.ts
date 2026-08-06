@@ -136,25 +136,6 @@ function relationValue<T>(value: T | T[] | null | undefined): T | null {
   return value ?? null
 }
 
-function sanitizeMedicalRequirements(value: unknown) {
-  if (!Array.isArray(value)) return []
-
-  return value.flatMap(item => {
-    const requirement = recordValue(item)
-    if (typeof requirement.id !== 'string' || typeof requirement.status !== 'string') return []
-
-    return [{
-      id: requirement.id,
-      type: typeof requirement.type === 'string' ? requirement.type : 'exigencia_medica',
-      title: typeof requirement.title === 'string' ? requirement.title : 'Exigência médica',
-      status: requirement.status,
-      requested_at: typeof requirement.requested_at === 'string' ? requirement.requested_at : null,
-      follow_up_date: typeof requirement.follow_up_date === 'string' ? requirement.follow_up_date : null,
-      completed_at: typeof requirement.completed_at === 'string' ? requirement.completed_at : null,
-    }]
-  })
-}
-
 function sanitizeStageData(stageKey: string, value: unknown): Record<string, unknown> {
   const data = recordValue(value)
 
@@ -163,14 +144,8 @@ function sanitizeStageData(stageKey: string, value: unknown): Record<string, unk
     return Object.fromEntries(safeKeys.map(key => [key, data[key] === true]))
   }
 
-  if (stageKey === 'pericia_medica' || stageKey === 'recurso_junta_medica') {
-    const safe: Record<string, unknown> = {
-      medical_requirements: sanitizeMedicalRequirements(data.medical_requirements),
-    }
-    if (stageKey === 'recurso_junta_medica' && typeof data.appeal_status === 'string') {
-      safe.appeal_status = data.appeal_status
-    }
-    return safe
+  if (stageKey === 'recurso_junta_medica' && typeof data.appeal_status === 'string') {
+    return { appeal_status: data.appeal_status }
   }
 
   return {}

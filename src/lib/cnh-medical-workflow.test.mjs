@@ -1,9 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  getMedicalRequirements,
   inferAppealStatus,
-  mergeMedicalRequirementAudit,
   validateAppealWorkflow,
 } from './cnh-medical-workflow.ts'
 
@@ -14,56 +12,6 @@ const stage = {
   updated_at: '2026-07-10T18:00:00.000Z',
   data: {},
 }
-
-test('converte o acompanhamento médico antigo sem perder o registro', () => {
-  const requirements = getMedicalRequirements({
-    ...stage,
-    data: {
-      medical_follow_up_status: 'complementary_exam_requested',
-      complementary_exam_name: 'Tomografia da coluna',
-    },
-  })
-
-  assert.equal(requirements.length, 1)
-  assert.equal(requirements[0].title, 'Tomografia da coluna')
-  assert.equal(requirements[0].status, 'pendente')
-  assert.equal(requirements[0].history[0].event, 'migrated')
-})
-
-test('mantém várias exigências e registra mudança de status no histórico', () => {
-  const existing = [{
-    id: 'req-1',
-    type: 'exame_complementar',
-    title: 'Tomografia',
-    details: '',
-    requested_at: '2026-07-10',
-    due_date: '',
-    follow_up_date: '',
-    status: 'pendente',
-    result: '',
-    created_at: '2026-07-10T18:00:00.000Z',
-    updated_at: '2026-07-10T18:00:00.000Z',
-    history: [],
-  }]
-  const incoming = [
-    { ...existing[0], status: 'concluida', result: 'Entregue à médica' },
-    { ...existing[0], id: 'req-2', title: 'Novo laudo', type: 'exigencia_medica' },
-  ]
-
-  const merged = mergeMedicalRequirementAudit(existing, incoming, '2026-07-22T12:00:00.000Z')
-  assert.equal(merged.length, 2)
-  assert.equal(merged[0].history[0].event, 'status_changed')
-  assert.equal(merged[1].history[0].event, 'created')
-})
-
-test('registro omitido no envio é preservado para auditoria', () => {
-  const existing = [{
-    id: 'req-1', type: 'exigencia_medica', title: 'Novo laudo', details: '',
-    requested_at: '2026-07-10', due_date: '', follow_up_date: '', status: 'pendente', result: '',
-    created_at: '', updated_at: '', history: [],
-  }]
-  assert.equal(mergeMedicalRequirementAudit(existing, [], '2026-07-22T12:00:00.000Z').length, 1)
-})
 
 test('infere a situação de recursos antigos', () => {
   assert.equal(inferAppealStatus({ ...stage, scheduled_date: null, stage_key: 'recurso_junta_medica', data: { protocolo: 'SEI-123' } }), 'aguardando_agendamento')

@@ -3,7 +3,7 @@ import 'server-only'
 import { createClient } from '@/lib/supabase/server'
 import { OPEN_LEAD_STATUSES } from '@/lib/lead-funnel'
 import { requireAuth } from '@/lib/auth'
-import { IPVA_STAGE_KEYS } from '@/lib/process-workflow'
+import { getIpvaStageLabel, IPVA_STAGE_KEYS } from '@/lib/process-workflow'
 import {
   compareOperationalActions,
   deriveProcessAction,
@@ -22,7 +22,6 @@ const ACTIVE_STATUSES = new Set<ProcessStatus>([
 ])
 
 const CLOSED_STAGE_STATUSES = new Set(['concluido', 'aprovado', 'reprovado', 'nao_aplicavel'])
-const OPEN_MEDICAL_STATUSES = new Set(['pendente', 'aguardando_exame', 'aguardando_retorno', 'em_andamento'])
 
 export type RoutineCategory =
   | 'acao_equipe'
@@ -35,7 +34,6 @@ export type RoutineCategory =
   | 'documento_analise'
   | 'sem_responsavel'
   | 'autenticacao_cliente'
-  | 'exigencia_medica'
   | 'processo_parado'
 
 export interface RoutineItem {
@@ -67,6 +65,7 @@ export interface OperationalStageSummary {
   label: string
   sort_order: number
   status: string
+  notes?: string | null
   scheduled_date: string | null
   due_date: string | null
   updated_at: string
@@ -114,12 +113,6 @@ function addDays(dateKey: string, days: number) {
   return date.toISOString().slice(0, 10)
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === 'object' && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
-}
-
 function relationOne<T>(value: T | T[] | null | undefined): T | null {
   if (Array.isArray(value)) return value[0] ?? null
   return value ?? null
@@ -131,22 +124,18 @@ function maxDate(...values: Array<string | null | undefined>) {
 
 export function getProcessOperationalSummary({ process, stages, lastActivityAt }: ProcessOperationalContext) {
   const workflowStages = process.process_types?.slug === 'processo_ipva'
-    ? stages.filter(stage => (IPVA_STAGE_KEYS as readonly string[]).includes(stage.stage_key))
+    ? stages
+        .filter(stage => (IPVA_STAGE_KEYS as readonly string[]).includes(stage.stage_key))
+        .map(stage => ({ ...stage, label: getIpvaStageLabel(stage.stage_key, stage.label) }))
     : stages
   const sortedStages = [...workflowStages].sort((a, b) => a.sort_order - b.sort_order)
   const currentStage = sortedStages.find(stage => !CLOSED_STAGE_STATUSES.has(stage.status)) ?? null
-  const data = asRecord(currentStage?.data)
-  const medicalRequirements = Array.isArray(data.medical_requirements) ? data.medical_requirements : []
-  const openMedicalRequirement = medicalRequirements
-    .map(asRecord)
-    .find(requirement => OPEN_MEDICAL_STATUSES.has(String(requirement.status ?? 'pendente')))
   const action = deriveProcessAction({
     processStatus: process.status,
     nextAction: process.next_action,
     actionOwner: process.action_owner,
     actionDueDate: process.action_due_date,
-    blockedReason: process.blocked_reason
-      ?? (openMedicalRequirement ? String(openMedicalRequirement.title ?? 'Exigência médica aberta') : null),
+    blockedReason: process.blocked_reason,
     currentStage,
     today: dateKeyInSaoPaulo(),
   })
@@ -341,24 +330,6 @@ export async function getStaffOperations() {
         })
       }
 
-      const data = asRecord(stage.data)
-      const requirements = Array.isArray(data.medical_requirements) ? data.medical_requirements : []
-      for (const requirementValue of requirements) {
-        const requirement = asRecord(requirementValue)
-        if (!OPEN_MEDICAL_STATUSES.has(String(requirement.status ?? 'pendente'))) continue
-        pushItem({
-          id: `medical:${stage.id}:${String(requirement.id ?? requirement.title ?? 'open')}`,
-          category: 'exigencia_medica',
-          severity: 'high',
-          title: String(requirement.title ?? 'Exigência médica aberta'),
-          detail: stage.label,
-          href: `/processos/${process.id}`,
-          dueDate: typeof requirement.follow_up_date === 'string' ? requirement.follow_up_date : null,
-          processId: process.id,
-          clientName,
-          responsibleName,
-        })
-      }
     }
 
     if (!process.responsible_user_id && profile.role !== 'analista') {
@@ -557,7 +528,6 @@ export async function getStaffOperations() {
       dueSoon: routineItemCandidates.filter(item => item.category === 'prazo_proximo' && item.severity !== 'critical').length,
       documentsForReview: routineItemCandidates.filter(item => item.category === 'documento_analise').length,
       unassigned: routineItemCandidates.filter(item => item.category === 'sem_responsavel').length,
-      medicalRequirements: routineItemCandidates.filter(item => item.category === 'exigencia_medica').length,
       stalled: routineItemCandidates.filter(item => item.category === 'processo_parado').length,
       openLeads: leadRows?.length ?? 0,
       completedLast30Days,

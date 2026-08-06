@@ -12,7 +12,6 @@ import {
 import { getCnhStageTemplates } from '@/lib/cnh-stages'
 import { buildOperationalStageRows } from '@/lib/operational-workflows'
 import { buildServicePlanDefinitions, getServicePrerequisite } from '@/lib/service-plan'
-import { analyzeEligibility } from '@/lib/eligibility'
 import type { Client, Lead, LeadIntendedService, ProcessStatus } from '@/types/database'
 
 const intendedServiceValues = [
@@ -330,20 +329,6 @@ async function ensureLeadServiceQueue(
           void _processId
           return stage
         })
-    const eligibilityAnalysis = analyzeEligibility({
-      processTypeSlug,
-      state: clientRecord.state,
-      clientType: clientRecord.client_type,
-      disabilityType: clientRecord.disability_type,
-      disabilityTypes: clientRecord.disability_types,
-      disabilitySeverity: clientRecord.disability_severity,
-      cnhStatus: clientRecord.cnh_status,
-      cnhRestrictions: clientRecord.cnh_restrictions,
-      medicalAssessmentStatus: clientRecord.medical_assessment_status,
-      hasMedicalReport: clientRecord.has_medical_report,
-      authorizedDrivers: clientRecord.authorized_drivers,
-    })
-
     const { data: processId, error: processError } = await supabase.rpc(
       'create_process_atomic',
       {
@@ -355,8 +340,8 @@ async function ensureLeadServiceQueue(
         p_observations: `Processo criado na conversão do lead ${lead.name}.`,
         p_jurisdiction_state: clientRecord.state ?? null,
         p_vehicle_condition: null,
-        p_eligibility_status: eligibilityAnalysis?.status ?? null,
-        p_eligibility_analysis: eligibilityAnalysis ?? null,
+        p_eligibility_status: null,
+        p_eligibility_analysis: null,
         p_custom_fields: [],
         p_stages: stages,
         p_financial: null,

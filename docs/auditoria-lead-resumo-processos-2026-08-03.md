@@ -117,17 +117,22 @@ Credencial.
 
 - [x] Permitir criar e movimentar ICMS sem veículo cadastrado; atualmente a tela
   bloqueia o salvamento se não houver veículo selecionado.
+- [x] Permitir concluir o ICMS sem veículo vinculado; o veículo pode ser cadastrado
+  e associado depois da compra, inclusive após a finalização do benefício.
 - [x] Permitir criar e movimentar IPVA sem veículo cadastrado, possibilitando o
   vínculo posterior.
 - [x] Remover de ICMS/IPVA a regra `requiresVehicleBeforeStart`.
 - [x] Não exigir descrição temporária, chassi, placa ou RENAVAM quando o veículo
   ainda não foi escolhido/comprado.
+- [x] Retirar “Descrição” e “Chassi” do novo cadastro de veículo, aceitando como
+  identificação mínima marca + modelo ou placa/RENAVAM quando disponíveis.
 - [x] Exigir identificação do veículo somente no marco operacional em que ela for
   realmente necessária, com validação progressiva:
   - [x] concessionária e vendedor podem ser informados antes do veículo;
   - [x] marca/modelo podem ser preenchidos quando escolhidos;
   - [x] chassi, placa e RENAVAM ficam para quando existirem;
-  - [x] antes do protocolo que depende do veículo, validar os dados mínimos.
+  - [x] no protocolo do IPVA, que depende do veículo, validar o vínculo; no ICMS,
+    permitir concluir e registrar o veículo posteriormente.
 - [x] Preservar a regra de IPI/ICMS apenas para veículo zero-quilômetro e IPVA para
   zero-quilômetro ou usado, sem antecipar a escolha do automóvel.
 
@@ -147,6 +152,9 @@ Credencial.
   diferentes de próxima ação e prioridade.
 - [x] Separar visualmente “status do processo”, “etapa”, “situação” e “próxima
   ação”; a planilha não trata esses conceitos como sinônimos.
+- [x] Replicar no resumo do processo os controles essenciais da planilha: etapa,
+  situação, próxima ação, observações e última movimentação, preservando também
+  responsável, ator, prazo, bloqueio e última comunicação ao cliente.
 - [x] Criar um catálogo central de situações e ações sugeridas, incluindo:
   - [x] Não iniciado;
   - [x] Agendado;
@@ -207,6 +215,9 @@ Credencial.
 - [x] Remover o painel “Revisão de elegibilidade” dos detalhes de CNH, ICMS e
   IPVA; a viabilidade comercial já foi avaliada e exceções podem ir para
   observações.
+- [x] Remover também o “Assistente de elegibilidade” da criação manual e parar
+  de recalcular ou gravar uma nova análise na conversão do lead e na inclusão
+  de serviços; dados antigos permanecem somente como histórico.
 - [x] Corrigir o atalho de CNH Especial no cliente para considerar também
   processos ativos legados que ainda não estejam vinculados ao plano; hoje ele
   pode oferecer uma nova CNH mesmo com outra em andamento.
@@ -225,6 +236,10 @@ Credencial.
   decisão efetivamente ocorre.
 - [x] Remover “Veículo adaptado determinado?” da Perícia e da Junta; necessidades
   excepcionais podem ser registradas nas observações.
+- [x] Remover o editor paralelo de exigências e exames complementares; situações
+  atípicas passam a ser registradas somente em “Observações internas”.
+- [x] Preservar exigências, exames e observações estruturadas já existentes como
+  histórico não operacional na migration `034`.
 - [x] No Exame Prático, mostrar a modalidade antes de data/agendamento.
 - [x] Ao selecionar Aprovado ou Reprovado, registrar automaticamente que o cliente
   compareceu, permitindo correção manual somente em caso excepcional.
@@ -262,8 +277,13 @@ Credencial.
   checklist, evitando duas etapas consecutivas com a mesma finalidade.
 - [x] Incluir explicitamente nesse checklist a autorização de IPI válida e o
   Laudo DETRAN atualizado.
+- [x] Exibir no ICMS as situações da planilha — “Não iniciado”, “Aguardando
+  documento”, “Em análise”, “Finalizado”, “Deferido” e “Indeferido” — mantendo
+  os códigos internos compatíveis com os registros existentes.
 - [x] Manter concessionária e vendedor, mas permitir preenchê-los sem veículo e
   disponibilizá-los no resumo do cliente.
+- [x] Mostrar concessionária, vendedor, veículo, valor, compra e próxima troca
+  tanto na visão completa quanto no cadastro individual do cliente.
 - [x] Renomear “Protocolo no SIVEI” para “Protocolo de ICMS”.
 - [x] Mostrar a referência ao SIVEI somente quando a UF for São Paulo.
 - [x] Ajustar as situações e próximas ações para o vocabulário da planilha.
@@ -278,12 +298,17 @@ Credencial.
 
 ### P1 — IPVA e IMESC
 
-- [x] Permitir iniciar o IPVA antes do cadastro do veículo e vincular o automóvel
-  posteriormente.
+- [x] Permitir iniciar, protocolar e concluir o IPVA antes do cadastro do veículo,
+  vinculando o automóvel posteriormente sem bloquear o atendimento.
 - [x] Apresentar o IPVA no mesmo resumo de etapa, situação, próxima ação e
   observação usado pelas outras carteiras.
 - [x] Preservar internamente protocolo, decisão SEFAZ, recurso e conclusão, mas
   simplificar a leitura operacional para o formato da planilha.
+- [x] Retirar “Documentos iniciais” da operação principal do IPVA, preservando
+  seu conteúdo histórico, e apresentar “Protocolo do IPVA”, “Análise da SEFAZ”,
+  “Recurso” e “Conclusão do IPVA”.
+- [x] Usar no IPVA as situações “Não iniciado”, “Aguardando documento”, “Em
+  análise”, “Finalizado”, “Deferido” e “Indeferido”.
 - [x] Remover o painel “Revisão de elegibilidade” do IPVA.
 - [x] Mostrar no IPVA um resumo do IMESC vinculado — situação, agendamento e
   classificação — sem voltar a fazer o IPVA depender do IMESC.
@@ -294,9 +319,10 @@ Credencial.
 **Status do P1:** concluído no código. A migration `030` adiciona e converte o
 CPF do representante; a `031` normaliza os dados da compra; e a `032` migra a
 apresentação dos workflows, preserva campos legados como histórico e aplica as
-transições condicionais entre CNH, IPI e ICMS. O conjunto automatizado possui
-92 testes aprovados. As migrations `031` e `032` foram confirmadas no ambiente
-conectado e o fluxo completo foi homologado com dados temporários isolados.
+transições condicionais entre CNH, IPI e ICMS. A migration `035` atualiza a
+apresentação do IPVA sem apagar seu histórico. As migrations `031` e `032` foram
+confirmadas no ambiente conectado e o fluxo completo foi homologado com dados
+temporários isolados.
 
 ### P2 — Persistência, migração e qualidade
 

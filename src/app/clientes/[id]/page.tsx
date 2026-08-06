@@ -6,10 +6,10 @@ import {
   Phone, Mail, MapPin, Calendar, Shield, StickyNote, Clock, ArrowUpRight,
   Stethoscope, Zap,
   UserRound,
-  ListChecks, Play,
+  ListChecks, Play, Store,
 } from 'lucide-react'
 import { ProcessStatusBadge } from '@/components/shared/status-badge'
-import { formatCPF, formatPhone, formatDate, formatDateTime } from '@/lib/utils'
+import { formatCPF, formatPhone, formatDate, formatDateTime, formatCurrency } from '@/lib/utils'
 import { EditClientModal } from '@/components/clientes/edit-client-modal'
 import { PortalAccessCard } from '@/components/clientes/portal-access-card'
 import { ProcessQueueAction } from '@/components/clientes/process-queue-action'
@@ -109,6 +109,7 @@ export default async function ClienteDetailPage({
     { data: govCredentialMetadataRaw },
     { data: commercialOwner },
     { data: clientVehicles },
+    { data: purchaseSummary },
   ] = await Promise.all([
     supabase.from('processes')
       .select('*, process_types(name, color, slug)')
@@ -133,6 +134,13 @@ export default async function ClienteDetailPage({
       .eq('client_id', id)
       .eq('is_active', true)
       .order('created_at', { ascending: false }),
+    supabase
+      .from('client_vehicle_purchases')
+      .select('dealership, salesperson, vehicle_description, brand, model, vehicle_price, purchase_date, next_vehicle_change_date')
+      .eq('client_id', id)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ])
   const { data: serviceEngagements } = await supabase
     .from('client_service_engagements')
@@ -173,6 +181,16 @@ export default async function ClienteDetailPage({
   ))
   const currentQueueProcessId = activeQueueProcesses[0]?.id
   const nextQueueProcessId = activeQueueProcesses[1]?.id
+  const purchaseVehicle = purchaseSummary?.vehicle_description
+    || [purchaseSummary?.brand, purchaseSummary?.model].filter(Boolean).join(' ')
+  const hasPurchaseSummary = Boolean(
+    purchaseSummary?.dealership
+    || purchaseSummary?.salesperson
+    || purchaseVehicle
+    || purchaseSummary?.vehicle_price != null
+    || purchaseSummary?.purchase_date
+    || purchaseSummary?.next_vehicle_change_date,
+  )
 
   return (
     <>
@@ -589,6 +607,35 @@ export default async function ClienteDetailPage({
                   </Link>
                 </div>
               </div>
+            )}
+
+            {hasPurchaseSummary && (
+              <section className="anim anim-1 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50">
+                    <Store className="h-4 w-4 text-amber-700" />
+                  </span>
+                  <div>
+                    <h2 className="dash font-bold text-slate-900">Compra e concessionária</h2>
+                    <p className="dash mt-0.5 text-xs text-slate-500">Informações comerciais registradas no processo de ICMS.</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    ['Concessionária', purchaseSummary?.dealership || 'Não informada'],
+                    ['Vendedor da concessionária', purchaseSummary?.salesperson || 'Não informado'],
+                    ['Veículo', purchaseVehicle || 'Ainda não definido'],
+                    ['Valor do veículo', purchaseSummary?.vehicle_price != null ? formatCurrency(Number(purchaseSummary.vehicle_price)) : 'Não informado'],
+                    ['Data da compra', purchaseSummary?.purchase_date ? formatDate(purchaseSummary.purchase_date) : 'Não informada'],
+                    ['Próxima troca', purchaseSummary?.next_vehicle_change_date ? formatDate(purchaseSummary.next_vehicle_change_date) : 'Não informada'],
+                  ].map(([label, value]) => (
+                    <div key={label} className="bg-white p-4">
+                      <p className="dash text-[10px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+                      <p className="dash mt-1.5 text-sm font-semibold text-slate-800">{value}</p>
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
 
             <VehicleManager

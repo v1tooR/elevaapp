@@ -7,7 +7,6 @@ import {
   CircleDotDashed,
   FileSearch,
   Filter,
-  HeartPulse,
   GitBranch,
   KeyRound,
   ListTodo,
@@ -35,7 +34,6 @@ const CATEGORY_CONFIG: Record<RoutineCategory, { label: string; icon: typeof Ale
   documento_analise: { label: 'Documentos para análise', icon: FileSearch, color: 'text-blue-700 bg-blue-50 border-blue-200' },
   sem_responsavel: { label: 'Sem responsável', icon: UserRoundX, color: 'text-violet-700 bg-violet-50 border-violet-200' },
   autenticacao_cliente: { label: 'Autenticação do cliente', icon: KeyRound, color: 'text-orange-700 bg-orange-50 border-orange-200' },
-  exigencia_medica: { label: 'Exigências médicas', icon: HeartPulse, color: 'text-rose-700 bg-rose-50 border-rose-200' },
   processo_parado: { label: 'Processos parados', icon: AlertTriangle, color: 'text-slate-700 bg-slate-50 border-slate-200' },
 }
 

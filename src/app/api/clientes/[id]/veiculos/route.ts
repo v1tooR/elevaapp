@@ -6,20 +6,21 @@ import { createClient } from '@/lib/supabase/server'
 const clientIdSchema = z.string().uuid()
 const optionalText = z.string().trim().max(120).optional().nullable()
 const vehicleSchema = z.object({
-  description: optionalText,
   vehicleCondition: z.enum(['zero_km', 'usado']),
   plate: z.string().trim().max(10).optional().nullable(),
   renavam: z.string().trim().max(20).optional().nullable(),
-  chassis: z.string().trim().max(30).optional().nullable(),
   brand: optionalText,
   model: optionalText,
   modelYear: z.number().int().min(1900).max(2200).optional().nullable(),
 }).superRefine((value, context) => {
-  if (![value.description, value.plate, value.renavam, value.chassis].some(item => item?.trim())) {
+  const hasBrandAndModel = Boolean(value.brand?.trim() && value.model?.trim())
+  const hasOfficialIdentifier = Boolean(value.plate?.trim() || value.renavam?.trim())
+
+  if (!hasBrandAndModel && !hasOfficialIdentifier) {
     context.addIssue({
       code: 'custom',
-      path: ['description'],
-      message: 'Informe uma descricao, placa, RENAVAM ou chassi.',
+      path: ['brand'],
+      message: 'Informe marca e modelo, placa ou RENAVAM.',
     })
   }
 })
@@ -34,14 +35,14 @@ export async function POST(
 
   if (!parsedClientId.success || !parsedBody.success) {
     return NextResponse.json(
-      { error: parsedBody.error?.issues[0]?.message ?? 'Dados do veiculo invalidos.' },
+      { error: parsedBody.error?.issues[0]?.message ?? 'Dados do veículo inválidos.' },
       { status: 422 },
     )
   }
 
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Nao autorizado.' }, { status: 401 })
+  if (!user) return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 })
 
   const { data: caller } = await supabase
     .from('profiles')
@@ -51,7 +52,7 @@ export async function POST(
     .maybeSingle()
 
   if (!caller || !['super_admin', 'admin', 'analista'].includes(caller.role)) {
-    return NextResponse.json({ error: 'Sem permissao para cadastrar veiculos.' }, { status: 403 })
+    return NextResponse.json({ error: 'Sem permissão para cadastrar veículos.' }, { status: 403 })
   }
 
   const value = parsedBody.data
@@ -59,11 +60,11 @@ export async function POST(
     .from('client_vehicles')
     .insert({
       client_id: parsedClientId.data,
-      description: value.description || null,
+      description: null,
       vehicle_condition: value.vehicleCondition,
       plate: value.plate || null,
       renavam: value.renavam || null,
-      chassis: value.chassis || null,
+      chassis: null,
       brand: value.brand || null,
       model: value.model || null,
       model_year: value.modelYear ?? null,
@@ -74,7 +75,7 @@ export async function POST(
 
   if (error || !vehicle) {
     return NextResponse.json(
-      { error: error?.message ?? 'Nao foi possivel cadastrar o veiculo.' },
+      { error: error?.message ?? 'Não foi possível cadastrar o veículo.' },
       { status: error?.code === '23505' ? 409 : 400 },
     )
   }

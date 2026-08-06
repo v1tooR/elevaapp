@@ -5,18 +5,9 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { AlertTriangle, CheckCircle2, Clock3, ExternalLink, Loader2, RefreshCw, Scale } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { IPVA_STAGE_KEYS } from '@/lib/process-workflow'
+import { getIpvaStageLabel, getIpvaStageStatusLabel, IPVA_STAGE_KEYS } from '@/lib/process-workflow'
 import { formatDate } from '@/lib/utils'
 import type { Document, LegalRuleVersion, ProcessStage } from '@/types/database'
-
-const STATUS_LABELS: Record<string, string> = {
-  pendente: 'Pendente',
-  em_andamento: 'Em andamento',
-  concluido: 'Concluído',
-  aprovado: 'Aprovado',
-  reprovado: 'Indeferido',
-  nao_aplicavel: 'Não aplicável',
-}
 
 const STATUS_STYLES: Record<string, string> = {
   pendente: 'bg-slate-100 text-slate-600 border-slate-200',
@@ -114,9 +105,9 @@ export function IpvaStagesPanel({ processId, stages, documents, legalRules = [] 
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-semibold text-slate-800">{stage.label}</p>
+                    <p className="text-sm font-semibold text-slate-800">{getIpvaStageLabel(stage.stage_key, stage.label)}</p>
                     <span className={`rounded-full border px-2 py-0.5 text-[10px] font-bold ${STATUS_STYLES[stage.status] ?? STATUS_STYLES.pendente}`}>
-                      {STATUS_LABELS[stage.status] ?? stage.status}
+                      {getIpvaStageStatusLabel(stage.stage_key, stage.status)}
                     </span>
                   </div>
                   <div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">

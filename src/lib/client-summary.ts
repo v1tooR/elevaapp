@@ -53,6 +53,7 @@ export const CLIENT_DOCUMENT_STATE_LABELS: Record<ClientDocumentState, string> =
 }
 
 export const CLIENT_SUMMARY_COLUMNS = [
+  ['email', 'E-mail'],
   ['cadastro', 'Cadastro'],
   ['servicos', 'Serviços'],
   ['contrato', 'Contrato'],

@@ -9,7 +9,6 @@ import { DocumentUploader } from '@/components/shared/document-uploader'
 import { formatDate, formatDateTime, formatCurrency, HISTORY_ACTION_LABELS } from '@/lib/utils'
 import {
   APPEAL_STATUS_LABELS,
-  getOpenMedicalRequirements,
   inferAppealStatus,
 } from '@/lib/cnh-medical-workflow'
 import { getOperationalWorkflowDefinition, hasOperationalWorkflow } from '@/lib/operational-workflows'
@@ -45,7 +44,7 @@ const STAGE_STATUS_LABEL: Record<string, string> = {
   nao_aplicavel: 'Não aplicável',
 }
 
-type MedicalFollowUpStage = {
+type StageOperationalInput = {
   id: string
   stage_key?: string
   scheduled_date?: string | null
@@ -54,31 +53,7 @@ type MedicalFollowUpStage = {
   data?: Record<string, unknown> | null
 }
 
-function getMedicalFollowUpCopy(stage?: MedicalFollowUpStage | null) {
-  if (!stage || !['pericia_medica', 'recurso_junta_medica'].includes(stage.stage_key ?? '')) return null
-  const openRequirements = getOpenMedicalRequirements({ ...stage, stage_key: stage.stage_key ?? '' })
-  if (openRequirements.length === 0) return null
-
-  const first = openRequirements[0]
-  const isExam = first.type === 'exame_complementar'
-  const title = openRequirements.length > 1
-    ? `${openRequirements.length} solicitações médicas em aberto`
-    : first.status === 'aguardando_retorno'
-      ? 'Aguardando retorno médico'
-      : `Aguardando ${first.title || (isExam ? 'exame complementar' : 'exigência médica')}`
-
-  return {
-    title,
-    desc: isExam
-      ? 'A avaliação médica ainda não foi concluída porque existe um exame complementar em aberto.'
-      : 'A avaliação médica ainda não foi concluída porque existe uma nova exigência em aberto.',
-    tip: first.follow_up_date
-      ? `Retorno médico previsto para ${formatDate(first.follow_up_date)}.`
-      : 'Siga as orientações enviadas pela equipe e encaminhe o resultado assim que estiver disponível.',
-  }
-}
-
-function getAppealCopy(stage?: MedicalFollowUpStage | null) {
+function getAppealCopy(stage?: StageOperationalInput | null) {
   if (!stage || stage.stage_key !== 'recurso_junta_medica') return null
   const status = inferAppealStatus({ ...stage, stage_key: stage.stage_key })
 
@@ -101,8 +76,8 @@ function getAppealCopy(stage?: MedicalFollowUpStage | null) {
   }
 }
 
-function getStageOperationalCopy(stage?: MedicalFollowUpStage | null) {
-  return getMedicalFollowUpCopy(stage) ?? getAppealCopy(stage)
+function getStageOperationalCopy(stage?: StageOperationalInput | null) {
+  return getAppealCopy(stage)
 }
 
 // ─── Page ────────────────────────────────────────────────────────────────────

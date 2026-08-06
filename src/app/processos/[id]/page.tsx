@@ -12,9 +12,11 @@ import { InitCnhStagesButton } from '@/components/processos/init-cnh-stages-butt
 import { IpvaStagesPanel } from '@/components/processos/ipva-stages-panel'
 import { OperationalStagesPanel } from '@/components/processos/operational-stages-panel'
 import { ProcessCommunicationForm } from '@/components/processos/process-communication-form'
-import { hasOperationalWorkflow } from '@/lib/operational-workflows'
+import { getOperationalStageTemplate, hasOperationalWorkflow } from '@/lib/operational-workflows'
 import { IMESC_BOARD_LABELS, IMESC_OPERATIONAL_LABELS } from '@/lib/imesc-workflow'
 import { getProcessOperationalSummary, type OperationalProcessSummary, type OperationalStageSummary } from '@/lib/staff-operations'
+import { STAGE_STATUS_LABELS } from '@/lib/process-actions'
+import { getIpvaStageStatusLabel } from '@/lib/process-workflow'
 import type {
   CalendarEvent,
   Client,
@@ -116,6 +118,16 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
   const lastClientUpdate = process.last_client_update_at
     ?? processHistory.find(item => item.client_visible)?.created_at
     ?? null
+  const operationalStageTemplate = operational.currentStage
+    ? getOperationalStageTemplate(pt?.slug ?? '', operational.currentStage.stage_key)
+    : null
+  const operationalSituationLabel = operational.stageStatus
+    ? pt?.slug === 'processo_ipva' && operational.currentStage
+      ? getIpvaStageStatusLabel(operational.currentStage.stage_key, operational.stageStatus)
+      : operationalStageTemplate?.statusLabels?.[operational.stageStatus as keyof typeof operationalStageTemplate.statusLabels]
+      ?? STAGE_STATUS_LABELS[operational.stageStatus]
+      ?? operational.stageStatus
+    : 'Sem status de etapa'
 
   return (
     <>
@@ -229,14 +241,17 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
             <h2 className="dash text-sm font-bold text-slate-900">Resumo operacional</h2>
             <p className="mt-0.5 text-xs text-slate-500">O ponto atual do caso e o que precisa acontecer em seguida.</p>
           </div>
-          <div className="grid gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-px bg-slate-100 sm:grid-cols-2 lg:grid-cols-5">
             {[
               { label: 'Etapa atual', value: operational.currentStage?.label ?? 'Sem etapa aberta', icon: ListChecks },
+              { label: 'Situação', value: operationalSituationLabel, icon: CircleArrowRight },
               { label: 'Próxima ação', value: operational.nextAction, icon: CircleArrowRight },
               { label: 'Quem deve agir', value: actionOwnerLabels[operational.actor] ?? operational.actor, icon: UserRound },
               { label: 'Prazo', value: operational.dueDate ? formatDate(operational.dueDate) : 'Sem prazo definido', icon: Calendar },
               { label: 'Responsável', value: responsible?.name ?? 'Não atribuído', icon: UserRound },
               { label: 'Bloqueio', value: operational.blocker ?? 'Nenhum bloqueio registrado', icon: AlertTriangle },
+              { label: 'Observações', value: operational.currentStage?.notes?.trim() || process.observations?.trim() || 'Sem observações registradas', icon: FileText },
+              { label: 'Última movimentação', value: operational.lastActivity ? formatDateTime(operational.lastActivity) : 'Ainda não registrada', icon: Clock },
               { label: 'Última atualização ao cliente', value: lastClientUpdate ? formatDateTime(lastClientUpdate) : 'Ainda não enviada', icon: Clock },
             ].map(item => (
               <div key={item.label} className="min-h-24 bg-white p-4">
