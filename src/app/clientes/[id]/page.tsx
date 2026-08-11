@@ -276,18 +276,18 @@ export default async function ClienteDetailPage({
                     {formatPhone(client.phone)}
                   </span>
                 )}
-                <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 p-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white">
-                    <UserRound className="h-3.5 w-3.5 text-slate-500" />
-                  </div>
-                  <div>
-                    <p className="dash text-[10px] text-slate-400">Responsavel comercial</p>
-                    <p className="dash text-sm font-semibold text-slate-800">
-                      {commercialOwner?.name ?? 'Nao definido'}
-                    </p>
-                    <p className="dash text-[10px] text-slate-400">Separado do responsavel operacional</p>
-                  </div>
-                </div>
+                <span
+                  className="dash inline-flex max-w-full items-center gap-2 rounded-lg border border-white/10 bg-white/10 px-2.5 py-1"
+                  title="O responsável comercial é separado do responsável operacional de cada processo."
+                >
+                  <UserRound className="h-3.5 w-3.5 shrink-0 text-primary-foreground/60" aria-hidden="true" />
+                  <span className="text-xs font-medium text-primary-foreground/60">Resp. comercial</span>
+                  {commercialOwner?.name ? (
+                    <span className="truncate text-xs font-semibold text-white">{commercialOwner.name}</span>
+                  ) : (
+                    <span className="text-xs font-medium italic text-primary-foreground/55">não definido</span>
+                  )}
+                </span>
                 {(client.city || client.state) && (
                   <span className="text-xs font-medium text-primary-foreground/75 bg-white/10 border border-white/10 rounded-lg px-2.5 py-1 dash">
                     {[client.city, client.state].filter(Boolean).join(' / ')}

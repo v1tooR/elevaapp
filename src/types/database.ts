@@ -145,6 +145,7 @@ export interface Client {
   birth_date?: string
   phone?: string
   email?: string
+  email_normalized?: string
   address?: string
   city?: string
   state?: string

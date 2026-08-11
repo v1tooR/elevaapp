@@ -14,6 +14,7 @@ import { EMPTY_CLIENT_ELIGIBILITY, clientEligibilityPayload, type ClientEligibil
 import { GovAccessFields } from '@/components/clientes/gov-access-fields'
 import { EMPTY_GOV_ACCESS, govAccessPayload, type GovAccessFormValue } from '@/lib/gov-access'
 import { LEAD_SERVICE_OPTIONS, normalizeLeadIntendedServices } from '@/lib/lead-eligibility'
+import { duplicateClientMessage, findClientWithEmail } from '@/lib/client-duplicates'
 import type { LeadIntendedService } from '@/types/database'
 
 const CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789@#!'
@@ -63,12 +64,20 @@ export default function NovoClientePage() {
     setError('')
 
     const supabase = createClient()
+
+    const emailOwner = await findClientWithEmail(supabase, form.email)
+    if (emailOwner) {
+      setError(`Este e-mail já está cadastrado para o cliente ${emailOwner.name}.`)
+      setLoading(false)
+      return
+    }
+
     const { data, error: err } = await supabase.from('clients').insert({
       name: form.name,
       cpf: form.cpf || null,
       birth_date: form.birth_date || null,
       phone: form.phone || null,
-      email: form.email || null,
+      email: form.email.trim() || null,
       address: form.address || null,
       city: form.city || null,
       state: form.state || null,
@@ -78,7 +87,7 @@ export default function NovoClientePage() {
     }).select().single()
 
     if (err) {
-      setError(err.code === '23505' ? 'Já existe um cliente cadastrado com este CPF.' : 'Erro ao cadastrar cliente: ' + err.message)
+      setError(duplicateClientMessage(err, 'create') ?? 'Erro ao cadastrar cliente: ' + err.message)
       setLoading(false)
       return
     }

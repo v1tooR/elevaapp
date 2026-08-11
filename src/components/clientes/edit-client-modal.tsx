@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { ClientEligibilityFields } from '@/components/clientes/client-eligibility-fields'
 import { clientEligibilityFromRecord, clientEligibilityPayload } from '@/lib/client-eligibility'
+import { duplicateClientMessage, findClientWithEmail } from '@/lib/client-duplicates'
 import type { Client } from '@/types/database'
 import { GovAccessFields } from '@/components/clientes/gov-access-fields'
 import {
@@ -67,12 +68,21 @@ export function EditClientModal({
     setLoading(true)
     setError('')
     const supabase = createClient()
+
+    const emailOwner = await findClientWithEmail(supabase, form.email, client.id)
+    if (emailOwner) {
+      setError(`Este e-mail já está cadastrado para o cliente ${emailOwner.name}.`)
+      setLoading(false)
+      setTab('pessoal')
+      return
+    }
+
     const { error: err } = await supabase.from('clients').update({
       ...form,
       birth_date: form.birth_date || null,
       cpf: form.cpf || null,
       phone: form.phone || null,
-      email: form.email || null,
+      email: form.email.trim() || null,
       address: form.address || null,
       city: form.city || null,
       state: form.state || null,
@@ -81,7 +91,7 @@ export function EditClientModal({
       ...clientEligibilityPayload(eligi),
     }).eq('id', client.id)
 
-    if (err) { setError(err.code === '23505' ? 'Já existe outro cliente cadastrado com este CPF.' : err.message); setLoading(false); return }
+    if (err) { setError(duplicateClientMessage(err, 'update') ?? err.message); setLoading(false); return }
 
     if (govCredentialPassword) {
       const credentialResponse = await fetch(`/api/clientes/${client.id}/gov-credential`, {

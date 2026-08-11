@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
@@ -295,6 +296,28 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
     setPasswordReset({ open: false, password: '', confirmPassword: '', mustChangePassword: true })
     setShowResetPassword(false)
   }
+
+  useEffect(() => {
+    if (!editingUser) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || savingEdit || deleting) return
+      setEditingUser(null)
+      setEditError(null)
+      setConfirmDelete(false)
+      setPasswordReset({ open: false, password: '', confirmPassword: '', mustChangePassword: true })
+      setShowResetPassword(false)
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    document.addEventListener('keydown', onKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [editingUser, savingEdit, deleting])
 
   const saveEmployee = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -820,15 +843,20 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
         </div>
       </div>
 
-      {editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/30 p-4 backdrop-blur-[2px]">
+      {editingUser && createPortal(
+        <div
+          className="fixed inset-0 z-[100] flex items-end justify-center bg-foreground/40 p-0 backdrop-blur-[2px] sm:items-center sm:p-4"
+          onMouseDown={event => {
+            if (event.target === event.currentTarget) closeEditor()
+          }}
+        >
           <div
             role="dialog"
             aria-modal="true"
             aria-labelledby="edit-employee-title"
-            className="eleva-surface max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto shadow-2xl"
+            className="eleva-surface flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-b-none shadow-2xl sm:max-h-[min(90dvh,44rem)] sm:rounded-b-[var(--radius-xl)]"
           >
-            <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-4">
+            <div className="flex shrink-0 items-start justify-between gap-4 border-b border-border px-5 py-4">
               <div>
                 <p className="dash text-[10px] font-bold uppercase tracking-[0.14em] text-primary">Gestão de acesso</p>
                 <h3 id="edit-employee-title" className="dash mt-0.5 text-lg font-bold text-foreground">
@@ -849,221 +877,224 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
               </button>
             </div>
 
-            <form onSubmit={saveEmployee} className="p-5">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label htmlFor="edit-employee-name" className="dash mb-1.5 block text-xs font-semibold text-foreground">Nome completo</label>
-                  <input
-                    id="edit-employee-name"
-                    value={editingUser.name}
-                    onChange={event => setEditingUser(current => current ? { ...current, name: event.target.value } : current)}
-                    className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
-                    autoComplete="name"
-                    required
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label htmlFor="edit-employee-email" className="dash mb-1.5 block text-xs font-semibold text-foreground">E-mail de acesso</label>
-                  <input
-                    id="edit-employee-email"
-                    type="email"
-                    value={editingUser.email}
-                    onChange={event => setEditingUser(current => current ? { ...current, email: event.target.value } : current)}
-                    className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
-                    autoComplete="email"
-                    required
-                  />
-                  <p className="dash mt-1 text-[10px] text-muted-foreground">Este também será o novo e-mail usado no login.</p>
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label htmlFor="edit-employee-role" className="dash mb-1.5 block text-xs font-semibold text-foreground">Função</label>
-                  <div className="relative">
-                    <select
-                      id="edit-employee-role"
-                      value={editingUser.role}
-                      onChange={event => setEditingUser(current => current ? { ...current, role: event.target.value as EmployeeRole } : current)}
-                      className="dash block w-full appearance-none rounded-xl border border-input bg-card px-3.5 py-2.5 pr-9 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
-                    >
-                      <option value="analista">Analista</option>
-                      <option value="admin">Administrador</option>
-                    </select>
-                    <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
+            <form onSubmit={saveEmployee} className="flex min-h-0 flex-1 flex-col">
+              <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label htmlFor="edit-employee-name" className="dash mb-1.5 block text-xs font-semibold text-foreground">Nome completo</label>
+                    <input
+                      id="edit-employee-name"
+                      value={editingUser.name}
+                      onChange={event => setEditingUser(current => current ? { ...current, name: event.target.value } : current)}
+                      className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                      autoComplete="name"
+                      required
+                    />
                   </div>
-                  <p className="dash mt-1 text-[10px] text-muted-foreground">Define as áreas que o funcionário poderá acessar.</p>
-                </div>
 
-                <div className="sm:col-span-2 rounded-xl border border-input bg-muted/30 p-3.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="dash flex items-center gap-1.5 text-xs font-bold text-foreground">
-                        <KeyRound className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
-                        Senha de acesso
-                      </p>
-                      <p className="dash mt-0.5 text-[10px] leading-snug text-muted-foreground">
-                        Use quando o funcionário não recebeu o convite ou perdeu o acesso.
-                      </p>
+                  <div className="sm:col-span-2">
+                    <label htmlFor="edit-employee-email" className="dash mb-1.5 block text-xs font-semibold text-foreground">E-mail de acesso</label>
+                    <input
+                      id="edit-employee-email"
+                      type="email"
+                      value={editingUser.email}
+                      onChange={event => setEditingUser(current => current ? { ...current, email: event.target.value } : current)}
+                      className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                      autoComplete="email"
+                      required
+                    />
+                    <p className="dash mt-1 text-[10px] text-muted-foreground">Este também será o novo e-mail usado no login.</p>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <label htmlFor="edit-employee-role" className="dash mb-1.5 block text-xs font-semibold text-foreground">Função</label>
+                    <div className="relative">
+                      <select
+                        id="edit-employee-role"
+                        value={editingUser.role}
+                        onChange={event => setEditingUser(current => current ? { ...current, role: event.target.value as EmployeeRole } : current)}
+                        className="dash block w-full appearance-none rounded-xl border border-input bg-card px-3.5 py-2.5 pr-9 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                      >
+                        <option value="analista">Analista</option>
+                        <option value="admin">Administrador</option>
+                      </select>
+                      <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setPasswordReset(current => ({
-                          open: !current.open,
-                          password: '',
-                          confirmPassword: '',
-                          mustChangePassword: true,
-                        }))
-                        setShowResetPassword(false)
-                        setEditError(null)
-                      }}
-                      disabled={savingEdit || deleting}
-                      className="dash shrink-0 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                    >
-                      {passwordReset.open ? 'Cancelar' : 'Redefinir senha'}
-                    </button>
+                    <p className="dash mt-1 text-[10px] text-muted-foreground">Define as áreas que o funcionário poderá acessar.</p>
                   </div>
 
-                  {passwordReset.open && (
-                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                      <div className="sm:col-span-2 flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const password = generatePassword()
-                            setPasswordReset(current => ({ ...current, password, confirmPassword: password }))
-                            setShowResetPassword(true)
-                          }}
-                          className="dash inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted"
-                        >
-                          <RefreshCw className="h-3 w-3" aria-hidden="true" />
-                          Gerar senha
-                        </button>
-                      </div>
-
+                  <div className="sm:col-span-2 rounded-xl border border-input bg-muted/30 p-3.5">
+                    <div className="flex items-start justify-between gap-3">
                       <div>
-                        <label htmlFor="reset-employee-password" className="dash mb-1.5 block text-xs font-semibold text-foreground">Nova senha</label>
-                        <div className="relative">
+                        <p className="dash flex items-center gap-1.5 text-xs font-bold text-foreground">
+                          <KeyRound className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                          Senha de acesso
+                        </p>
+                        <p className="dash mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                          Use quando o funcionário não recebeu o convite ou perdeu o acesso.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setPasswordReset(current => ({
+                            open: !current.open,
+                            password: '',
+                            confirmPassword: '',
+                            mustChangePassword: true,
+                          }))
+                          setShowResetPassword(false)
+                          setEditError(null)
+                        }}
+                        disabled={savingEdit || deleting}
+                        className="dash shrink-0 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                      >
+                        {passwordReset.open ? 'Cancelar' : 'Redefinir senha'}
+                      </button>
+                    </div>
+
+                    {passwordReset.open && (
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div className="sm:col-span-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const password = generatePassword()
+                              setPasswordReset(current => ({ ...current, password, confirmPassword: password }))
+                              setShowResetPassword(true)
+                            }}
+                            className="dash inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted"
+                          >
+                            <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                            Gerar senha
+                          </button>
+                        </div>
+
+                        <div>
+                          <label htmlFor="reset-employee-password" className="dash mb-1.5 block text-xs font-semibold text-foreground">Nova senha</label>
+                          <div className="relative">
+                            <input
+                              id="reset-employee-password"
+                              type={showResetPassword ? 'text' : 'password'}
+                              value={passwordReset.password}
+                              onChange={event => setPasswordReset(current => ({ ...current, password: event.target.value }))}
+                              className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                              placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
+                              autoComplete="new-password"
+                              minLength={MIN_PASSWORD_LENGTH}
+                              required
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowResetPassword(current => !current)}
+                              aria-label={showResetPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                            >
+                              {showResetPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                            </button>
+                          </div>
+                        </div>
+
+                        <div>
+                          <label htmlFor="reset-employee-password-confirm" className="dash mb-1.5 block text-xs font-semibold text-foreground">Confirmar senha</label>
                           <input
-                            id="reset-employee-password"
+                            id="reset-employee-password-confirm"
                             type={showResetPassword ? 'text' : 'password'}
-                            value={passwordReset.password}
-                            onChange={event => setPasswordReset(current => ({ ...current, password: event.target.value }))}
-                            className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
-                            placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
+                            value={passwordReset.confirmPassword}
+                            onChange={event => setPasswordReset(current => ({ ...current, confirmPassword: event.target.value }))}
+                            className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                            placeholder="Repita a senha"
                             autoComplete="new-password"
                             minLength={MIN_PASSWORD_LENGTH}
                             required
                           />
-                          <button
-                            type="button"
-                            onClick={() => setShowResetPassword(current => !current)}
-                            aria-label={showResetPassword ? 'Ocultar senha' : 'Mostrar senha'}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
-                          >
-                            {showResetPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
-                          </button>
                         </div>
-                      </div>
 
+                        <label className="dash sm:col-span-2 flex items-start gap-2 text-[11px] leading-snug text-muted-foreground">
+                          <input
+                            type="checkbox"
+                            checked={passwordReset.mustChangePassword}
+                            onChange={event => setPasswordReset(current => ({ ...current, mustChangePassword: event.target.checked }))}
+                            className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-input accent-primary"
+                          />
+                          <span>
+                            <span className="font-semibold text-foreground">Exigir troca de senha no próximo acesso.</span>{' '}
+                            A senha definida aqui vale como provisória.
+                          </span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {editError && (
+                  <p role="alert" className="dash mt-4 rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+                    {editError}
+                  </p>
+                )}
+
+                {confirmDelete && (
+                  <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/10 p-3.5">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
                       <div>
-                        <label htmlFor="reset-employee-password-confirm" className="dash mb-1.5 block text-xs font-semibold text-foreground">Confirmar senha</label>
-                        <input
-                          id="reset-employee-password-confirm"
-                          type={showResetPassword ? 'text' : 'password'}
-                          value={passwordReset.confirmPassword}
-                          onChange={event => setPasswordReset(current => ({ ...current, confirmPassword: event.target.value }))}
-                          className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
-                          placeholder="Repita a senha"
-                          autoComplete="new-password"
-                          minLength={MIN_PASSWORD_LENGTH}
-                          required
-                        />
+                        <p className="dash text-xs font-bold text-destructive">Desligar este funcionário?</p>
+                        <p className="dash mt-1 text-[11px] leading-relaxed text-muted-foreground">
+                          O acesso e as sessões serão revogados. A autoria permanecerá no histórico e os itens em aberto serão transferidos.
+                        </p>
                       </div>
-
-                      <label className="dash sm:col-span-2 flex items-start gap-2 text-[11px] leading-snug text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          checked={passwordReset.mustChangePassword}
-                          onChange={event => setPasswordReset(current => ({ ...current, mustChangePassword: event.target.checked }))}
-                          className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-input accent-primary"
+                    </div>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <label className="dash text-xs font-semibold text-foreground">
+                        Transferir operação para
+                        <select
+                          value={offboarding.replacementProfileId}
+                          onChange={event => setOffboarding(current => ({ ...current, replacementProfileId: event.target.value }))}
+                          className="mt-1.5 block w-full rounded-lg border border-input bg-card px-3 py-2 text-xs"
+                          required
+                        >
+                          <option value="">Selecione o responsável</option>
+                          {activeEmployees.filter(item => item.id !== editingUser.id).map(item => (
+                            <option key={item.id} value={item.id}>{item.name} — {ROLE_CFG[item.role].label}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <label className="dash text-xs font-semibold text-foreground">
+                        Motivo do desligamento
+                        <textarea
+                          value={offboarding.reason}
+                          onChange={event => setOffboarding(current => ({ ...current, reason: event.target.value }))}
+                          className="mt-1.5 block min-h-20 w-full rounded-lg border border-input bg-card px-3 py-2 text-xs"
+                          maxLength={500}
+                          placeholder="Registro interno opcional"
                         />
-                        <span>
-                          <span className="font-semibold text-foreground">Exigir troca de senha no próximo acesso.</span>{' '}
-                          A senha definida aqui vale como provisória.
-                        </span>
                       </label>
                     </div>
-                  )}
-                </div>
-              </div>
-
-              {editError && (
-                <p role="alert" className="dash mt-4 rounded-xl border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-                  {editError}
-                </p>
-              )}
-
-              {confirmDelete && (
-                <div className="mt-4 rounded-xl border border-destructive/20 bg-destructive/10 p-3.5">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden="true" />
-                    <div>
-                      <p className="dash text-xs font-bold text-destructive">Desligar este funcionário?</p>
-                      <p className="dash mt-1 text-[11px] leading-relaxed text-muted-foreground">
-                        O acesso e as sessões serão revogados. A autoria permanecerá no histórico e os itens em aberto serão transferidos.
-                      </p>
+                    <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setConfirmDelete(false)}
+                        disabled={deleting || !offboarding.replacementProfileId}
+                        className="dash rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                      >
+                        Manter funcionário
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deleteEmployee}
+                        disabled={deleting}
+                        className="dash inline-flex items-center justify-center gap-2 rounded-lg bg-destructive px-3 py-2 text-xs font-bold text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-60"
+                      >
+                        {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}
+                        {deleting ? 'Desligando...' : 'Confirmar desligamento'}
+                      </button>
                     </div>
                   </div>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <label className="dash text-xs font-semibold text-foreground">
-                      Transferir operação para
-                      <select
-                        value={offboarding.replacementProfileId}
-                        onChange={event => setOffboarding(current => ({ ...current, replacementProfileId: event.target.value }))}
-                        className="mt-1.5 block w-full rounded-lg border border-input bg-card px-3 py-2 text-xs"
-                        required
-                      >
-                        <option value="">Selecione o responsável</option>
-                        {activeEmployees.filter(item => item.id !== editingUser.id).map(item => (
-                          <option key={item.id} value={item.id}>{item.name} — {ROLE_CFG[item.role].label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="dash text-xs font-semibold text-foreground">
-                      Motivo do desligamento
-                      <textarea
-                        value={offboarding.reason}
-                        onChange={event => setOffboarding(current => ({ ...current, reason: event.target.value }))}
-                        className="mt-1.5 block min-h-20 w-full rounded-lg border border-input bg-card px-3 py-2 text-xs"
-                        maxLength={500}
-                        placeholder="Registro interno opcional"
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-3 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDelete(false)}
-                      disabled={deleting || !offboarding.replacementProfileId}
-                      className="dash rounded-lg border border-border bg-card px-3 py-2 text-xs font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                    >
-                      Manter funcionário
-                    </button>
-                    <button
-                      type="button"
-                      onClick={deleteEmployee}
-                      disabled={deleting}
-                      className="dash inline-flex items-center justify-center gap-2 rounded-lg bg-destructive px-3 py-2 text-xs font-bold text-destructive-foreground transition-colors hover:bg-destructive/90 disabled:opacity-60"
-                    >
-                      {deleting ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" /> : <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />}
-                      {deleting ? 'Desligando...' : 'Confirmar desligamento'}
-                    </button>
-                  </div>
-                </div>
-              )}
+                )}
 
-              <div className="mt-5 flex flex-col-reverse gap-2 border-t border-border pt-4 sm:flex-row sm:items-center sm:justify-between">
+              </div>
+
+              <div className="flex shrink-0 flex-col-reverse gap-2 border-t border-border bg-card px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(true)}
@@ -1094,7 +1125,8 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </section>
   )

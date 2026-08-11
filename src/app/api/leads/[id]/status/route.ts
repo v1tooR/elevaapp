@@ -12,6 +12,7 @@ import {
 import { getCnhStageTemplates } from '@/lib/cnh-stages'
 import { buildOperationalStageRows } from '@/lib/operational-workflows'
 import { buildServicePlanDefinitions, getServicePrerequisite } from '@/lib/service-plan'
+import { findClientWithEmail } from '@/lib/client-duplicates'
 import type { Client, Lead, LeadIntendedService, ProcessStatus } from '@/types/database'
 
 const intendedServiceValues = [
@@ -407,7 +408,7 @@ export async function PATCH(
   const { data: lead, error: leadError } = await supabase
     .from('leads')
     .select(`
-      id, name, status, converted_client_id, assigned_to,
+      id, name, email, status, converted_client_id, assigned_to,
       intended_service, intended_services, is_driver
     `)
     .eq('id', id)
@@ -473,6 +474,17 @@ export async function PATCH(
       })
 
       if (error || !data) {
+        if (error?.code === '23505' && `${error.message} ${error.details ?? ''}`.toLowerCase().includes('email')) {
+          const owner = await findClientWithEmail(supabase, lead.email as string | null)
+          return NextResponse.json(
+            {
+              error: owner
+                ? `O e-mail deste lead já pertence ao cliente ${owner.name}. Ajuste o e-mail do lead ou use o cadastro existente.`
+                : 'O e-mail deste lead já pertence a outro cliente. Ajuste o e-mail do lead antes de converter.',
+            },
+            { status: 409 },
+          )
+        }
         return NextResponse.json(
           { error: error?.message ?? 'Não foi possível criar o cliente.' },
           { status: 400 },
