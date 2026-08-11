@@ -7,9 +7,15 @@ import {
   BriefcaseBusiness,
   Check,
   ChevronDown,
+  Copy,
+  Eye,
+  EyeOff,
+  KeyRound,
   Loader2,
+  Mail,
   Pencil,
   Plus,
+  RefreshCw,
   Save,
   Search,
   ShieldCheck,
@@ -22,6 +28,15 @@ import type { Profile, UserRole } from '@/types/database'
 
 type UserView = 'funcionarios' | 'clientes'
 type EmployeeRole = Extract<UserRole, 'admin' | 'analista'>
+type AccessMethod = 'password' | 'invite'
+
+const MIN_PASSWORD_LENGTH = 8
+const PASSWORD_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*'
+
+function generatePassword() {
+  const values = crypto.getRandomValues(new Uint32Array(14))
+  return Array.from(values, value => PASSWORD_ALPHABET[value % PASSWORD_ALPHABET.length]).join('')
+}
 
 const ROLE_CFG: Record<UserRole, { label: string; description: string; badge: string }> = {
   super_admin: {
@@ -110,11 +125,24 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [offboarding, setOffboarding] = useState({ replacementProfileId: '', reason: '' })
+  const [showPassword, setShowPassword] = useState(false)
+  const [copied, setCopied] = useState(false)
   const [newUser, setNewUser] = useState({
     email: '',
     name: '',
     role: 'analista' as EmployeeRole,
+    accessMethod: 'password' as AccessMethod,
+    password: '',
+    confirmPassword: '',
+    mustChangePassword: true,
   })
+  const [passwordReset, setPasswordReset] = useState({
+    open: false,
+    password: '',
+    confirmPassword: '',
+    mustChangePassword: true,
+  })
+  const [showResetPassword, setShowResetPassword] = useState(false)
 
   const employees = profiles.filter(profile => profile.role !== 'cliente')
   const activeEmployees = employees.filter(profile => profile.is_active)
@@ -165,16 +193,68 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
     }
   }
 
+  const resetCreateForm = () => {
+    setNewUser({
+      email: '',
+      name: '',
+      role: 'analista',
+      accessMethod: 'password',
+      password: '',
+      confirmPassword: '',
+      mustChangePassword: true,
+    })
+    setShowPassword(false)
+    setCopied(false)
+  }
+
+  const fillGeneratedPassword = () => {
+    const password = generatePassword()
+    setNewUser(current => ({ ...current, password, confirmPassword: password }))
+    setShowPassword(true)
+    setCopied(false)
+  }
+
+  const copyPassword = async (password: string) => {
+    try {
+      await navigator.clipboard.writeText(password)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setFormError('Não foi possível copiar. Selecione e copie a senha manualmente.')
+    }
+  }
+
   const createUser = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setCreating(true)
     setFormError(null)
+
+    const definesPassword = newUser.accessMethod === 'password'
+    if (definesPassword) {
+      if (newUser.password.length < MIN_PASSWORD_LENGTH) {
+        setFormError(`A senha deve ter no mínimo ${MIN_PASSWORD_LENGTH} caracteres.`)
+        return
+      }
+      if (newUser.password !== newUser.confirmPassword) {
+        setFormError('As senhas não coincidem.')
+        return
+      }
+    }
+
+    setCreating(true)
 
     try {
       const response = await fetch('/api/usuarios', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newUser),
+        body: JSON.stringify({
+          name: newUser.name,
+          email: newUser.email,
+          role: newUser.role,
+          accessMethod: newUser.accessMethod,
+          ...(definesPassword
+            ? { password: newUser.password, mustChangePassword: newUser.mustChangePassword }
+            : {}),
+        }),
       })
 
       if (!response.ok) {
@@ -182,7 +262,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
       }
 
       setShowCreate(false)
-      setNewUser({ email: '', name: '', role: 'analista' })
+      resetCreateForm()
       router.refresh()
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Não foi possível criar o funcionário.')
@@ -203,7 +283,8 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
     setOffboarding({ replacementProfileId: '', reason: '' })
     setEditError(null)
     setConfirmDelete(false)
-    setOffboarding({ replacementProfileId: '', reason: '' })
+    setPasswordReset({ open: false, password: '', confirmPassword: '', mustChangePassword: true })
+    setShowResetPassword(false)
   }
 
   const closeEditor = () => {
@@ -211,20 +292,39 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
     setEditingUser(null)
     setEditError(null)
     setConfirmDelete(false)
+    setPasswordReset({ open: false, password: '', confirmPassword: '', mustChangePassword: true })
+    setShowResetPassword(false)
   }
 
   const saveEmployee = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (!editingUser || confirmDelete) return
 
-    setSavingEdit(true)
     setEditError(null)
+
+    if (passwordReset.open) {
+      if (passwordReset.password.length < MIN_PASSWORD_LENGTH) {
+        setEditError(`A senha deve ter no mínimo ${MIN_PASSWORD_LENGTH} caracteres.`)
+        return
+      }
+      if (passwordReset.password !== passwordReset.confirmPassword) {
+        setEditError('As senhas não coincidem.')
+        return
+      }
+    }
+
+    setSavingEdit(true)
 
     try {
       const response = await fetch('/api/usuarios', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingUser),
+        body: JSON.stringify({
+          ...editingUser,
+          ...(passwordReset.open
+            ? { password: passwordReset.password, mustChangePassword: passwordReset.mustChangePassword }
+            : {}),
+        }),
       })
 
       if (!response.ok) {
@@ -234,6 +334,8 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
       setRoleOverrides(current => ({ ...current, [editingUser.id]: editingUser.role }))
       setEditingUser(null)
       setConfirmDelete(false)
+      setPasswordReset({ open: false, password: '', confirmPassword: '', mustChangePassword: true })
+      setShowResetPassword(false)
       router.refresh()
     } catch (error) {
       setEditError(error instanceof Error ? error.message : 'Não foi possível atualizar o funcionário.')
@@ -295,7 +397,10 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
           <button
             type="button"
             onClick={() => {
-              setShowCreate(current => !current)
+              setShowCreate(current => {
+                if (current) resetCreateForm()
+                return !current
+              })
               setFormError(null)
             }}
             className="dash inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-3.5 py-2 text-sm font-semibold text-primary-foreground shadow-sm transition-colors hover:bg-primary/90 sm:w-auto"
@@ -374,7 +479,9 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
               <div>
                 <h3 className="dash text-sm font-bold text-foreground">Cadastrar funcionário</h3>
                 <p className="dash mt-0.5 text-xs text-muted-foreground">
-                  Um convite será enviado por e-mail. No primeiro acesso, o funcionário definirá a senha e ativará o MFA.
+                  {newUser.accessMethod === 'password'
+                    ? 'Defina a senha de acesso e entregue ao funcionário. O MFA é ativado no primeiro login.'
+                    : 'Um convite será enviado por e-mail. No primeiro acesso, o funcionário definirá a senha e ativará o MFA.'}
                 </p>
               </div>
               <ShieldCheck className="h-5 w-5 shrink-0 text-primary" aria-hidden="true" />
@@ -437,6 +544,135 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                   ))}
                 </div>
               </fieldset>
+
+              <fieldset className="md:col-span-2">
+                <legend className="dash mb-1.5 block text-xs font-semibold text-foreground">Forma de acesso</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {([
+                    {
+                      value: 'password' as AccessMethod,
+                      icon: KeyRound,
+                      label: 'Definir senha agora',
+                      description: 'O funcionário já entra com a senha que você definir.',
+                    },
+                    {
+                      value: 'invite' as AccessMethod,
+                      icon: Mail,
+                      label: 'Enviar convite por e-mail',
+                      description: 'Depende da entrega do e-mail para o primeiro acesso.',
+                    },
+                  ]).map(option => (
+                    <label
+                      key={option.value}
+                      className={`relative cursor-pointer rounded-xl border px-3 py-2 transition-colors focus-within:ring-2 focus-within:ring-ring ${
+                        newUser.accessMethod === option.value
+                          ? 'border-primary bg-primary/10'
+                          : 'border-input bg-card hover:bg-muted'
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="employee-access-method"
+                        value={option.value}
+                        checked={newUser.accessMethod === option.value}
+                        onChange={() => {
+                          setNewUser(current => ({ ...current, accessMethod: option.value }))
+                          setFormError(null)
+                        }}
+                        className="sr-only"
+                      />
+                      <span className="dash flex items-center gap-1.5 text-xs font-bold text-foreground">
+                        <option.icon className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                        {option.label}
+                      </span>
+                      <span className="dash mt-0.5 block text-[10px] leading-snug text-muted-foreground">
+                        {option.description}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              {newUser.accessMethod === 'password' && (
+                <div className="md:col-span-2 grid gap-3 rounded-xl border border-input bg-card p-3.5 sm:grid-cols-2">
+                  <div className="sm:col-span-2 flex items-center justify-between gap-3">
+                    <p className="dash text-xs font-semibold text-foreground">Senha de acesso</p>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={fillGeneratedPassword}
+                        className="dash inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted"
+                      >
+                        <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                        Gerar senha
+                      </button>
+                      {newUser.password && (
+                        <button
+                          type="button"
+                          onClick={() => copyPassword(newUser.password)}
+                          className="dash inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted"
+                        >
+                          {copied ? <Check className="h-3 w-3 text-success" aria-hidden="true" /> : <Copy className="h-3 w-3" aria-hidden="true" />}
+                          {copied ? 'Copiado' : 'Copiar'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="employee-password" className="dash mb-1.5 block text-xs font-semibold text-foreground">Senha</label>
+                    <div className="relative">
+                      <input
+                        id="employee-password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={newUser.password}
+                        onChange={event => setNewUser(current => ({ ...current, password: event.target.value }))}
+                        className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                        placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
+                        autoComplete="new-password"
+                        minLength={MIN_PASSWORD_LENGTH}
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(current => !current)}
+                        aria-label={showPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label htmlFor="employee-password-confirm" className="dash mb-1.5 block text-xs font-semibold text-foreground">Confirmar senha</label>
+                    <input
+                      id="employee-password-confirm"
+                      type={showPassword ? 'text' : 'password'}
+                      value={newUser.confirmPassword}
+                      onChange={event => setNewUser(current => ({ ...current, confirmPassword: event.target.value }))}
+                      className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                      placeholder="Repita a senha"
+                      autoComplete="new-password"
+                      minLength={MIN_PASSWORD_LENGTH}
+                      required
+                    />
+                  </div>
+
+                  <label className="dash sm:col-span-2 flex items-start gap-2 text-[11px] leading-snug text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={newUser.mustChangePassword}
+                      onChange={event => setNewUser(current => ({ ...current, mustChangePassword: event.target.checked }))}
+                      className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-input accent-primary"
+                    />
+                    <span>
+                      <span className="font-semibold text-foreground">Exigir troca de senha no primeiro acesso.</span>{' '}
+                      Recomendado — o funcionário define uma senha que só ele conhece ao entrar.
+                    </span>
+                  </label>
+                </div>
+              )}
             </div>
 
             {formError && (
@@ -452,7 +688,9 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                 className="dash inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-bold text-primary-foreground transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
               >
                 {creating ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Plus className="h-4 w-4" aria-hidden="true" />}
-                {creating ? 'Enviando convite...' : 'Enviar convite'}
+                {newUser.accessMethod === 'password'
+                  ? creating ? 'Criando acesso...' : 'Criar acesso'
+                  : creating ? 'Enviando convite...' : 'Enviar convite'}
               </button>
             </div>
           </form>
@@ -654,6 +892,109 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                     <ChevronDown className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
                   </div>
                   <p className="dash mt-1 text-[10px] text-muted-foreground">Define as áreas que o funcionário poderá acessar.</p>
+                </div>
+
+                <div className="sm:col-span-2 rounded-xl border border-input bg-muted/30 p-3.5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="dash flex items-center gap-1.5 text-xs font-bold text-foreground">
+                        <KeyRound className="h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                        Senha de acesso
+                      </p>
+                      <p className="dash mt-0.5 text-[10px] leading-snug text-muted-foreground">
+                        Use quando o funcionário não recebeu o convite ou perdeu o acesso.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPasswordReset(current => ({
+                          open: !current.open,
+                          password: '',
+                          confirmPassword: '',
+                          mustChangePassword: true,
+                        }))
+                        setShowResetPassword(false)
+                        setEditError(null)
+                      }}
+                      disabled={savingEdit || deleting}
+                      className="dash shrink-0 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                    >
+                      {passwordReset.open ? 'Cancelar' : 'Redefinir senha'}
+                    </button>
+                  </div>
+
+                  {passwordReset.open && (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <div className="sm:col-span-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const password = generatePassword()
+                            setPasswordReset(current => ({ ...current, password, confirmPassword: password }))
+                            setShowResetPassword(true)
+                          }}
+                          className="dash inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] font-semibold text-foreground transition-colors hover:bg-muted"
+                        >
+                          <RefreshCw className="h-3 w-3" aria-hidden="true" />
+                          Gerar senha
+                        </button>
+                      </div>
+
+                      <div>
+                        <label htmlFor="reset-employee-password" className="dash mb-1.5 block text-xs font-semibold text-foreground">Nova senha</label>
+                        <div className="relative">
+                          <input
+                            id="reset-employee-password"
+                            type={showResetPassword ? 'text' : 'password'}
+                            value={passwordReset.password}
+                            onChange={event => setPasswordReset(current => ({ ...current, password: event.target.value }))}
+                            className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 pr-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                            placeholder={`Mínimo ${MIN_PASSWORD_LENGTH} caracteres`}
+                            autoComplete="new-password"
+                            minLength={MIN_PASSWORD_LENGTH}
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowResetPassword(current => !current)}
+                            aria-label={showResetPassword ? 'Ocultar senha' : 'Mostrar senha'}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                          >
+                            {showResetPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label htmlFor="reset-employee-password-confirm" className="dash mb-1.5 block text-xs font-semibold text-foreground">Confirmar senha</label>
+                        <input
+                          id="reset-employee-password-confirm"
+                          type={showResetPassword ? 'text' : 'password'}
+                          value={passwordReset.confirmPassword}
+                          onChange={event => setPasswordReset(current => ({ ...current, confirmPassword: event.target.value }))}
+                          className="dash block w-full rounded-xl border border-input bg-card px-3.5 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                          placeholder="Repita a senha"
+                          autoComplete="new-password"
+                          minLength={MIN_PASSWORD_LENGTH}
+                          required
+                        />
+                      </div>
+
+                      <label className="dash sm:col-span-2 flex items-start gap-2 text-[11px] leading-snug text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={passwordReset.mustChangePassword}
+                          onChange={event => setPasswordReset(current => ({ ...current, mustChangePassword: event.target.checked }))}
+                          className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-input accent-primary"
+                        />
+                        <span>
+                          <span className="font-semibold text-foreground">Exigir troca de senha no próximo acesso.</span>{' '}
+                          A senha definida aqui vale como provisória.
+                        </span>
+                      </label>
+                    </div>
+                  )}
                 </div>
               </div>
 

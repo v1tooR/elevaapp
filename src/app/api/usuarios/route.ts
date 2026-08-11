@@ -4,18 +4,29 @@ import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
 const employeeRoleSchema = z.enum(['admin', 'analista'])
+const passwordSchema = z.string().min(8, 'A senha deve ter no mínimo 8 caracteres').max(72)
 
-const createEmployeeSchema = z.object({
-  name: z.string().trim().min(2).max(120),
-  email: z.string().trim().toLowerCase().email().max(254),
-  role: employeeRoleSchema,
-})
+const createEmployeeSchema = z
+  .object({
+    name: z.string().trim().min(2).max(120),
+    email: z.string().trim().toLowerCase().email().max(254),
+    role: employeeRoleSchema,
+    accessMethod: z.enum(['invite', 'password']).default('invite'),
+    password: passwordSchema.optional(),
+    mustChangePassword: z.boolean().default(true),
+  })
+  .refine(data => data.accessMethod !== 'password' || Boolean(data.password), {
+    path: ['password'],
+    message: 'Defina a senha de acesso do funcionário',
+  })
 
 const updateEmployeeSchema = z.object({
   id: z.string().uuid(),
   name: z.string().trim().min(2).max(120).optional(),
   email: z.string().trim().toLowerCase().email().max(254).optional(),
   role: employeeRoleSchema,
+  password: passwordSchema.optional(),
+  mustChangePassword: z.boolean().optional(),
 })
 
 const offboardEmployeeSchema = z.object({
@@ -61,25 +72,40 @@ export async function POST(request: Request) {
   if ('error' in caller) return NextResponse.json({ error: caller.error }, { status: caller.status })
 
   const payload = createEmployeeSchema.safeParse(await request.json().catch(() => null))
-  if (!payload.success) return NextResponse.json({ error: 'Preencha nome, e-mail e função corretamente.' }, { status: 400 })
+  if (!payload.success) {
+    const issue = payload.error.issues[0]
+    return NextResponse.json(
+      { error: issue?.message && issue.path[0] === 'password' ? issue.message : 'Preencha nome, e-mail e função corretamente.' },
+      { status: 400 },
+    )
+  }
 
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? new URL(request.url).origin
   const callbackUrl = new URL('/auth/callback', siteUrl)
   callbackUrl.searchParams.set('next', '/reset-password?first_access=1')
 
+  const usesPassword = payload.data.accessMethod === 'password'
   const adminClient = createAdminClient()
-  const { data: authData, error: authError } = await adminClient.auth.admin.inviteUserByEmail(
-    payload.data.email,
-    {
-      data: { name: payload.data.name, role: payload.data.role },
-      redirectTo: callbackUrl.toString(),
-    },
-  )
+  const { data: authData, error: authError } = usesPassword
+    ? await adminClient.auth.admin.createUser({
+        email: payload.data.email,
+        password: payload.data.password!,
+        email_confirm: true,
+        user_metadata: { name: payload.data.name, role: payload.data.role },
+      })
+    : await adminClient.auth.admin.inviteUserByEmail(
+        payload.data.email,
+        {
+          data: { name: payload.data.name, role: payload.data.role },
+          redirectTo: callbackUrl.toString(),
+        },
+      )
 
-  if (authError) {
-    const duplicateEmail = /already|registered|exists/i.test(authError.message)
+  if (authError || !authData?.user) {
+    const message = authError?.message ?? 'Não foi possível criar o acesso.'
+    const duplicateEmail = /already|registered|exists/i.test(message)
     return NextResponse.json(
-      { error: duplicateEmail ? 'Já existe uma conta com este e-mail.' : authError.message },
+      { error: duplicateEmail ? 'Já existe uma conta com este e-mail.' : message },
       { status: duplicateEmail ? 409 : 400 },
     )
   }
@@ -91,7 +117,7 @@ export async function POST(request: Request) {
       email: payload.data.email,
       role: payload.data.role,
       is_active: true,
-      must_change_password: true,
+      must_change_password: usesPassword ? payload.data.mustChangePassword : true,
       mfa_required: true,
       invited_at: new Date().toISOString(),
     })
@@ -101,10 +127,13 @@ export async function POST(request: Request) {
 
   if (profileError || !profile) {
     await adminClient.auth.admin.deleteUser(authData.user.id)
-    return NextResponse.json({ error: 'O convite não pôde ser concluído. Tente novamente.' }, { status: 500 })
+    return NextResponse.json(
+      { error: usesPassword ? 'O acesso não pôde ser concluído. Tente novamente.' : 'O convite não pôde ser concluído. Tente novamente.' },
+      { status: 500 },
+    )
   }
 
-  return NextResponse.json({ profile, invited: true }, { status: 201 })
+  return NextResponse.json({ profile, invited: !usesPassword }, { status: 201 })
 }
 
 export async function PATCH(request: Request) {
@@ -112,7 +141,13 @@ export async function PATCH(request: Request) {
   if ('error' in caller) return NextResponse.json({ error: caller.error }, { status: caller.status })
 
   const payload = updateEmployeeSchema.safeParse(await request.json().catch(() => null))
-  if (!payload.success) return NextResponse.json({ error: 'Revise nome, e-mail e função do funcionário.' }, { status: 400 })
+  if (!payload.success) {
+    const issue = payload.error.issues[0]
+    return NextResponse.json(
+      { error: issue?.message && issue.path[0] === 'password' ? issue.message : 'Revise nome, e-mail e função do funcionário.' },
+      { status: 400 },
+    )
+  }
 
   const adminClient = createAdminClient()
   const { data: target } = await adminClient
@@ -131,6 +166,7 @@ export async function PATCH(request: Request) {
   const nextRole = payload.data.role
   const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(target.auth_user_id, {
     ...(nextEmail !== target.email ? { email: nextEmail, email_confirm: true } : {}),
+    ...(payload.data.password ? { password: payload.data.password } : {}),
     user_metadata: { name: nextName, role: nextRole },
   })
 
@@ -141,11 +177,16 @@ export async function PATCH(request: Request) {
 
   const { error: profileUpdateError } = await adminClient
     .from('profiles')
-    .update({ name: nextName, email: nextEmail, role: nextRole })
+    .update({
+      name: nextName,
+      email: nextEmail,
+      role: nextRole,
+      ...(payload.data.password ? { must_change_password: payload.data.mustChangePassword ?? false } : {}),
+    })
     .eq('id', payload.data.id)
   if (profileUpdateError) return NextResponse.json({ error: 'O acesso foi atualizado, mas o perfil não pôde ser sincronizado.' }, { status: 500 })
 
-  return NextResponse.json({ success: true })
+  return NextResponse.json({ success: true, passwordUpdated: Boolean(payload.data.password) })
 }
 
 export async function DELETE(request: Request) {
