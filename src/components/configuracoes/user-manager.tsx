@@ -503,7 +503,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                 <h3 className="dash text-sm font-bold text-foreground">Cadastrar funcionário</h3>
                 <p className="dash mt-0.5 text-xs text-muted-foreground">
                   {newUser.accessMethod === 'password'
-                    ? 'Defina a senha de acesso e entregue ao funcionário. O MFA é ativado no primeiro login.'
+                    ? 'Defina e entregue a senha ao funcionário. O e-mail já será confirmado, sem link de ativação.'
                     : 'Um convite será enviado por e-mail. No primeiro acesso, o funcionário definirá a senha e ativará o MFA.'}
                 </p>
               </div>
@@ -576,7 +576,7 @@ export function UserManager({ profiles, canManageEmployees, currentProfileId }: 
                       value: 'password' as AccessMethod,
                       icon: KeyRound,
                       label: 'Definir senha agora',
-                      description: 'O funcionário já entra com a senha que você definir.',
+                      description: 'Acesso imediato, sem confirmação por e-mail.',
                     },
                     {
                       value: 'invite' as AccessMethod,

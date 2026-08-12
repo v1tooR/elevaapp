@@ -11,7 +11,7 @@ const createEmployeeSchema = z
     name: z.string().trim().min(2).max(120),
     email: z.string().trim().toLowerCase().email().max(254),
     role: employeeRoleSchema,
-    accessMethod: z.enum(['invite', 'password']).default('invite'),
+    accessMethod: z.enum(['invite', 'password']).default('password'),
     password: passwordSchema.optional(),
     mustChangePassword: z.boolean().default(true),
   })
@@ -165,7 +165,10 @@ export async function PATCH(request: Request) {
   const nextEmail = payload.data.email ?? target.email
   const nextRole = payload.data.role
   const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(target.auth_user_id, {
-    ...(nextEmail !== target.email ? { email: nextEmail, email_confirm: true } : {}),
+    ...(nextEmail !== target.email ? { email: nextEmail } : {}),
+    // Employee access is managed and verified by the Super Admin. This also
+    // repairs accounts that were invited previously but never confirmed.
+    email_confirm: true,
     ...(payload.data.password ? { password: payload.data.password } : {}),
     user_metadata: { name: nextName, role: nextRole },
   })
