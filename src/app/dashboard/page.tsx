@@ -35,24 +35,24 @@ export default async function DashboardPage() {
   const kpis = isSuperAdmin
     ? [
         { label: 'Processos ativos', value: metrics.activeProcesses, hint: `${metrics.clientsInService} clientes em atendimento`, href: '/processos/lista', icon: Activity, tone: 'text-primary bg-primary/10 border-primary/20' },
-        { label: 'Pendências críticas', value: metrics.overdue, hint: 'etapas ou prazos vencidos', href: '/rotina', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 border-red-200' },
+        { label: 'Pendências críticas', value: metrics.overdue, hint: 'etapas ou prazos vencidos', href: '/processos/lista?prazo=vencido', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 border-red-200' },
         { label: 'Documentos para revisar', value: metrics.documentsForReview, hint: 'recebidos ou em análise', href: '/documentos?status=received', icon: FileSearch, tone: 'text-blue-700 bg-blue-50 border-blue-200' },
         { label: 'Concluídos em 30 dias', value: metrics.completedLast30Days, hint: 'ritmo de entrega da equipe', href: '/processos/lista?status=concluido', icon: CheckCircle2, tone: 'text-emerald-700 bg-emerald-50 border-emerald-200' },
-        { label: 'Aguardando dependência', value: metrics.waitingDependencies, hint: 'serviços visíveis, ainda bloqueados', href: '/rotina?tipo=aguardando_dependencia', icon: GitBranch, tone: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
+        { label: 'Aguardando dependência', value: metrics.waitingDependencies, hint: 'serviços visíveis, ainda bloqueados', href: '/processos/lista?ator=terceiro', icon: GitBranch, tone: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
       ]
     : isAdmin
       ? [
           { label: 'Sem responsável', value: metrics.unassigned, hint: 'precisam ser distribuídos', href: '/processos/lista?pendencia=sem_responsavel', icon: UserRoundX, tone: 'text-violet-700 bg-violet-50 border-violet-200' },
-          { label: 'Prazos críticos', value: metrics.overdue, hint: 'vencidos e exigindo ação', href: '/rotina', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 border-red-200' },
+          { label: 'Prazos críticos', value: metrics.overdue, hint: 'vencidos e exigindo ação', href: '/processos/lista?prazo=vencido', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 border-red-200' },
           { label: 'Documentos para revisar', value: metrics.documentsForReview, hint: 'fila documental da operação', href: '/documentos', icon: FileSearch, tone: 'text-blue-700 bg-blue-50 border-blue-200' },
           { label: 'Leads em aberto', value: metrics.openLeads, hint: 'novos, frios ou quentes', href: '/leads', icon: Target, tone: 'text-amber-700 bg-amber-50 border-amber-200' },
-          { label: 'Aguardando dependência', value: metrics.waitingDependencies, hint: 'serviços visíveis, ainda bloqueados', href: '/rotina?tipo=aguardando_dependencia', icon: GitBranch, tone: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
+          { label: 'Aguardando dependência', value: metrics.waitingDependencies, hint: 'serviços visíveis, ainda bloqueados', href: '/processos/lista?ator=terceiro', icon: GitBranch, tone: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
         ]
       : [
           { label: 'Meus processos ativos', value: metrics.activeProcesses, hint: `${metrics.clientsInService} clientes sob sua responsabilidade`, href: '/processos/lista', icon: Activity, tone: 'text-primary bg-primary/10 border-primary/20' },
-          { label: 'Vencidos', value: metrics.overdue, hint: 'ações que precisam ser resolvidas hoje', href: '/rotina', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 border-red-200' },
-          { label: 'Próximos 7 dias', value: metrics.dueSoon, hint: 'prazos e compromissos', href: '/rotina?tipo=prazo_proximo', icon: Clock3, tone: 'text-amber-700 bg-amber-50 border-amber-200' },
-          { label: 'Aguardando dependência', value: metrics.waitingDependencies, hint: 'serviços visíveis, ainda bloqueados', href: '/rotina?tipo=aguardando_dependencia', icon: GitBranch, tone: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
+          { label: 'Vencidos', value: metrics.overdue, hint: 'ações que precisam ser resolvidas hoje', href: '/processos/lista?prazo=vencido', icon: AlertTriangle, tone: 'text-red-700 bg-red-50 border-red-200' },
+          { label: 'Próximos 7 dias', value: metrics.dueSoon, hint: 'prazos e compromissos', href: '/processos/lista?prazo=sete_dias', icon: Clock3, tone: 'text-amber-700 bg-amber-50 border-amber-200' },
+          { label: 'Aguardando dependência', value: metrics.waitingDependencies, hint: 'serviços visíveis, ainda bloqueados', href: '/processos/lista?ator=terceiro', icon: GitBranch, tone: 'text-cyan-700 bg-cyan-50 border-cyan-200' },
         ]
 
   const maxWorkload = Math.max(1, ...operations.workload.map(item => item.activeProcesses))
@@ -69,8 +69,8 @@ export default async function DashboardPage() {
             <p className="dash mt-2 text-sm text-white/60">{roleDescription}</p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Link href="/rotina" className="dash inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/20">
-              <ListTodo className="h-4 w-4" /> Minha rotina
+            <Link href="/processos/lista" className="dash inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white hover:bg-white/20">
+              <ListTodo className="h-4 w-4" /> Lista geral
             </Link>
             <Link href="/processos/novo" className="dash inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-primary hover:bg-white/90">
               <Plus className="h-4 w-4" /> Novo processo
@@ -131,7 +131,7 @@ export default async function DashboardPage() {
               <h2 className="dash font-bold text-foreground">Próximas ações</h2>
               <p className="dash mt-0.5 text-xs text-muted-foreground">Fila ordenada por risco e prazo</p>
             </div>
-            <Link href="/rotina" className="dash text-xs font-semibold text-primary">Ver fila completa</Link>
+            <Link href="/processos/lista" className="dash text-xs font-semibold text-primary">Ver fila completa</Link>
           </div>
           {priorityItems.length === 0 ? (
             <div className="flex flex-col items-center gap-3 py-14 text-center">

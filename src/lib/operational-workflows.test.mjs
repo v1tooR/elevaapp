@@ -63,12 +63,23 @@ test('decisao do IPI exige a escolha que controla a liberacao do ICMS', () => {
   }), null)
 })
 
-test('ICMS concentra compra, protocolo e decisão em uma única etapa', () => {
+test('ICMS vai do checklist à entrada, com nota fiscal ou novo protocolo depois da decisão', () => {
   const workflow = getOperationalWorkflowDefinition('processo_icms')
   assert.deepEqual(
     workflow.stages.map(stage => stage.stage_key),
-    ['pre_requisitos_icms', 'protocolo_sivei_icms', 'recurso_icms'],
+    ['pre_requisitos_icms', 'protocolo_sivei_icms', 'nota_fiscal_icms', 'recurso_icms'],
   )
+
+  const entry = workflow.stages.find(stage => stage.stage_key === 'protocolo_sivei_icms')
+  assert.equal(entry.entryStage, true)
+  assert.equal(entry.activateOnApproved, 'nota_fiscal_icms')
+  assert.equal(entry.activateOnRejected, 'recurso_icms')
+
+  // Deferido pede nota fiscal; indeferido volta para dar entrada novamente.
+  const invoice = workflow.stages.find(stage => stage.stage_key === 'nota_fiscal_icms')
+  assert.equal(invoice.initialStatus, 'nao_aplicavel')
+  const appeal = workflow.stages.find(stage => stage.stage_key === 'recurso_icms')
+  assert.equal(appeal.fields.find(field => field.key === 'action').options[0].value, 'novo_pedido')
 })
 
 test('compra do ICMS registra datas para a visão completa do cliente', () => {
@@ -131,10 +142,11 @@ test('ICMS apresenta as situações operacionais da planilha', () => {
   assert.deepEqual(checklist.allowedStatuses, ['pendente', 'em_andamento', 'concluido'])
   assert.deepEqual(checklist.statusLabels, {
     pendente: 'Não iniciado',
-    em_andamento: 'Aguardando documento',
-    concluido: 'Finalizado',
+    em_andamento: 'Aguardando documentos',
+    concluido: 'Checklist concluído — dar entrada',
   })
-  assert.equal(protocol.statusLabels.em_andamento, 'Em análise')
+  assert.equal(protocol.statusLabels.pendente, 'Dar entrada')
+  assert.equal(protocol.statusLabels.em_andamento, 'Protocolado — em análise')
   assert.equal(protocol.statusLabels.aprovado, 'Deferido')
   assert.equal(protocol.statusLabels.reprovado, 'Indeferido')
 })
@@ -169,19 +181,42 @@ test('seletor de UF do ICMS aparece apenas para outro estado', () => {
 test('decisão do ICMS exige comunicação e autorização antes de resolver', () => {
   const workflow = getOperationalWorkflowDefinition('processo_icms')
   const template = workflow.stages.find(stage => stage.stage_key === 'protocolo_sivei_icms')
+  const entryData = {
+    protocol: '123',
+    protocol_date: '2026-08-03',
+    dealership: 'Concessionária Central',
+    salesperson: 'Ana',
+  }
+
+  // Dar entrada exige protocolo, data, concessionária e vendedor.
   assert.match(validateOperationalStage({
     template,
     status: 'aprovado',
     result: 'deferido',
     data: { protocol: '123', protocol_date: '2026-08-03' },
+  }), /Concessionária/)
+
+  assert.match(validateOperationalStage({
+    template,
+    status: 'aprovado',
+    result: 'deferido',
+    data: entryData,
   }), /Cliente comunicado/)
+
+  // No indeferimento os checks de deferimento não são exigidos.
+  assert.equal(validateOperationalStage({
+    template,
+    status: 'reprovado',
+    result: 'indeferido',
+    data: entryData,
+  }), null)
+
   assert.equal(validateOperationalStage({
     template,
     status: 'aprovado',
     result: 'deferido',
     data: {
-      protocol: '123',
-      protocol_date: '2026-08-03',
+      ...entryData,
       client_notified: true,
       documents_release_authorized: true,
     },

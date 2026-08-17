@@ -15,6 +15,11 @@ import {
   isOperationalStageBlocked,
   validateOperationalStage,
 } from '@/lib/operational-workflows'
+import {
+  getOperationalProcessPhase,
+  PHASE_ACTIONS,
+  resolveProcessStatusFromStages,
+} from '@/lib/process-pipeline'
 
 type ProcessTypeRelation = { slug: string }
 
@@ -232,23 +237,28 @@ export async function PATCH(
       && stage.stage_key === 'protocolo_sisen_ipi'
       && effectiveStatus === 'aprovado'
 
-    if (operationalTemplate.activateOnRejected) {
-      if (effectiveStatus === 'reprovado' || effectiveStatus === 'aprovado') {
-        const { error: conditionalStageError } = await supabase
-          .from('process_stages')
-          .update({ status: effectiveStatus === 'reprovado' ? 'pendente' : 'nao_aplicavel', completed_at: null })
-          .eq('process_id', id)
-          .eq('stage_key', operationalTemplate.activateOnRejected)
-        if (conditionalStageError) {
-          return NextResponse.json({ error: `Etapa salva, mas não foi possível sincronizar a etapa condicional: ${conditionalStageError.message}` }, { status: 400 })
-        }
+    const conditionalTargets: Array<{ stageKey: string; activate: boolean }> = []
+    if (operationalTemplate.activateOnRejected && (effectiveStatus === 'reprovado' || effectiveStatus === 'aprovado')) {
+      conditionalTargets.push({ stageKey: operationalTemplate.activateOnRejected, activate: effectiveStatus === 'reprovado' })
+    }
+    if (operationalTemplate.activateOnApproved && (effectiveStatus === 'reprovado' || effectiveStatus === 'aprovado')) {
+      conditionalTargets.push({ stageKey: operationalTemplate.activateOnApproved, activate: effectiveStatus === 'aprovado' })
+    }
+    for (const target of conditionalTargets) {
+      const { error: conditionalStageError } = await supabase
+        .from('process_stages')
+        .update({ status: target.activate ? 'pendente' : 'nao_aplicavel', completed_at: null })
+        .eq('process_id', id)
+        .eq('stage_key', target.stageKey)
+      if (conditionalStageError) {
+        return NextResponse.json({ error: `Etapa salva, mas não foi possível sincronizar a etapa condicional: ${conditionalStageError.message}` }, { status: 400 })
       }
     }
 
     const workflowKeys = new Set(operationalWorkflow.stages.map(item => item.stage_key))
     const { data: workflowStages, error: workflowStagesError } = await supabase
       .from('process_stages')
-      .select('stage_key, status')
+      .select('stage_key, status, data')
       .eq('process_id', id)
     if (workflowStagesError) {
       return NextResponse.json({ error: `Etapa salva, mas não foi possível recalcular o processo: ${workflowStagesError.message}` }, { status: 400 })
@@ -261,11 +271,25 @@ export async function PATCH(
       && relevantStages.every(item => ['concluido', 'aprovado', 'reprovado', 'nao_aplicavel'].includes(item.status))
     )
     if (!['arquivado', 'cancelado'].includes(processRecord.status)) {
+      // Espelha a fase real do atendimento: aguardando documentos -> dar entrada
+      // -> em análise (protocolado) -> concluído.
+      const phase = getOperationalProcessPhase(processTypeSlug, relevantStages)
+      const nextStatus = allResolved
+        ? 'concluido'
+        : resolveProcessStatusFromStages(processTypeSlug, relevantStages)
+      const phaseAction = !allResolved && phase && phase in PHASE_ACTIONS
+        ? PHASE_ACTIONS[phase as keyof typeof PHASE_ACTIONS]
+        : null
       const { error: processSyncError } = await supabase
         .from('processes')
         .update({
-          status: allResolved ? 'concluido' : 'em_andamento',
+          status: nextStatus,
           completed_at: allResolved ? processRecord.completed_at ?? new Date().toISOString() : null,
+          // A próxima ação só é reescrita quando a fase muda, para não apagar
+          // um ajuste manual da equipe a cada salvamento de etapa.
+          ...(phaseAction && nextStatus !== processRecord.status
+            ? { next_action: phaseAction.nextAction, action_owner: phaseAction.actionOwner }
+            : {}),
         })
         .eq('id', id)
       if (processSyncError) {

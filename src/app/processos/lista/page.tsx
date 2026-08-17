@@ -2,7 +2,12 @@ import Link from 'next/link'
 import { ArrowLeft, ArrowUpRight, Filter, ListFilter, Search } from 'lucide-react'
 import { createClient } from '@/lib/supabase/server'
 import { getProcessOperationalSummary, getStaffOperations } from '@/lib/staff-operations'
-import { ProcessStatusBadge } from '@/components/shared/status-badge'
+import { ProcessPhaseBadge } from '@/components/shared/status-badge'
+import {
+  getProcessPhase,
+  PROCESS_PHASE_FILTERS,
+  PROCESS_PHASE_LABELS,
+} from '@/lib/process-pipeline'
 import { SaveProcessFilter } from '@/components/processos/save-process-filter'
 import { formatCPF, formatDate, formatPhone } from '@/lib/utils'
 import { getIpiDetranReportStatus } from '@/lib/operational-workflows'
@@ -17,6 +22,7 @@ import {
 interface SearchParams {
   q?: string
   tipo?: string
+  fase?: string
   status?: string
   responsavel?: string
   prazo?: string
@@ -61,9 +67,17 @@ export default async function ProcessListPage({ searchParams }: { searchParams: 
   inSevenDays.setUTCDate(inSevenDays.getUTCDate() + 7)
   const sevenDayKey = inSevenDays.toISOString().slice(0, 10)
 
+  const phaseOf = (process: (typeof operations.processes)[number]) => getProcessPhase({
+    status: process.status,
+    processTypeSlug: process.process_types?.slug,
+    blockedReason: process.blocked_reason,
+    stages: operations.stagesByProcess.get(process.id) ?? [],
+  })
+
   const rows = operations.processes.filter(process => {
     const stages = operations.stagesByProcess.get(process.id) ?? []
     const operational = getProcessOperationalSummary({ process, stages })
+    if (params.fase && phaseOf(process) !== params.fase) return false
     const haystack = normalize([
       process.clients?.name,
       process.clients?.cpf,
@@ -112,7 +126,9 @@ export default async function ProcessListPage({ searchParams }: { searchParams: 
     Object.entries(params).filter(([key, value]) => key !== 'pagina' && typeof value === 'string' && value),
   ) as Record<string, string>
   const filterHref = (filters: Record<string, string>) => {
-    const query = new URLSearchParams(filters)
+    const query = new URLSearchParams(
+      Object.entries(filters).filter(([, value]) => Boolean(value)),
+    )
     return `/processos/lista${query.size ? `?${query.toString()}` : ''}`
   }
   const pageHref = (page: number) => filterHref({ ...currentFilters, pagina: String(page) })
@@ -131,7 +147,7 @@ export default async function ProcessListPage({ searchParams }: { searchParams: 
         <form className="grid gap-3 sm:grid-cols-2 lg:grid-cols-12" method="get">
           <label className="relative lg:col-span-2"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input name="q" defaultValue={params.q} placeholder="Nome, CPF, protocolo ou tipo" className="dash w-full rounded-xl border border-input bg-card py-2.5 pl-9 pr-3 text-sm outline-none focus:border-primary" /></label>
           <select name="tipo" defaultValue={params.tipo} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todos os tipos</option>{(processTypes ?? []).map(type => <option key={type.slug} value={type.slug}>{type.name}{type.accepts_new_processes ? '' : ' (histórico)'}</option>)}</select>
-          <select name="status" defaultValue={params.status} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todos os status</option><option value="aberto">Aberto</option><option value="em_andamento">Em andamento</option><option value="aguardando_documentos">Aguardando documentos</option><option value="em_analise">Em análise</option><option value="aguardando_orgao">Aguardando órgão</option><option value="concluido">Concluído</option><option value="arquivado">Arquivado</option><option value="cancelado">Cancelado</option></select>
+          <select name="fase" defaultValue={params.fase} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todas as fases</option>{PROCESS_PHASE_FILTERS.map(filter => <option key={filter.phase} value={filter.phase}>{PROCESS_PHASE_LABELS[filter.phase]}</option>)}<option value="na_fila">{PROCESS_PHASE_LABELS.na_fila}</option></select>
           <select name="acao" defaultValue={params.acao} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Todas as ações</option><option value="equipe">Exige ação da equipe</option><option value="sem_acao">Sem próxima ação</option></select>
           <select name="ator" defaultValue={params.ator} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Quem deve agir</option>{(Object.entries(OPERATIONAL_ACTOR_LABELS) as Array<[OperationalActor, string]>).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
           <select name="status_etapa" defaultValue={params.status_etapa} className="dash rounded-xl border border-input bg-card px-3 py-2.5 text-sm"><option value="">Status da etapa</option>{Object.entries(STAGE_STATUS_LABELS).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select>
@@ -145,11 +161,25 @@ export default async function ProcessListPage({ searchParams }: { searchParams: 
         {(savedFilters ?? []).length > 0 && <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-3"><span className="dash text-[11px] font-semibold text-muted-foreground">Filtros salvos:</span>{(savedFilters ?? []).map(item => <Link key={item.id} href={filterHref(item.filters as Record<string, string>)} className="dash rounded-full bg-muted px-3 py-1 text-[11px] font-semibold text-foreground hover:bg-primary/10 hover:text-primary">{item.name}</Link>)}</div>}
       </section>
 
+      <section className="eleva-surface flex flex-wrap items-center gap-2 p-4">
+        <span className="dash mr-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Fase</span>
+        <Link href={filterHref({ ...currentFilters, fase: '' })} className={`dash rounded-lg border px-3 py-1.5 text-xs font-semibold ${!params.fase ? 'border-foreground bg-foreground text-background' : 'border-border bg-card text-muted-foreground'}`}>Todas</Link>
+        {PROCESS_PHASE_FILTERS.map(filter => (
+          <Link
+            key={filter.phase}
+            href={filterHref({ ...currentFilters, fase: filter.phase })}
+            className={`dash rounded-lg border px-3 py-1.5 text-xs font-semibold ${params.fase === filter.phase ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-card text-muted-foreground'}`}
+          >
+            {PROCESS_PHASE_LABELS[filter.phase]}
+          </Link>
+        ))}
+      </section>
+
       <section className="eleva-surface overflow-hidden">
         {pageRows.length === 0 ? <p className="dash py-16 text-center text-sm text-muted-foreground">Nenhum processo encontrado com esses filtros.</p> : (
           <div className="overflow-x-auto"><table className="min-w-[1120px] w-full text-sm"><thead className="border-b border-border bg-muted/40"><tr><th className="px-5 py-3 text-left text-xs">Cliente / contato</th><th className="px-4 py-3 text-left text-xs">Serviço / status</th><th className="px-4 py-3 text-left text-xs">Etapa / status</th><th className="px-4 py-3 text-left text-xs">Próxima ação</th><th className="px-4 py-3 text-left text-xs">Ator / prazo</th><th className="px-4 py-3 text-left text-xs">Responsável</th><th className="px-5 py-3" /></tr></thead><tbody className="divide-y divide-border">{pageRows.map(({ process, operational }) => {
             const priorityMeta = OPERATIONAL_PRIORITY_META[operational.priority]
-            return <tr key={process.id} className="hover:bg-muted/30"><td className="px-5 py-4"><p className="dash font-semibold text-foreground">{process.clients?.name}</p>{process.clients?.cpf && <p className="dash mt-0.5 text-xs text-muted-foreground">CPF {formatCPF(process.clients.cpf)}</p>}{process.clients?.phone && <p className="dash mt-0.5 text-xs font-medium text-foreground">{formatPhone(process.clients.phone)}</p>}</td><td className="px-4 py-4"><p className="dash mb-2 text-xs font-semibold text-foreground">{process.process_types?.name}</p><ProcessStatusBadge status={process.status} /></td><td className="px-4 py-4"><p className="dash text-xs font-semibold text-foreground">{operational.currentStage?.label ?? 'Sem etapa aberta'}</p><span className="dash mt-1 inline-flex rounded-lg bg-muted px-2 py-1 text-[10px] text-muted-foreground">{operational.stageStatus ? STAGE_STATUS_LABELS[operational.stageStatus] ?? operational.stageStatus : 'Sem status de etapa'}</span></td><td className="px-4 py-4"><span className={`dash inline-flex rounded-full border px-2 py-1 text-[10px] font-bold ${priorityMeta.className}`}>{priorityMeta.label}</span><p className="dash mt-2 max-w-64 text-xs font-semibold text-foreground">{operational.nextAction}</p>{operational.blocker && <p className="dash mt-1 max-w-64 text-[10px] font-semibold text-red-700">Motivo: {operational.blocker}</p>}</td><td className="px-4 py-4"><p className="dash text-xs font-semibold text-foreground">{OPERATIONAL_ACTOR_LABELS[operational.actor]}</p><span className={operational.isOverdue ? 'dash mt-1 block text-xs font-bold text-red-700' : 'dash mt-1 block text-xs text-muted-foreground'}>{operational.dueDate ? formatDate(operational.dueDate) : 'Sem prazo'}</span></td><td className="px-4 py-4 text-xs text-muted-foreground">{process.responsible_user?.name ?? 'Sem responsável'}</td><td className="px-5 py-4 text-right"><Link href={`/processos/${process.id}`} className="inline-flex items-center gap-1 text-xs font-semibold text-primary">Abrir <ArrowUpRight className="h-3.5 w-3.5" /></Link></td></tr>
+            return <tr key={process.id} className="hover:bg-muted/30"><td className="px-5 py-4"><p className="dash font-semibold text-foreground">{process.clients?.name}</p>{process.clients?.cpf && <p className="dash mt-0.5 text-xs text-muted-foreground">CPF {formatCPF(process.clients.cpf)}</p>}{process.clients?.phone && <p className="dash mt-0.5 text-xs font-medium text-foreground">{formatPhone(process.clients.phone)}</p>}</td><td className="px-4 py-4"><p className="dash mb-2 text-xs font-semibold text-foreground">{process.process_types?.name}</p><ProcessPhaseBadge phase={phaseOf(process)} /></td><td className="px-4 py-4"><p className="dash text-xs font-semibold text-foreground">{operational.currentStage?.label ?? 'Sem etapa aberta'}</p><span className="dash mt-1 inline-flex rounded-lg bg-muted px-2 py-1 text-[10px] text-muted-foreground">{operational.stageStatus ? STAGE_STATUS_LABELS[operational.stageStatus] ?? operational.stageStatus : 'Sem status de etapa'}</span></td><td className="px-4 py-4"><span className={`dash inline-flex rounded-full border px-2 py-1 text-[10px] font-bold ${priorityMeta.className}`}>{priorityMeta.label}</span><p className="dash mt-2 max-w-64 text-xs font-semibold text-foreground">{operational.nextAction}</p>{operational.blocker && <p className="dash mt-1 max-w-64 text-[10px] font-semibold text-red-700">Motivo: {operational.blocker}</p>}</td><td className="px-4 py-4"><p className="dash text-xs font-semibold text-foreground">{OPERATIONAL_ACTOR_LABELS[operational.actor]}</p><span className={operational.isOverdue ? 'dash mt-1 block text-xs font-bold text-red-700' : 'dash mt-1 block text-xs text-muted-foreground'}>{operational.dueDate ? formatDate(operational.dueDate) : 'Sem prazo'}</span></td><td className="px-4 py-4 text-xs text-muted-foreground">{process.responsible_user?.name ?? 'Sem responsável'}</td><td className="px-5 py-4 text-right"><Link href={`/processos/${process.id}`} className="inline-flex items-center gap-1 text-xs font-semibold text-primary">Abrir <ArrowUpRight className="h-3.5 w-3.5" /></Link></td></tr>
           })}</tbody></table></div>
         )}
         <div className="flex items-center justify-between border-t border-border px-5 py-3 text-xs text-muted-foreground"><span>Página {currentPage} de {pageCount}</span><div className="flex gap-2"><Link aria-disabled={currentPage <= 1} href={currentPage <= 1 ? pageHref(1) : pageHref(currentPage - 1)} className={`rounded-lg border px-3 py-1.5 ${currentPage <= 1 ? 'pointer-events-none opacity-40' : ''}`}>Anterior</Link><Link aria-disabled={currentPage >= pageCount} href={currentPage >= pageCount ? pageHref(pageCount) : pageHref(currentPage + 1)} className={`rounded-lg border px-3 py-1.5 ${currentPage >= pageCount ? 'pointer-events-none opacity-40' : ''}`}>Próxima</Link></div></div>

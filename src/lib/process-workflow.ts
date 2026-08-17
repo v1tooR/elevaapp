@@ -1,6 +1,8 @@
 import type { ProcessStage } from '@/types/database'
 
 export const IPVA_STAGE_KEYS = [
+  'veiculo_ipva',
+  'documentos_ipva',
   'sivei_protocolo',
   'sefaz_decisao',
   'ipva_recurso',
@@ -10,6 +12,7 @@ export const IPVA_STAGE_KEYS = [
 export type IpvaStageKey = (typeof IPVA_STAGE_KEYS)[number]
 export type IpvaOperationalBucket =
   | 'configuracao'
+  | 'documentos'
   | 'protocolo'
   | 'sefaz'
   | 'recurso'
@@ -17,13 +20,16 @@ export type IpvaOperationalBucket =
 
 export const IPVA_OPERATIONAL_BUCKETS: Record<IpvaOperationalBucket, string> = {
   configuracao: 'Não iniciado',
-  protocolo: 'Protocolo',
-  sefaz: 'Em análise na SEFAZ',
+  documentos: 'Aguardando documentos',
+  protocolo: 'Dar entrada',
+  sefaz: 'Em análise',
   recurso: 'Recurso',
-  concluido: 'Finalizado',
+  concluido: 'Deferido',
 }
 
 const IPVA_STAGE_LABELS: Record<IpvaStageKey, string> = {
+  veiculo_ipva: 'Veículo do pedido',
+  documentos_ipva: 'Checklist do IPVA',
   sivei_protocolo: 'Protocolo do IPVA',
   sefaz_decisao: 'Análise da SEFAZ',
   ipva_recurso: 'Recurso',
@@ -44,7 +50,10 @@ export function getIpvaStageLabel(stageKey: string, fallback: string) {
 }
 
 export function getIpvaStageStatusLabel(stageKey: string, status: string) {
-  if (stageKey === 'sivei_protocolo' && status === 'em_andamento') return 'Aguardando documento'
+  if (stageKey === 'veiculo_ipva' && status !== 'concluido') return 'Aguardando placa e marca'
+  if (stageKey === 'documentos_ipva' && status === 'em_andamento') return 'Aguardando documentos'
+  if (stageKey === 'sivei_protocolo' && status === 'pendente') return 'Dar entrada'
+  if (stageKey === 'sivei_protocolo' && status === 'concluido') return 'Protocolado — em análise'
   if (stageKey === 'ipva_recurso' && status === 'pendente') return 'Aguardando documento'
   return DEFAULT_IPVA_STATUS_LABELS[status] ?? status
 }
@@ -63,6 +72,12 @@ export function getIpvaOperationalBucket(
   const conclusion = byKey.get('ipva_conclusao')
   if (appeal && ['pendente', 'em_andamento', 'reprovado'].includes(appeal.status)) return 'recurso'
   if (isFinished(conclusion)) return 'concluido'
+
+  // Veículo e checklist vêm antes da entrada: enquanto estiverem abertos, o
+  // pedido ainda está reunindo documentos.
+  const vehicle = byKey.get('veiculo_ipva')
+  const documents = byKey.get('documentos_ipva')
+  if ((vehicle && !isFinished(vehicle)) || (documents && !isFinished(documents))) return 'documentos'
 
   const protocol = byKey.get('sivei_protocolo')
   if (!isFinished(protocol)) return 'protocolo'

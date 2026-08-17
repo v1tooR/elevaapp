@@ -3,20 +3,19 @@ import { getProfile } from '@/lib/auth'
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft, FileText, Clock, RefreshCw, Link2, ArrowUpRight, DollarSign, Calendar, ListChecks, AlertTriangle, CircleArrowRight, UserRound } from 'lucide-react'
-import { ProcessStatusBadge, PaymentStatusBadge } from '@/components/shared/status-badge'
+import { ProcessPhaseBadge, PaymentStatusBadge } from '@/components/shared/status-badge'
 import { formatDate, formatDateTime, formatCurrency, getCustomFieldOptionLabel, HISTORY_ACTION_LABELS } from '@/lib/utils'
 import { EditProcessModal } from '@/components/processos/edit-process-modal'
 import { DocumentUploader } from '@/components/shared/document-uploader'
 import { CnhStagesPanel } from '@/components/processos/cnh-stages-panel'
 import { InitCnhStagesButton } from '@/components/processos/init-cnh-stages-button'
-import { IpvaStagesPanel } from '@/components/processos/ipva-stages-panel'
 import { OperationalStagesPanel } from '@/components/processos/operational-stages-panel'
 import { ProcessCommunicationForm } from '@/components/processos/process-communication-form'
 import { getOperationalStageTemplate, hasOperationalWorkflow } from '@/lib/operational-workflows'
-import { IMESC_BOARD_LABELS, IMESC_OPERATIONAL_LABELS } from '@/lib/imesc-workflow'
 import { getProcessOperationalSummary, type OperationalProcessSummary, type OperationalStageSummary } from '@/lib/staff-operations'
 import { STAGE_STATUS_LABELS } from '@/lib/process-actions'
 import { getIpvaStageStatusLabel } from '@/lib/process-workflow'
+import { getProcessPhase } from '@/lib/process-pipeline'
 import type {
   CalendarEvent,
   Client,
@@ -70,21 +69,14 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
 
   const pt = process.process_types as unknown as ProcessType | null
   const client = process.clients as unknown as Client | null
-  const [{ data: imescFollowup }, { data: clientVehicles }] = client?.id
-    ? await Promise.all([
-        supabase
-          .from('imesc_followups')
-          .select('id, board_status, operational_status, scheduled_date, report_issued_at, source_classification')
-          .eq('client_id', client.id)
-          .maybeSingle(),
-        supabase
-          .from('client_vehicles')
-          .select('*')
-          .eq('client_id', client.id)
-          .eq('is_active', true)
-          .order('created_at', { ascending: false }),
-      ])
-    : [{ data: null }, { data: [] }]
+  const { data: clientVehicles } = client?.id
+    ? await supabase
+        .from('client_vehicles')
+        .select('*')
+        .eq('client_id', client.id)
+        .eq('is_active', true)
+        .order('created_at', { ascending: false })
+    : { data: [] }
   const responsible = process.responsible_user as unknown as Pick<Profile, 'id' | 'name'> | null
   const linkedVehicle = ((clientVehicles ?? []) as ClientVehicle[]).find(vehicle => vehicle.id === process.vehicle_id)
   const financials = Array.isArray(process.financials) ? process.financials[0] : process.financials
@@ -122,12 +114,19 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
     ? getOperationalStageTemplate(pt?.slug ?? '', operational.currentStage.stage_key)
     : null
   const operationalSituationLabel = operational.stageStatus
-    ? pt?.slug === 'processo_ipva' && operational.currentStage
-      ? getIpvaStageStatusLabel(operational.currentStage.stage_key, operational.stageStatus)
-      : operationalStageTemplate?.statusLabels?.[operational.stageStatus as keyof typeof operationalStageTemplate.statusLabels]
+    ? operationalStageTemplate?.statusLabels?.[operational.stageStatus as keyof typeof operationalStageTemplate.statusLabels]
+      ?? (pt?.slug === 'processo_ipva' && operational.currentStage
+        ? getIpvaStageStatusLabel(operational.currentStage.stage_key, operational.stageStatus)
+        : null)
       ?? STAGE_STATUS_LABELS[operational.stageStatus]
       ?? operational.stageStatus
     : 'Sem status de etapa'
+  const processPhase = getProcessPhase({
+    status: process.status,
+    processTypeSlug: pt?.slug,
+    blockedReason: process.blocked_reason,
+    stages: processStages,
+  })
 
   return (
     <>
@@ -186,7 +185,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-3 flex-wrap mb-1">
                   <h1 className="dash text-white text-2xl font-bold leading-tight">{pt?.name}</h1>
-                  <ProcessStatusBadge status={process.status} />
+                  <ProcessPhaseBadge phase={processPhase} />
                 </div>
                 <div className="flex flex-wrap items-center gap-2 mt-2">
                   <Link
@@ -283,7 +282,7 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400 dash text-xs">Status</span>
-                  <ProcessStatusBadge status={process.status} />
+                  <ProcessPhaseBadge phase={processPhase} />
                 </div>
                 {process.protocol && (
                   <div className="flex items-center justify-between">
@@ -414,46 +413,6 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
           {/* ── Right Column ─────────────────────────────────────── */}
           <div className="lg:col-span-2 space-y-5">
 
-            {pt?.slug === 'processo_ipva' && (process.jurisdiction_state || client?.state)?.toUpperCase() === 'SP' && (
-              <div className="anim anim-1 overflow-hidden rounded-2xl bg-white" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
-                <div className="flex items-center gap-2.5 border-b border-slate-50 px-5 py-4">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-pink-50">
-                    <ListChecks className="h-3.5 w-3.5 text-pink-600" />
-                  </div>
-                  <div>
-                    <h2 className="dash font-bold text-slate-900">Workflow IPVA</h2>
-                    <p className="dash mt-0.5 text-xs text-slate-400">Protocolo, SEFAZ, recurso e conclusão</p>
-                  </div>
-                </div>
-                <div className="mx-5 mt-4 rounded-xl border border-violet-100 bg-violet-50 px-3 py-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <p className="dash text-xs font-semibold text-violet-900">Resumo IMESC</p>
-                      <p className="dash mt-0.5 text-[10px] text-violet-600">Referência vinculada; o IPVA continua independente.</p>
-                    </div>
-                    <Link href="/processos/imesc-operacao" className="dash text-xs font-semibold text-violet-700 hover:underline">
-                      Abrir operação IMESC
-                    </Link>
-                  </div>
-                  {imescFollowup ? (
-                    <div className="mt-3 grid grid-cols-1 gap-2 border-t border-violet-100 pt-3 text-[11px] sm:grid-cols-3">
-                      <div><span className="text-violet-500">Situação</span><p className="mt-0.5 font-semibold text-violet-900">{IMESC_OPERATIONAL_LABELS[imescFollowup.operational_status as keyof typeof IMESC_OPERATIONAL_LABELS]}</p></div>
-                      <div><span className="text-violet-500">Agendamento</span><p className="mt-0.5 font-semibold text-violet-900">{imescFollowup.scheduled_date ? formatDate(imescFollowup.scheduled_date) : 'Não agendado'}</p></div>
-                      <div><span className="text-violet-500">Classificação</span><p className="mt-0.5 font-semibold text-violet-900">{imescFollowup.source_classification === 'gravissima' ? 'Gravíssima' : IMESC_BOARD_LABELS[imescFollowup.board_status as keyof typeof IMESC_BOARD_LABELS]}</p></div>
-                    </div>
-                  ) : (
-                    <p className="mt-3 border-t border-violet-100 pt-3 text-[11px] text-violet-700">Nenhum acompanhamento IMESC iniciado para este cliente.</p>
-                  )}
-                </div>
-                <IpvaStagesPanel
-                  processId={process.id}
-                  stages={processStages}
-                  documents={processDocuments}
-                  legalRules={(legalRules ?? []) as LegalRuleVersion[]}
-                />
-              </div>
-            )}
-
             {/* CNH Especial stages */}
             {pt?.slug === 'cnh_especial' && (
               <div className="anim anim-1 bg-white rounded-2xl overflow-hidden" style={{ border: '1px solid #E2E8F0', boxShadow: '0 1px 4px rgba(0,0,0,0.04)' }}>
@@ -513,6 +472,31 @@ export default async function ProcessoDetailPage({ params }: { params: Promise<{
                   stages={processStages}
                   jurisdictionState={process.jurisdiction_state || client?.state || null}
                 />
+              </div>
+            )}
+
+            {pt?.slug === 'processo_ipva' && (
+              <div className="anim anim-1 rounded-2xl border border-violet-200 bg-violet-50 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="dash text-xs font-bold text-violet-900">Perícia (IMESC) é uma operação separada</p>
+                    <p className="dash mt-0.5 text-[11px] leading-relaxed text-violet-700">
+                      O IPVA não espera a perícia, o IPI nem o ICMS. Acompanhe a perícia no quadro próprio quando ela for necessária.
+                    </p>
+                  </div>
+                  <Link href="/processos/imesc-operacao" className="dash shrink-0 rounded-lg border border-violet-300 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700 hover:bg-violet-100">
+                    Abrir Perícia
+                  </Link>
+                </div>
+                {(legalRules ?? []).length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-3 border-t border-violet-200 pt-3">
+                    {((legalRules ?? []) as LegalRuleVersion[]).map(rule => (
+                      <a key={rule.id} href={rule.source_url} target="_blank" rel="noopener noreferrer" className="dash text-[11px] font-semibold text-violet-700 hover:underline">
+                        {rule.title} · {rule.version}
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

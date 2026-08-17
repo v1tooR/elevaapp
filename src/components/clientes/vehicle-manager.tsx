@@ -1,7 +1,8 @@
 'use client'
 
 import { useState } from 'react'
-import { CarFront, Loader2, Plus, X } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { CarFront, CheckCircle2, Loader2, Plus, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -19,6 +20,7 @@ const EMPTY_FORM = {
   brand: '',
   model: '',
   modelYear: '',
+  invoiceIssuedAt: '',
 }
 
 export function VehicleManager({
@@ -28,11 +30,13 @@ export function VehicleManager({
   clientId: string
   initialVehicles: ClientVehicle[]
 }) {
+  const router = useRouter()
   const [vehicles, setVehicles] = useState(initialVehicles)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -45,6 +49,9 @@ export function VehicleManager({
       body: JSON.stringify({
         ...form,
         modelYear: form.modelYear ? Number(form.modelYear) : null,
+        invoiceIssuedAt: form.vehicleCondition === 'zero_km' && form.invoiceIssuedAt
+          ? form.invoiceIssuedAt
+          : null,
       }),
     })
     const result = await response.json().catch(() => ({}))
@@ -56,9 +63,11 @@ export function VehicleManager({
     }
 
     setVehicles(current => [result.vehicle as ClientVehicle, ...current])
+    setNotice(result.ipvaRelease?.released ? (result.ipvaRelease.note as string) : '')
     setForm(EMPTY_FORM)
     setShowForm(false)
     setLoading(false)
+    router.refresh()
   }
 
   return (
@@ -100,14 +109,31 @@ export function VehicleManager({
             <Input label="Placa" value={form.plate} onChange={event => setForm(current => ({ ...current, plate: event.target.value.toUpperCase() }))} />
             <Input label="RENAVAM" value={form.renavam} onChange={event => setForm(current => ({ ...current, renavam: event.target.value }))} />
             <Input label="Ano/modelo" type="number" min="1900" max="2200" value={form.modelYear} onChange={event => setForm(current => ({ ...current, modelYear: event.target.value }))} />
+            {form.vehicleCondition === 'zero_km' && (
+              <Input
+                label="Data de emissão da nota fiscal"
+                type="date"
+                value={form.invoiceIssuedAt}
+                onChange={event => setForm(current => ({ ...current, invoiceIssuedAt: event.target.value }))}
+                helperText="Obrigatória para o IPVA quando o carro é zero-quilômetro."
+              />
+            )}
           </div>
           <p className="dash text-[11px] text-slate-500">Informe marca e modelo ou, quando já disponíveis, placa ou RENAVAM.</p>
+          <p className="dash text-[11px] font-semibold text-cyan-700">Com placa e marca preenchidas, o IPVA é liberado na hora, sem depender do IPI ou do ICMS.</p>
           {error && <p className="dash rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
           <Button type="submit" disabled={loading}>
             {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Salvar veículo
           </Button>
         </form>
+      )}
+
+      {notice && (
+        <div className="flex items-start gap-2 border-b border-emerald-100 bg-emerald-50 px-5 py-3">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
+          <p className="dash text-xs font-semibold text-emerald-800">{notice}</p>
+        </div>
       )}
 
       {vehicles.length === 0 ? (

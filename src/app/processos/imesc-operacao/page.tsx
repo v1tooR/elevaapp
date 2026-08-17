@@ -8,7 +8,7 @@ import type {
   DisabilitySeverity,
 } from '@/types/database'
 
-export const metadata = { title: 'Operação IMESC — Eleva Isenções' }
+export const metadata = { title: 'Perícia (IMESC) — Eleva Isenções' }
 
 export interface ImescBoardRow {
   id: string
@@ -124,9 +124,9 @@ export default async function ImescOperationsPage() {
               <Stethoscope className="h-5 w-5 text-white/85" />
             </div>
             <div className="min-w-0">
-              <h1 className="dash text-xl font-bold sm:text-2xl">Operação IMESC</h1>
+              <h1 className="dash text-xl font-bold sm:text-2xl">Perícia (IMESC)</h1>
               <p className="dash mt-1 text-xs text-white/65 sm:text-sm">
-                Classificação e acompanhamento independentes do IPI e do IPVA.
+                Operação própria: a perícia não depende do IPI, do IPVA nem do ICMS, e nenhum deles espera por ela.
               </p>
             </div>
           </div>
@@ -140,7 +140,7 @@ export default async function ImescOperationsPage() {
         <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-red-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <div>
-            <p className="dash text-sm font-semibold">Não foi possível carregar a operação IMESC.</p>
+            <p className="dash text-sm font-semibold">Não foi possível carregar a operação de perícia.</p>
             <p className="dash mt-0.5 text-xs text-red-700">
               Verifique se a migration 025 foi aplicada e tente novamente.
             </p>

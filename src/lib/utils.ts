@@ -38,23 +38,26 @@ export function formatDateTime(dateStr: string): string {
   })
 }
 
+// Vocabulário único da operação: aguardando documentos -> dar entrada ->
+// em análise (protocolado) -> deferido / indeferido. Dois status do banco podem
+// compartilhar o mesmo rótulo de propósito.
 export const PROCESS_STATUS_LABELS: Record<ProcessStatus, string> = {
-  aberto: 'Aberto',
-  em_andamento: 'Em Andamento',
-  aguardando_documentos: 'Aguard. Documentos',
-  em_analise: 'Em Análise',
-  aguardando_orgao: 'Aguard. Órgão',
-  concluido: 'Concluído',
+  aberto: 'Dar entrada',
+  em_andamento: 'Dar entrada',
+  aguardando_documentos: 'Aguardando documentos',
+  em_analise: 'Em análise',
+  aguardando_orgao: 'Em análise',
+  concluido: 'Deferido',
   arquivado: 'Arquivado',
   cancelado: 'Cancelado',
 }
 
 export const PROCESS_STATUS_COLORS: Record<ProcessStatus, string> = {
-  aberto: 'bg-blue-100 text-blue-800',
-  em_andamento: 'bg-yellow-100 text-yellow-800',
+  aberto: 'bg-amber-100 text-amber-900',
+  em_andamento: 'bg-amber-100 text-amber-900',
   aguardando_documentos: 'bg-orange-100 text-orange-800',
   em_analise: 'bg-purple-100 text-purple-800',
-  aguardando_orgao: 'bg-indigo-100 text-indigo-800',
+  aguardando_orgao: 'bg-purple-100 text-purple-800',
   concluido: 'bg-green-100 text-green-800',
   arquivado: 'bg-gray-100 text-gray-600',
   cancelado: 'bg-red-100 text-red-800',
@@ -156,6 +159,7 @@ export const PROCESS_TYPE_CUSTOM_FIELDS: Record<string, ProcessCustomFieldDefini
       options: [
         { value: 'nao_protocolado', label: 'Pedido ainda não protocolado' },
         { value: 'em_analise', label: 'Em análise' },
+        { value: 'aguardando_acao_usuario', label: 'Aguardando ação do usuário' },
         { value: 'deferido', label: 'Deferido' },
         { value: 'deferido_com_condicao', label: 'Deferido com condição' },
         { value: 'indeferido', label: 'Indeferido' },
@@ -163,6 +167,12 @@ export const PROCESS_TYPE_CUSTOM_FIELDS: Record<string, ProcessCustomFieldDefini
       ],
     },
     { field_name: 'sefaz_data_ciencia', field_label: 'Data da ciência da decisão', field_type: 'date' },
+    {
+      field_name: 'nota_fiscal_emissao',
+      field_label: 'Data de emissão da nota fiscal',
+      field_type: 'date',
+      help_text: 'Obrigatória quando o veículo é zero-quilômetro.',
+    },
     { field_name: 'recurso_ipva_protocolado_em', field_label: 'Recurso protocolado em', field_type: 'date' },
     { field_name: 'recurso_ipva_protocolo', field_label: 'Protocolo do recurso IPVA', field_type: 'text' },
   ],

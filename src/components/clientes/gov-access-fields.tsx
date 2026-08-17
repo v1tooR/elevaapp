@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import { KeyRound, ShieldCheck, Trash2 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -35,6 +36,14 @@ export function GovAccessFields({
   compact = false,
 }: Props) {
   const expiry = credentialMetadata?.purgeAfter ?? credentialMetadata?.hardExpiresAt
+  // "Tem senha?" decide se o campo de gravação aparece. Começa em "Sim" quando
+  // já existe credencial guardada, e em "Não" quando nunca houve nenhuma.
+  const [hasPassword, setHasPassword] = useState(credentialMetadata?.exists === true)
+
+  const chooseHasPassword = (value: boolean) => {
+    setHasPassword(value)
+    if (!value) onCredentialPasswordChange('')
+  }
 
   return (
     <div className="space-y-4">
@@ -99,29 +108,63 @@ export function GovAccessFields({
         <div className="mb-3 flex items-start gap-2.5">
           <KeyRound className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
           <div>
-            <p className="dash text-xs font-semibold text-slate-800">
-              {credentialMetadata?.exists ? 'Substituir a senha protegida' : 'Salvar senha do Gov.br'}
-            </p>
+            <p className="dash text-xs font-semibold text-slate-800">Tem senha?</p>
             <p className="dash mt-0.5 text-[11px] leading-relaxed text-slate-500">
-              O campo sempre aparece vazio. Ao salvar, uma senha anterior é substituída e o conteúdo sai da tela.
+              Marque “Não” quando o cliente ainda não tem ou não autorizou informar a senha do Gov.br.
             </p>
           </div>
         </div>
-        <Input
-          label="Senha do Gov.br"
-          type="password"
-          name="gov-credential-write-only"
-          value={credentialPassword}
-          onChange={event => onCredentialPasswordChange(event.target.value)}
-          onCopy={event => event.preventDefault()}
-          onCut={event => event.preventDefault()}
-          autoComplete="off"
-          spellCheck={false}
-          minLength={1}
-          maxLength={256}
-          placeholder="Digite ou cole apenas se houver autorização"
-          helperText="Sem botão de visualizar ou copiar. Retenção: 7 dias após todos os processos terminarem, com limite máximo de 180 dias."
-        />
+
+        <div className="mb-3 flex gap-2">
+          {[
+            { value: true, label: 'Sim' },
+            { value: false, label: 'Não' },
+          ].map(option => (
+            <button
+              key={option.label}
+              type="button"
+              aria-pressed={hasPassword === option.value}
+              onClick={() => chooseHasPassword(option.value)}
+              className={`dash rounded-lg border px-4 py-1.5 text-xs font-semibold transition-colors ${
+                hasPassword === option.value
+                  ? 'border-emerald-300 bg-emerald-50 text-emerald-800'
+                  : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-100'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+
+        {hasPassword ? (
+          <>
+            <p className="dash mb-2 text-[11px] leading-relaxed text-slate-500">
+              {credentialMetadata?.exists
+                ? 'O campo sempre aparece vazio. Ao salvar, a senha anterior é substituída e o conteúdo sai da tela.'
+                : 'O campo sempre aparece vazio e a senha não pode ser visualizada depois de salva.'}
+            </p>
+            <Input
+              label={credentialMetadata?.exists ? 'Substituir a senha do Gov.br' : 'Senha do Gov.br'}
+              type="password"
+              name="gov-credential-write-only"
+              value={credentialPassword}
+              onChange={event => onCredentialPasswordChange(event.target.value)}
+              onCopy={event => event.preventDefault()}
+              onCut={event => event.preventDefault()}
+              autoComplete="off"
+              spellCheck={false}
+              minLength={1}
+              maxLength={256}
+              placeholder="Digite ou cole apenas se houver autorização"
+              helperText="Sem botão de visualizar ou copiar. Retenção: 7 dias após todos os processos terminarem, com limite máximo de 180 dias."
+            />
+          </>
+        ) : (
+          <p className="dash text-[11px] leading-relaxed text-slate-500">
+            Nenhuma senha será gravada.
+            {credentialMetadata?.exists ? ' A senha já armazenada continua guardada até ser excluída acima.' : ''}
+          </p>
+        )}
       </div>
     </div>
   )

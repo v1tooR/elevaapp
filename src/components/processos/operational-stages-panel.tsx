@@ -205,11 +205,6 @@ export function OperationalStagesPanel({ processId, clientId, processTypeSlug, s
     setEdits(previous => {
       const current = previous[stage.id] ?? initEdit(stage)
       const data: Record<string, unknown> = { ...current.data, report_status: reportStatus }
-      if (reportStatus !== 'pronto') {
-        for (const key of ['issuing_authority', 'issued_at', 'document_number', 'document_details']) {
-          delete data[key]
-        }
-      }
       return {
         ...previous,
         [stage.id]: {
@@ -301,7 +296,7 @@ export function OperationalStagesPanel({ processId, clientId, processTypeSlug, s
       const shouldOfferIpva = processTypeSlug === 'processo_icms'
         && stage.stage_key === 'protocolo_sivei_icms'
         && (edit.status === 'aprovado' || edit.result === 'deferido')
-      if (shouldOfferIpva && window.confirm('ICMS deferido. Dar entrada no IPVA agora?')) {
+      if (shouldOfferIpva && window.confirm('ICMS deferido. Abrir o processo de IPVA para este cliente agora?')) {
         const ipvaResponse = await fetch(`/api/clientes/${clientId}/servicos`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -483,69 +478,6 @@ export function OperationalStagesPanel({ processId, clientId, processTypeSlug, s
                     </div>
                   )}
 
-                  {(template.fields?.length ?? 0) > 0 && (isIpiReportStage ? (
-                    <div className="space-y-3">
-                      {template.fields?.filter(field => field.key === 'report_status').map(field => (
-                        <FieldControl
-                          key={field.key}
-                          field={field}
-                          value={edit.data[field.key]}
-                          onChange={value => updateIpiReportStatus(stage, value)}
-                        />
-                      ))}
-                      {reportStatus === 'pronto' && (
-                        <details className="rounded-xl border border-slate-200 bg-white p-3">
-                          <summary className="cursor-pointer text-xs font-semibold text-slate-700">Identificação do laudo recebido · opcional</summary>
-                          <div className="mt-3 grid grid-cols-1 gap-3 border-t border-slate-100 pt-3 sm:grid-cols-2">
-                            {template.fields?.filter(field => field.key !== 'report_status').map(field => (
-                              <FieldControl
-                                key={field.key}
-                                field={field}
-                                value={edit.data[field.key]}
-                                onChange={value => updateData(stage, field.key, value)}
-                              />
-                            ))}
-                          </div>
-                        </details>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                      {template.fields?.filter(field => isOperationalFieldVisible(field, edit.data)).map(field => (
-                        <FieldControl
-                          key={field.key}
-                          field={field}
-                          value={edit.data[field.key]}
-                          onChange={value => updateOperationalField(stage, field.key, value)}
-                        />
-                      ))}
-                    </div>
-                  ))}
-
-                  {(template.checklist?.length ?? 0) > 0 && (
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <ClipboardCheck className="h-4 w-4 text-amber-700" />
-                        <p className="text-xs font-semibold text-slate-700">Checklist</p>
-                      </div>
-                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-                        {template.checklist?.map(item => (
-                          <label key={item.key} className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-white p-3">
-                            <input
-                              type="checkbox"
-                              checked={checklist[item.key] === true}
-                              onChange={event => updateChecklist(stage, item.key, event.target.checked)}
-                              className="mt-0.5 h-4 w-4 rounded text-amber-600"
-                            />
-                            <span className="text-xs leading-relaxed text-slate-700">
-                              {item.label}{item.requiredOnResolve === false ? <span className="text-slate-400"> · quando aplicável</span> : ''}
-                            </span>
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
                   {(template.resultOptions?.length ?? 0) > 0 && (
                     <div className="space-y-2">
                       <p className="text-xs font-semibold text-slate-600">Situação</p>
@@ -578,6 +510,54 @@ export function OperationalStagesPanel({ processId, clientId, processTypeSlug, s
                             {option.stageStatus === 'reprovado' ? <XCircle className="h-3.5 w-3.5" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
                             {option.label}
                           </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {(template.fields?.length ?? 0) > 0 && (isIpiReportStage ? (
+                    <div className="space-y-3">
+                      {template.fields?.filter(field => field.key === 'report_status').map(field => (
+                        <FieldControl
+                          key={field.key}
+                          field={field}
+                          value={edit.data[field.key]}
+                          onChange={value => updateIpiReportStatus(stage, value)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {template.fields?.filter(field => isOperationalFieldVisible(field, edit.data, edit.result)).map(field => (
+                        <FieldControl
+                          key={field.key}
+                          field={field}
+                          value={edit.data[field.key]}
+                          onChange={value => updateOperationalField(stage, field.key, value)}
+                        />
+                      ))}
+                    </div>
+                  ))}
+
+                  {(template.checklist?.length ?? 0) > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <ClipboardCheck className="h-4 w-4 text-amber-700" />
+                        <p className="text-xs font-semibold text-slate-700">Checklist</p>
+                      </div>
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        {template.checklist?.map(item => (
+                          <label key={item.key} className="flex cursor-pointer items-start gap-2.5 rounded-xl border border-slate-200 bg-white p-3">
+                            <input
+                              type="checkbox"
+                              checked={checklist[item.key] === true}
+                              onChange={event => updateChecklist(stage, item.key, event.target.checked)}
+                              className="mt-0.5 h-4 w-4 rounded text-amber-600"
+                            />
+                            <span className="text-xs leading-relaxed text-slate-700">
+                              {item.label}{item.requiredOnResolve === false ? <span className="text-slate-400"> · quando aplicável</span> : ''}
+                            </span>
+                          </label>
                         ))}
                       </div>
                     </div>

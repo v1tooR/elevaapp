@@ -4,13 +4,16 @@ import Link from 'next/link'
 import { ArrowUpRight, GripVertical } from 'lucide-react'
 import { formatDate } from '@/lib/utils'
 
+// Mesmo vocabulário do restante da operação: aguardando documentos ->
+// dar entrada -> em análise (protocolado) -> deferido.
+// `key` é o status gravado ao soltar o card; `statuses` são os status que a
+// coluna mostra — "protocolado" e "aguardando órgão" são a mesma análise.
 const COLUMNS = [
-  { key: 'aberto',                 label: 'Aberto',             color: '#3B82F6', bg: '#EFF6FF', border: '#BFDBFE', text: '#1D4ED8' },
-  { key: 'em_andamento',           label: 'Em Andamento',       color: '#F59E0B', bg: '#FFFBEB', border: '#FDE68A', text: '#B45309' },
-  { key: 'aguardando_documentos',  label: 'Aguard. Documentos', color: '#F97316', bg: '#FFF7ED', border: '#FED7AA', text: '#C2410C' },
-  { key: 'em_analise',             label: 'Em Análise',         color: '#8B5CF6', bg: '#F5F3FF', border: '#DDD6FE', text: '#6D28D9' },
-  { key: 'aguardando_orgao',       label: 'Aguard. Órgão',      color: '#6366F1', bg: '#EEF2FF', border: '#C7D2FE', text: '#4338CA' },
-  { key: 'concluido',              label: 'Concluído',          color: '#10B981', bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46' },
+  { key: 'aberto',                 statuses: ['aberto'],                            label: 'Na fila',               color: '#64748B', bg: '#F8FAFC', border: '#E2E8F0', text: '#475569' },
+  { key: 'aguardando_documentos',  statuses: ['aguardando_documentos'],             label: 'Aguardando documentos', color: '#F97316', bg: '#FFF7ED', border: '#FED7AA', text: '#C2410C' },
+  { key: 'em_andamento',           statuses: ['em_andamento'],                      label: 'Dar entrada',           color: '#F59E0B', bg: '#FFFBEB', border: '#FDE68A', text: '#B45309' },
+  { key: 'em_analise',             statuses: ['em_analise', 'aguardando_orgao'],    label: 'Em análise',            color: '#8B5CF6', bg: '#F5F3FF', border: '#DDD6FE', text: '#6D28D9' },
+  { key: 'concluido',              statuses: ['concluido'],                         label: 'Deferido',              color: '#10B981', bg: '#ECFDF5', border: '#A7F3D0', text: '#065F46' },
 ]
 
 interface Process {
@@ -32,7 +35,7 @@ export function KanbanBoard({ initialProcesses }: Props) {
   const [updating, setUpdating]       = useState<string | null>(null)
   const [error, setError]             = useState<string | null>(null)
 
-  const byStatus = (s: string) => processes.filter(p => p.status === s)
+  const byStatuses = (statuses: readonly string[]) => processes.filter(p => statuses.includes(p.status))
 
   const handleDragStart = (e: React.DragEvent, id: string) => {
     setDraggingId(id)
@@ -84,7 +87,7 @@ export function KanbanBoard({ initialProcesses }: Props) {
 
       <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: 480 }}>
         {COLUMNS.map(col => {
-          const cards  = byStatus(col.key)
+          const cards  = byStatuses(col.statuses)
           const isOver = dragOverCol === col.key
 
           return (

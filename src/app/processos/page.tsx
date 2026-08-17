@@ -13,20 +13,22 @@ import { getIpiDetranReportStatus } from '@/lib/operational-workflows'
 const ACTIVE_STATUSES = ['aberto', 'em_andamento', 'em_analise']
 const WAITING_STATUSES = ['aguardando_documentos', 'aguardando_orgao']
 
+// Mesmo vocabulário do resto da operação. "Protocolado" e "aguardando órgão"
+// somam na mesma coluna: são a mesma análise.
 const STATUS_CHART_CONFIG: Record<string, { label: string; color: string }> = {
-  aberto:                { label: 'Aberto',       color: '#3B82F6' },
-  em_andamento:          { label: 'Em andamento', color: '#F59E0B' },
-  aguardando_documentos: { label: 'Ag. documentos',color: '#F97316' },
-  em_analise:            { label: 'Em análise',   color: '#8B5CF6' },
-  aguardando_orgao:      { label: 'Ag. órgão',    color: '#6366F1' },
-  concluido:             { label: 'Concluído',    color: '#10B981' },
-  arquivado:             { label: 'Arquivado',    color: '#94A3B8' },
-  cancelado:             { label: 'Cancelado',    color: '#EF4444' },
+  aguardando_documentos: { label: 'Aguardando documentos', color: '#F97316' },
+  em_andamento:          { label: 'Dar entrada',           color: '#F59E0B' },
+  em_analise:            { label: 'Em análise',            color: '#8B5CF6' },
+  aguardando_orgao:      { label: 'Em análise',            color: '#8B5CF6' },
+  concluido:             { label: 'Deferido',              color: '#10B981' },
+  aberto:                { label: 'Na fila',               color: '#64748B' },
+  arquivado:             { label: 'Arquivado',             color: '#94A3B8' },
+  cancelado:             { label: 'Cancelado',             color: '#EF4444' },
 }
 
 const KPI_ORDER = [
-  'aberto', 'em_andamento', 'aguardando_documentos', 'em_analise',
-  'aguardando_orgao', 'concluido', 'arquivado', 'cancelado',
+  'aguardando_documentos', 'em_andamento', 'em_analise', 'aguardando_orgao',
+  'concluido', 'aberto', 'arquivado', 'cancelado',
 ]
 
 interface ProcessTypeSummary {
@@ -116,13 +118,16 @@ export default async function ProcessosHubPage() {
   for (const p of procs) {
     statusCountMap[p.status] = (statusCountMap[p.status] ?? 0) + 1
   }
-  const chartData = KPI_ORDER
-    .filter(s => (statusCountMap[s] ?? 0) > 0)
-    .map(s => ({
-      label: STATUS_CHART_CONFIG[s]?.label ?? s,
-      count: statusCountMap[s] ?? 0,
-      color: STATUS_CHART_CONFIG[s]?.color ?? '#94A3B8',
-    }))
+  const chartByLabel = new Map<string, { label: string; count: number; color: string }>()
+  for (const status of KPI_ORDER) {
+    const count = statusCountMap[status] ?? 0
+    if (count === 0) continue
+    const config = STATUS_CHART_CONFIG[status] ?? { label: status, color: '#94A3B8' }
+    const current = chartByLabel.get(config.label)
+    if (current) current.count += count
+    else chartByLabel.set(config.label, { ...config, count })
+  }
+  const chartData = [...chartByLabel.values()]
 
   const kpiCards = [
     {
@@ -209,7 +214,7 @@ export default async function ProcessosHubPage() {
                 href="/processos/imesc-operacao"
                 className="dash flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white transition-all hover:border-white/40 hover:bg-white/20"
               >
-                <Stethoscope className="h-4 w-4" /> Operação IMESC
+                <Stethoscope className="h-4 w-4" /> Perícia (IMESC)
               </Link>
               <Link
                 href="/processos/ipva-operacao"

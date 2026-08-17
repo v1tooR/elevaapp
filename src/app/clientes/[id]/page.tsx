@@ -8,7 +8,7 @@ import {
   UserRound,
   ListChecks, Play, Store,
 } from 'lucide-react'
-import { ProcessStatusBadge } from '@/components/shared/status-badge'
+import { ProcessPipelineBadge } from '@/components/shared/status-badge'
 import { formatCPF, formatPhone, formatDate, formatDateTime, formatCurrency } from '@/lib/utils'
 import { EditClientModal } from '@/components/clientes/edit-client-modal'
 import { PortalAccessCard } from '@/components/clientes/portal-access-card'
@@ -112,7 +112,7 @@ export default async function ClienteDetailPage({
     { data: purchaseSummary },
   ] = await Promise.all([
     supabase.from('processes')
-      .select('*, process_types(name, color, slug)')
+      .select('*, process_types(name, color, slug), stages:process_stages(stage_key, status, data)')
       .eq('client_id', id)
       .neq('status', 'cancelado')
       .order('created_at', { ascending: false }),
@@ -762,6 +762,9 @@ export default async function ClienteDetailPage({
                     const isCurrent = p.id === currentQueueProcessId
                     const isNext = p.id === nextQueueProcessId
                     const canPrioritize = isQueued && !isTerminal && !isCurrent && !isNext
+                    // O que está na fila aparece como "Na fila": o status interno
+                    // do processo ainda não diz nada enquanto ele não é a vez.
+                    const queuedBehind = isQueued && !isTerminal && !isCurrent
 
                     return (
                       <div
@@ -793,17 +796,12 @@ export default async function ClienteDetailPage({
                               )}
                               {isNext && (
                                 <span className="dash rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
-                                  Próximo
+                                  Próximo da fila
                                 </span>
                               )}
                               {isQueued && isTerminal && (
                                 <span className="dash rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
                                   Encerrado na fila
-                                </span>
-                              )}
-                              {isQueued && !isTerminal && !isCurrent && !isNext && (
-                                <span className="dash rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-                                  Na fila
                                 </span>
                               )}
                             </div>
@@ -815,7 +813,13 @@ export default async function ClienteDetailPage({
                               <p className="text-xs text-slate-400 dash">{formatDate(p.created_at)}</p>
                             </div>
                           </div>
-                          <ProcessStatusBadge status={p.status} />
+                          <ProcessPipelineBadge
+                            status={p.status}
+                            processTypeSlug={p.process_types?.slug}
+                            blockedReason={p.blocked_reason}
+                            stages={p.stages ?? []}
+                            queuedBehind={queuedBehind}
+                          />
                           <ArrowUpRight className="w-3.5 h-3.5 text-slate-300 shrink-0" />
                         </Link>
                         {canPrioritize && (

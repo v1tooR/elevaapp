@@ -25,6 +25,7 @@ interface QueueProcess {
 
 const BUCKET_ICONS = {
   configuracao: AlertTriangle,
+  documentos: Clock3,
   protocolo: Send,
   sefaz: Clock3,
   recurso: AlertTriangle,
@@ -33,6 +34,7 @@ const BUCKET_ICONS = {
 
 const BUCKET_COLORS: Record<IpvaOperationalBucket, string> = {
   configuracao: '#64748B',
+  documentos: '#F59E0B',
   protocolo: '#A14F2A',
   sefaz: '#3B82F6',
   recurso: '#EF4444',

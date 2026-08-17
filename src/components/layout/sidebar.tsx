@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard, Users, Target, FolderOpen, FileText,
-  Calendar, Bell, Settings, LogOut, Banknote, X, ChevronRight, ListTodo, ListFilter, Handshake,
+  Calendar, Bell, Settings, LogOut, Banknote, X, ChevronRight, ListFilter, Handshake,
   Stethoscope, RefreshCw,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -20,13 +20,12 @@ interface SidebarProps {
 
 const adminNav = [
   { href: '/dashboard',    label: 'Dashboard',    icon: LayoutDashboard, group: 'main'    },
-  { href: '/rotina',       label: 'Minha rotina', icon: ListTodo,        group: 'main'    },
+  { href: '/processos/lista', label: 'Lista geral', icon: ListFilter,    group: 'main',   activityBadge: true },
   { href: '/clientes',     label: 'Clientes',     icon: Users,           group: 'main'    },
   { href: '/leads',        label: 'Leads',        icon: Target,          group: 'main'    },
   { href: '/indicacoes',   label: 'Indicações',   icon: Handshake,       group: 'main'    },
   { href: '/processos',    label: 'Processos',    icon: FolderOpen,      group: 'main'    },
-  { href: '/processos/imesc-operacao', label: 'Operação IMESC', icon: Stethoscope, group: 'main' },
-  { href: '/processos/lista', label: 'Lista geral', icon: ListFilter,    group: 'main'    },
+  { href: '/processos/imesc-operacao', label: 'Perícia (IMESC)', icon: Stethoscope, group: 'main' },
   { href: '/documentos',   label: 'Documentos',   icon: FileText,        group: 'main'    },
   { href: '/calendario',   label: 'Calendário',   icon: Calendar,        group: 'comms'   },
   { href: '/notificacoes', label: 'Notificações', icon: Bell,            group: 'comms',  badge: true },
@@ -59,10 +58,14 @@ const ROLE_LABEL: Record<string, string> = {
   cliente: 'Cliente',
 }
 
+const ACTIVITY_SEEN_KEY = 'eleva:lista-geral:visto-em'
+const ACTIVITY_WINDOW_MS = 24 * 60 * 60 * 1000
+
 export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
   const pathname = usePathname()
   const role: UserRole = profile?.role ?? 'analista'
   const [unreadCount, setUnreadCount] = useState(0)
+  const [activityCount, setActivityCount] = useState(0)
 
   useEffect(() => {
     if (!profile?.id) return
@@ -76,6 +79,28 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
       .lte('available_at', new Date().toISOString())
       .then(({ count }) => setUnreadCount(count ?? 0))
   }, [profile?.id])
+
+  // Destaque de novidade na Lista geral: processos criados ou movimentados
+  // desde a última vez que a lista foi aberta.
+  const isOnGeneralList = pathname.startsWith('/processos/lista')
+
+  useEffect(() => {
+    if (!profile?.id || role === 'cliente') return
+    if (isOnGeneralList) {
+      window.localStorage.setItem(ACTIVITY_SEEN_KEY, new Date().toISOString())
+      return
+    }
+
+    const stored = window.localStorage.getItem(ACTIVITY_SEEN_KEY)
+    const since = stored ?? new Date(Date.now() - ACTIVITY_WINDOW_MS).toISOString()
+    const supabase = createClient()
+    supabase
+      .from('processes')
+      .select('*', { count: 'exact', head: true })
+      .gt('updated_at', since)
+      .not('status', 'in', '(concluido,arquivado,cancelado)')
+      .then(({ count }) => setActivityCount(count ?? 0))
+  }, [profile?.id, role, isOnGeneralList])
 
   const navItems = role === 'cliente'
     ? clientNav
@@ -181,6 +206,16 @@ export function Sidebar({ profile, onClose, isMobile }: SidebarProps) {
                 {item.badge && unreadCount > 0 && (
                   <span className="sb text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500 text-white min-w-4.5 text-center leading-none">
                     {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+
+                {/* Novidade na lista geral */}
+                {(item as { activityBadge?: boolean }).activityBadge === true && !isOnGeneralList && activityCount > 0 && (
+                  <span
+                    title={`${activityCount} processo(s) com movimentação nova`}
+                    className="sb text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-[#C97A52] text-white min-w-4.5 text-center leading-none"
+                  >
+                    {activityCount > 9 ? '9+' : activityCount}
                   </span>
                 )}
 

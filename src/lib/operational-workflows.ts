@@ -14,8 +14,15 @@ export type OperationalFieldDefinition = {
   help?: string
   requiredOnResolve?: boolean
   mustBeTrueOnResolve?: boolean
+  /**
+   * Use a etapa `key` para comparar um campo do formulário ou
+   * `RESULT_FIELD_KEY` para depender do resultado escolhido na decisão.
+   */
   visibleWhen?: { key: string; equals: unknown }
 }
+
+/** Chave especial de `visibleWhen` que aponta para o resultado da etapa. */
+export const RESULT_FIELD_KEY = '__result'
 
 export type OperationalChecklistItem = {
   key: string
@@ -45,6 +52,9 @@ export type OperationalStageTemplate = {
   hasAttendance?: boolean
   resultOptions?: OperationalResultOption[]
   activateOnRejected?: string
+  activateOnApproved?: string
+  /** Etapa em que a entrada é dada. Tudo antes dela é recebimento de documentos. */
+  entryStage?: boolean
 }
 
 export type OperationalWorkflowSource = {
@@ -79,6 +89,16 @@ const REQUEST_STATUS_OPTIONS: OperationalFieldOption[] = [
   { value: 'exigencia', label: 'Com exigência/pendência' },
   { value: 'deferido', label: 'Deferido' },
   { value: 'indeferido', label: 'Indeferido' },
+]
+export const SEFAZ_STATUS_OPTIONS: OperationalFieldOption[] = [
+  { value: 'nao_protocolado', label: 'Pedido ainda não protocolado' },
+  { value: 'em_analise', label: 'Em análise' },
+  { value: 'exigencia', label: 'Com exigência/pendência' },
+  { value: 'aguardando_acao_usuario', label: 'Aguardando ação do usuário' },
+  { value: 'deferido', label: 'Deferido' },
+  { value: 'deferido_com_condicao', label: 'Deferido com condição' },
+  { value: 'indeferido', label: 'Indeferido' },
+  { value: 'recurso_em_andamento', label: 'Recurso em andamento' },
 ]
 
 export const IPI_DETRAN_REPORT_STATUS_VALUES = [
@@ -168,10 +188,6 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
             options: IPI_DETRAN_REPORT_STATUS_OPTIONS,
             help: '“Recebido” libera automaticamente a próxima etapa e avisa o cliente.',
           },
-          { key: 'issuing_authority', label: 'Órgão emissor', type: 'text', placeholder: 'Ex.: DETRAN-SP' },
-          { key: 'issued_at', label: 'Recebido em', type: 'date' },
-          { key: 'document_number', label: 'Número/código do laudo', type: 'text' },
-          { key: 'document_details', label: 'Informações do documento', type: 'textarea', placeholder: 'Restrições, observações do emissor ou referência para localização.' },
         ],
       },
       {
@@ -186,7 +202,7 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         ],
       },
       {
-        stage_key: 'protocolo_sisen_ipi', label: 'Protocolo do IPI', sort_order: 30,
+        stage_key: 'protocolo_sisen_ipi', label: 'Protocolo do IPI', sort_order: 30, entryStage: true,
         description: 'Registrar protocolo, acompanhamento e decisão sem armazenar credenciais do portal.',
         allowedStatuses: DECISION_STATUSES,
         resultOptions: COMMON_DECISION_RESULTS,
@@ -245,7 +261,7 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         ],
       },
       {
-        stage_key: 'protocolo_sisen_iof', label: 'Protocolo no SISEN', sort_order: 30,
+        stage_key: 'protocolo_sisen_iof', label: 'Protocolo no SISEN', sort_order: 30, entryStage: true,
         description: 'Registrar o pedido no SISEN sem armazenar credenciais.',
         fields: [...PROTOCOL_FIELDS, { key: 'operational_status', label: 'Situação no SISEN', type: 'select', options: REQUEST_STATUS_OPTIONS }],
       },
@@ -281,13 +297,13 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
     stages: [
       {
         stage_key: 'pre_requisitos_icms', label: 'Checklist do ICMS', sort_order: 10,
-        description: 'Reunir os pré-requisitos e documentos do pedido. O veículo pode ser definido durante o atendimento.',
+        description: 'Reunir os pré-requisitos e documentos do pedido. Ao finalizar o checklist, o processo passa a pedir “Dar entrada”.',
         initialData: { state_scope: 'sp', state: 'SP' },
         allowedStatuses: ['pendente', 'em_andamento', 'concluido'],
         statusLabels: {
           pendente: 'Não iniciado',
-          em_andamento: 'Aguardando documento',
-          concluido: 'Finalizado',
+          em_andamento: 'Aguardando documentos',
+          concluido: 'Checklist concluído — dar entrada',
         },
         checklist: [
           { key: 'autorizacao_ipi', label: 'Autorização do IPI válida' },
@@ -306,21 +322,23 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         ],
       },
       {
-        stage_key: 'protocolo_sivei_icms', label: 'Protocolo de ICMS', sort_order: 20,
-        description: 'Registrar compra, protocolo, acompanhamento e decisão no mesmo ponto operacional.',
+        stage_key: 'protocolo_sivei_icms', label: 'Dar entrada no ICMS', sort_order: 20, entryStage: true,
+        description: 'Dar entrada no pedido e acompanhar até a decisão. Protocolado e “em análise” são a mesma situação. Se for deferido, confirme a comunicação e a autorização do cliente; se for indeferido, use a etapa de novo protocolo.',
         allowedStatuses: DECISION_STATUSES,
         statusLabels: {
-          pendente: 'Não iniciado',
-          em_andamento: 'Em análise',
+          pendente: 'Dar entrada',
+          em_andamento: 'Protocolado — em análise',
           aprovado: 'Deferido',
           reprovado: 'Indeferido',
         },
         resultOptions: COMMON_DECISION_RESULTS,
         activateOnRejected: 'recurso_icms',
+        activateOnApproved: 'nota_fiscal_icms',
         fields: [
-          ...PROTOCOL_FIELDS,
-          { key: 'dealership', label: 'Concessionária', type: 'text' },
-          { key: 'salesperson', label: 'Vendedor da concessionária', type: 'text' },
+          { key: 'protocol', label: 'Número do protocolo', type: 'text', requiredOnResolve: true },
+          { key: 'protocol_date', label: 'Data da entrada', type: 'date', requiredOnResolve: true },
+          { key: 'dealership', label: 'Concessionária', type: 'text', requiredOnResolve: true },
+          { key: 'salesperson', label: 'Vendedor da concessionária', type: 'text', requiredOnResolve: true },
           { key: 'vehicle', label: 'Marca/modelo escolhido', type: 'text', help: 'Informe aqui ou use os campos separados de marca e modelo antes do protocolo.' },
           { key: 'brand', label: 'Marca', type: 'text' },
           { key: 'model', label: 'Modelo', type: 'text' },
@@ -330,16 +348,38 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
           { key: 'vehicle_price', label: 'Valor do veículo', type: 'number' },
           { key: 'purchase_date', label: 'Data da compra', type: 'date' },
           { key: 'next_vehicle_change_date', label: 'Próxima troca prevista', type: 'date' },
-          { key: 'operational_status', label: 'Situação', type: 'select', options: REQUEST_STATUS_OPTIONS },
           { key: 'requirement_details', label: 'Exigência/pendência', type: 'textarea' },
-          { key: 'rejection_reason', label: 'Motivo do indeferimento', type: 'textarea' },
-          CLIENT_NOTIFIED_FIELD,
-          { key: 'documents_release_authorized', label: 'Cliente autorizou o envio dos documentos para a concessionária?', type: 'boolean', mustBeTrueOnResolve: true },
+          { key: 'rejection_reason', label: 'Motivo do indeferimento', type: 'textarea', visibleWhen: { key: RESULT_FIELD_KEY, equals: 'indeferido' } },
+          { ...CLIENT_NOTIFIED_FIELD, visibleWhen: { key: RESULT_FIELD_KEY, equals: 'deferido' } },
+          {
+            key: 'documents_release_authorized',
+            label: 'Cliente autorizou o envio dos documentos para a concessionária?',
+            type: 'boolean',
+            mustBeTrueOnResolve: true,
+            visibleWhen: { key: RESULT_FIELD_KEY, equals: 'deferido' },
+          },
         ],
       },
       {
-        stage_key: 'recurso_icms', label: 'Recurso ou novo protocolo', sort_order: 30,
-        description: 'Controlar a providência adotada após indeferimento.',
+        stage_key: 'nota_fiscal_icms', label: 'Nota fiscal do veículo', sort_order: 25,
+        description: 'Liberada quando o ICMS é deferido. Acompanhar a emissão da nota fiscal pela concessionária.',
+        initialStatus: 'nao_aplicavel',
+        allowedStatuses: ['pendente', 'em_andamento', 'concluido', 'nao_aplicavel'],
+        statusLabels: {
+          pendente: 'Aguardando nota fiscal',
+          em_andamento: 'Nota fiscal solicitada',
+          concluido: 'Nota fiscal recebida',
+          nao_aplicavel: 'Não aplicável',
+        },
+        fields: [
+          { key: 'invoice_number', label: 'Número da nota fiscal', type: 'text', requiredOnResolve: true },
+          { key: 'invoice_issued_at', label: 'Data de emissão da nota fiscal', type: 'date', requiredOnResolve: true },
+          CLIENT_NOTIFIED_FIELD,
+        ],
+      },
+      {
+        stage_key: 'recurso_icms', label: 'Dar entrada novamente ou recorrer', sort_order: 30,
+        description: 'Liberada quando o ICMS é indeferido. O caminho padrão é dar entrada novamente com a pendência corrigida.',
         initialStatus: 'nao_aplicavel',
         allowedStatuses: [...STANDARD_STATUSES, 'aprovado', 'reprovado'],
         statusLabels: {
@@ -352,12 +392,119 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         },
         fields: [
           { key: 'action', label: 'Providência', type: 'select', requiredOnResolve: true, options: [
-            { value: 'recurso', label: 'Interpor recurso' }, { value: 'novo_pedido', label: 'Dar entrada novamente' }, { value: 'encerrar', label: 'Encerrar sem nova medida' },
+            { value: 'novo_pedido', label: 'Dar entrada novamente' }, { value: 'recurso', label: 'Interpor recurso' }, { value: 'encerrar', label: 'Encerrar sem nova medida' },
           ] },
           { key: 'protocol', label: 'Número do novo protocolo/recurso', type: 'text' },
           { key: 'protocol_date', label: 'Data do novo protocolo/recurso', type: 'date' },
           { key: 'grounds', label: 'Motivo/fundamentos', type: 'textarea' },
           { key: 'outcome', label: 'Resultado', type: 'textarea' },
+          CLIENT_NOTIFIED_FIELD,
+        ],
+      },
+    ],
+  },
+
+  processo_ipva: {
+    slug: 'processo_ipva',
+    title: 'Isenção de IPVA — veículo da pessoa com deficiência',
+    scopeNote: 'Fluxo estadual e independente: assim que o veículo tem placa e marca, o IPVA pode andar sozinho, sem esperar IPI, ICMS ou perícia.',
+    sources: [
+      { title: 'SEFAZ-SP — Isenção de IPVA', url: 'https://portal.fazenda.sp.gov.br/servicos/ipva/Paginas/Isencao.aspx' },
+    ],
+    stages: [
+      {
+        stage_key: 'veiculo_ipva', label: 'Veículo do pedido', sort_order: 4,
+        description: 'Placa e marca liberam o IPVA. Enquanto faltarem, o pedido não pode ser protocolado.',
+        statusLabels: {
+          pendente: 'Aguardando placa e marca',
+          em_andamento: 'Dados incompletos',
+          concluido: 'Veículo liberado',
+        },
+        allowedStatuses: ['pendente', 'em_andamento', 'concluido'],
+        fields: [
+          { key: 'license_plate', label: 'Placa', type: 'text', requiredOnResolve: true, help: 'Junto com a marca, libera o IPVA para seguir sozinho.' },
+          { key: 'brand', label: 'Marca', type: 'text', requiredOnResolve: true },
+          { key: 'model', label: 'Modelo', type: 'text' },
+          { key: 'renavam', label: 'RENAVAM', type: 'text' },
+          { key: 'vehicle_condition', label: 'Condição do veículo', type: 'select', requiredOnResolve: true, options: [
+            { value: 'zero_km', label: 'Zero-quilômetro' }, { value: 'usado', label: 'Usado' },
+          ] },
+          {
+            key: 'invoice_issued_at',
+            label: 'Data de emissão da nota fiscal',
+            type: 'date',
+            requiredOnResolve: true,
+            visibleWhen: { key: 'vehicle_condition', equals: 'zero_km' },
+            help: 'Obrigatória para veículo zero-quilômetro.',
+          },
+        ],
+      },
+      {
+        stage_key: 'documentos_ipva', label: 'Checklist do IPVA', sort_order: 6,
+        description: 'Reunir os documentos do pedido. Ao finalizar o checklist, o processo passa a pedir “Dar entrada”.',
+        allowedStatuses: ['pendente', 'em_andamento', 'concluido'],
+        statusLabels: {
+          pendente: 'Não iniciado',
+          em_andamento: 'Aguardando documentos',
+          concluido: 'Checklist concluído — dar entrada',
+        },
+        checklist: [
+          { key: 'identificacao_cpf', label: 'Documento de identificação e CPF' },
+          { key: 'comprovante_endereco', label: 'Comprovante de endereço' },
+          { key: 'documento_veiculo', label: 'Documento do veículo ou nota fiscal' },
+          { key: 'laudo', label: 'Laudo/perícia exigido pelo estado' },
+          { key: 'procuracao', label: 'Procuração ou representação legal, quando aplicável', requiredOnResolve: false },
+        ],
+      },
+      {
+        stage_key: 'sivei_protocolo', label: 'Protocolo do IPVA', sort_order: 10, entryStage: true,
+        description: 'Dar entrada no pedido de isenção junto ao estado e registrar o número e a data do protocolo.',
+        allowedStatuses: ['pendente', 'em_andamento', 'concluido'],
+        statusLabels: {
+          pendente: 'Dar entrada',
+          em_andamento: 'Entrada em preparação',
+          concluido: 'Protocolado — em análise',
+        },
+        fields: [...PROTOCOL_FIELDS],
+      },
+      {
+        stage_key: 'sefaz_decisao', label: 'Análise da SEFAZ', sort_order: 20,
+        description: 'Acompanhar a análise. “Protocolado” e “em análise” são a mesma situação; use “Aguardando ação do usuário” quando a bola estiver com o cliente.',
+        allowedStatuses: DECISION_STATUSES,
+        statusLabels: {
+          pendente: 'Aguardando análise',
+          em_andamento: 'Em análise',
+          aprovado: 'Deferido',
+          reprovado: 'Indeferido',
+        },
+        resultOptions: COMMON_DECISION_RESULTS,
+        activateOnRejected: 'ipva_recurso',
+        fields: [
+          { key: 'operational_status', label: 'Situação na SEFAZ', type: 'select', options: SEFAZ_STATUS_OPTIONS },
+          { key: 'pending_user_action', label: 'O que o cliente precisa fazer', type: 'textarea', visibleWhen: { key: 'operational_status', equals: 'aguardando_acao_usuario' } },
+          { key: 'decision_notified_at', label: 'Data da ciência da decisão', type: 'date' },
+          { key: 'rejection_reason', label: 'Motivo do indeferimento', type: 'textarea', visibleWhen: { key: RESULT_FIELD_KEY, equals: 'indeferido' } },
+          { ...CLIENT_NOTIFIED_FIELD, visibleWhen: { key: RESULT_FIELD_KEY, equals: 'deferido' } },
+        ],
+      },
+      {
+        stage_key: 'ipva_recurso', label: 'Recurso', sort_order: 30,
+        description: 'Liberada quando o IPVA é indeferido. O prazo de recurso costuma ser de 30 dias contados da ciência.',
+        initialStatus: 'nao_aplicavel',
+        allowedStatuses: [...STANDARD_STATUSES, 'aprovado', 'reprovado'],
+        fields: [
+          ...PROTOCOL_FIELDS,
+          { key: 'due_date', label: 'Prazo registrado', type: 'date' },
+          { key: 'grounds', label: 'Fundamentos e observações', type: 'textarea' },
+          { key: 'outcome', label: 'Resultado do recurso', type: 'textarea' },
+        ],
+      },
+      {
+        stage_key: 'ipva_conclusao', label: 'Conclusão do IPVA', sort_order: 40,
+        description: 'Registrar a isenção concedida, a validade informada e a comunicação ao cliente.',
+        fields: [
+          { key: 'exemption_start_date', label: 'Isenção válida a partir de', type: 'date' },
+          { key: 'valid_until', label: 'Validade informada', type: 'date' },
           CLIENT_NOTIFIED_FIELD,
         ],
       },
@@ -438,7 +585,7 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         ],
       },
       {
-        stage_key: 'solicitacao_estacionamento', label: 'Solicitação', sort_order: 30,
+        stage_key: 'solicitacao_estacionamento', label: 'Solicitação', sort_order: 30, entryStage: true,
         description: 'Registrar protocolo, data e situação.',
         fields: [...PROTOCOL_FIELDS, { key: 'operational_status', label: 'Situação', type: 'select', options: REQUEST_STATUS_OPTIONS }],
       },
@@ -580,7 +727,7 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         ],
       },
       {
-        stage_key: 'protocolo_rodizio', label: 'Solicitação no SP156', sort_order: 30,
+        stage_key: 'protocolo_rodizio', label: 'Solicitação no SP156', sort_order: 30, entryStage: true,
         description: 'Registrar protocolo e data sem armazenar credenciais.',
         fields: [...PROTOCOL_FIELDS, { key: 'operational_status', label: 'Situação', type: 'select', options: REQUEST_STATUS_OPTIONS }],
       },
@@ -650,7 +797,7 @@ const WORKFLOWS: Record<string, OperationalWorkflowDefinition> = {
         ],
       },
       {
-        stage_key: 'protocolo_ir', label: 'Solicitação à fonte pagadora', sort_order: 30,
+        stage_key: 'protocolo_ir', label: 'Solicitação à fonte pagadora', sort_order: 30, entryStage: true,
         description: 'Registrar o canal e protocolo do órgão responsável pelo pagamento.',
         fields: [
           { key: 'agency', label: 'Órgão', type: 'text', requiredOnResolve: true },
@@ -798,8 +945,16 @@ function isResolvedStatus(status: string) {
 export function isOperationalFieldVisible(
   field: OperationalFieldDefinition,
   data: Record<string, unknown>,
+  result?: string | null,
 ) {
-  return !field.visibleWhen || data[field.visibleWhen.key] === field.visibleWhen.equals
+  if (!field.visibleWhen) return true
+  if (field.visibleWhen.key === RESULT_FIELD_KEY) return (result ?? '') === field.visibleWhen.equals
+  return data[field.visibleWhen.key] === field.visibleWhen.equals
+}
+
+/** Etapa em que a entrada é dada (protocolo). */
+export function isEntryStage(template: OperationalStageTemplate) {
+  return template.entryStage === true
 }
 
 export function validateOperationalStage(input: {
@@ -823,7 +978,7 @@ export function validateOperationalStage(input: {
   }
 
   const missingField = (input.template.fields ?? []).find(field => {
-    if (!isOperationalFieldVisible(field, input.data)) return false
+    if (!isOperationalFieldVisible(field, input.data, input.result)) return false
     const value = input.data[field.key]
     if (field.mustBeTrueOnResolve) return value !== true
     if (!field.requiredOnResolve) return false

@@ -57,14 +57,20 @@ test('fila IPVA prioriza recurso aberto', () => {
   ]), 'recurso')
 })
 
-test('fila IPVA distingue protocolo, SEFAZ, recurso e conclusão sem depender do IMESC', () => {
+test('fila IPVA distingue veículo, documentos, entrada, SEFAZ, recurso e conclusão sem depender do IMESC', () => {
   assert.deepEqual(IPVA_STAGE_KEYS, [
+    'veiculo_ipva',
+    'documentos_ipva',
     'sivei_protocolo',
     'sefaz_decisao',
     'ipva_recurso',
     'ipva_conclusao',
   ])
   assert.equal(getIpvaOperationalBucket([]), 'configuracao')
+  assert.equal(getIpvaOperationalBucket([
+    { stage_key: 'veiculo_ipva', status: 'pendente' },
+    { stage_key: 'sivei_protocolo', status: 'pendente' },
+  ]), 'documentos')
   assert.equal(getIpvaOperationalBucket([
     { stage_key: 'imesc_pericia', status: 'pendente' },
     { stage_key: 'imesc_laudo', status: 'pendente' },
@@ -84,8 +90,10 @@ test('fila IPVA distingue protocolo, SEFAZ, recurso e conclusão sem depender do
 test('IPVA apresenta etapas e situações no vocabulário da planilha', () => {
   assert.equal(getIpvaStageLabel('sivei_protocolo', 'legado'), 'Protocolo do IPVA')
   assert.equal(getIpvaStageLabel('sefaz_decisao', 'legado'), 'Análise da SEFAZ')
-  assert.equal(getIpvaStageStatusLabel('sivei_protocolo', 'pendente'), 'Não iniciado')
-  assert.equal(getIpvaStageStatusLabel('sivei_protocolo', 'em_andamento'), 'Aguardando documento')
+  assert.equal(getIpvaStageStatusLabel('veiculo_ipva', 'pendente'), 'Aguardando placa e marca')
+  assert.equal(getIpvaStageStatusLabel('documentos_ipva', 'em_andamento'), 'Aguardando documentos')
+  assert.equal(getIpvaStageStatusLabel('sivei_protocolo', 'pendente'), 'Dar entrada')
+  assert.equal(getIpvaStageStatusLabel('sivei_protocolo', 'concluido'), 'Protocolado — em análise')
   assert.equal(getIpvaStageStatusLabel('sefaz_decisao', 'em_andamento'), 'Em análise')
   assert.equal(getIpvaStageStatusLabel('sefaz_decisao', 'aprovado'), 'Deferido')
   assert.equal(getIpvaStageStatusLabel('sefaz_decisao', 'reprovado'), 'Indeferido')

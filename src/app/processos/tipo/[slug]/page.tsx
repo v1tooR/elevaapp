@@ -12,7 +12,12 @@ import {
   Search,
 } from 'lucide-react'
 import { KanbanBoard } from '@/components/processos/kanban-board'
-import { ProcessStatusBadge } from '@/components/shared/status-badge'
+import { ProcessPhaseBadge } from '@/components/shared/status-badge'
+import {
+  getPhaseFromSituation,
+  PROCESS_PHASE_FILTERS,
+  PROCESS_PHASE_LABELS,
+} from '@/lib/process-pipeline'
 import {
   deriveProcessAction,
   OPERATIONAL_ACTION_CATALOG,
@@ -22,11 +27,11 @@ import {
   STAGE_STATUS_LABELS,
 } from '@/lib/process-actions'
 import { createClient } from '@/lib/supabase/server'
-import { cn, formatCPF, formatDate, formatPhone, PROCESS_STATUS_LABELS } from '@/lib/utils'
+import { cn, formatCPF, formatDate, formatPhone } from '@/lib/utils'
 import type { ProcessStatus } from '@/types/database'
 
 interface SearchParams {
-  status?: string
+  fase?: string
   situacao?: string
   etapa?: string
   acao?: string
@@ -78,14 +83,7 @@ interface WalletFilterOption {
   stage_label: string | null
 }
 
-const QUICK_STATUSES: ProcessStatus[] = [
-  'aberto',
-  'em_andamento',
-  'aguardando_documentos',
-  'em_analise',
-  'aguardando_orgao',
-  'concluido',
-]
+const PHASE_FILTER_BY_KEY = new Map(PROCESS_PHASE_FILTERS.map(filter => [filter.phase as string, filter]))
 
 function formatDateTime(value: string | null) {
   if (!value) return '—'
@@ -111,7 +109,8 @@ export default async function ProcessosPorTipoPage({
   if (slug === 'resumo') notFound()
 
   const sp = await searchParams
-  const statusFilter = sp.status ?? ''
+  const phaseFilter = PHASE_FILTER_BY_KEY.has(sp.fase ?? '') ? sp.fase ?? '' : ''
+  const phaseFilterConfig = phaseFilter ? PHASE_FILTER_BY_KEY.get(phaseFilter) : undefined
   const situationFilter = sp.situacao ?? ''
   const stageFilter = sp.etapa ?? ''
   const actionFilter = sp.acao ?? ''
@@ -159,7 +158,8 @@ export default async function ProcessosPorTipoPage({
       .order('last_updated_at', { ascending: false })
       .range((page - 1) * perPage, page * perPage - 1)
 
-    if (statusFilter) query = query.eq('process_status', statusFilter)
+    if (phaseFilterConfig?.statuses) query = query.in('process_status', phaseFilterConfig.statuses)
+    if (phaseFilterConfig?.situation) query = query.eq('operational_situation', phaseFilterConfig.situation)
     if (situationFilter) query = query.eq('operational_situation', situationFilter)
     if (stageFilter) query = query.eq('stage_key', stageFilter)
     if (actionFilter) query = query.eq('action_category', actionFilter)
@@ -204,7 +204,7 @@ export default async function ProcessosPorTipoPage({
   const makeUrl = (overrides: Record<string, string | null>) => {
     const values: Record<string, string> = {
       ...(search ? { q: search } : {}),
-      ...(statusFilter ? { status: statusFilter } : {}),
+      ...(phaseFilter ? { fase: phaseFilter } : {}),
       ...(situationFilter ? { situacao: situationFilter } : {}),
       ...(stageFilter ? { etapa: stageFilter } : {}),
       ...(actionFilter ? { acao: actionFilter } : {}),
@@ -291,14 +291,15 @@ export default async function ProcessosPorTipoPage({
               <button className="h-10 flex-1 rounded-xl bg-slate-900 px-5 text-sm font-semibold text-white hover:bg-slate-800">Consultar</button>
               <Link href={`/processos/tipo/${slug}`} className="flex h-10 items-center justify-center rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600">Limpar</Link>
             </div>
-            {statusFilter && <input type="hidden" name="status" value={statusFilter} />}
+            {phaseFilter && <input type="hidden" name="fase" value={phaseFilter} />}
           </form>
 
-          <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <Link href={makeUrl({ status: null, page: null })} className={cn('rounded-lg border px-3 py-1.5 text-xs font-semibold', !statusFilter ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-600')}>Todos</Link>
-            {QUICK_STATUSES.map(status => (
-              <Link key={status} href={makeUrl({ status, page: null })} className={cn('rounded-lg border px-3 py-1.5 text-xs font-semibold', statusFilter === status ? 'border-amber-700 bg-amber-700 text-white' : 'border-slate-200 bg-slate-50 text-slate-600')}>
-                {PROCESS_STATUS_LABELS[status]}
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <span className="mr-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Fase</span>
+            <Link href={makeUrl({ fase: null, page: null })} className={cn('rounded-lg border px-3 py-1.5 text-xs font-semibold', !phaseFilter ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-200 bg-slate-50 text-slate-600')}>Todos</Link>
+            {PROCESS_PHASE_FILTERS.map(filter => (
+              <Link key={filter.phase} href={makeUrl({ fase: filter.phase, page: null })} className={cn('rounded-lg border px-3 py-1.5 text-xs font-semibold', phaseFilter === filter.phase ? 'border-amber-700 bg-amber-700 text-white' : 'border-slate-200 bg-slate-50 text-slate-600')}>
+                {PROCESS_PHASE_LABELS[filter.phase]}
               </Link>
             ))}
           </div>
@@ -348,7 +349,7 @@ export default async function ProcessosPorTipoPage({
                               <p className="mt-1 text-xs text-slate-400">{row.client_cpf ? formatCPF(row.client_cpf) : 'CPF não informado'}{row.client_phone ? ` · ${formatPhone(row.client_phone)}` : ''}</p>
                             </td>
                             <td className="px-4 py-4"><p className="font-medium text-slate-800">{row.stage_label ?? 'Etapas não iniciadas'}</p>{row.protocol && <p className="mt-1 font-mono text-[11px] text-slate-400">{row.protocol}</p>}</td>
-                            <td className="space-y-1.5 px-4 py-4"><ProcessStatusBadge status={row.process_status} /><p className="text-xs text-slate-500">{OPERATIONAL_SITUATION_CATALOG[row.operational_situation as keyof typeof OPERATIONAL_SITUATION_CATALOG] ?? STAGE_STATUS_LABELS[row.stage_status ?? ''] ?? row.stage_status}</p></td>
+                            <td className="space-y-1.5 px-4 py-4"><ProcessPhaseBadge phase={getPhaseFromSituation(row.process_status, row.operational_situation, row.blocked_reason)} /><p className="text-xs text-slate-500">{OPERATIONAL_SITUATION_CATALOG[row.operational_situation as keyof typeof OPERATIONAL_SITUATION_CATALOG] ?? STAGE_STATUS_LABELS[row.stage_status ?? ''] ?? row.stage_status}</p></td>
                             <td className="px-4 py-4">
                               <span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold', OPERATIONAL_PRIORITY_META[action.priority].className)}>{OPERATIONAL_PRIORITY_META[action.priority].label}</span>
                               <p className="mt-1.5 max-w-56 font-medium text-slate-800">{action.nextAction}</p>
@@ -377,7 +378,7 @@ export default async function ProcessosPorTipoPage({
                     })
                     return (
                       <article key={row.process_id} className="space-y-3 p-4">
-                        <div className="flex items-start justify-between gap-3"><div><Link href={`/clientes/${row.client_id}`} className="font-semibold text-slate-900">{row.client_name}</Link><p className="mt-1 text-xs text-slate-400">{row.client_cpf ? formatCPF(row.client_cpf) : 'CPF não informado'}{row.client_phone ? ` · ${formatPhone(row.client_phone)}` : ''}</p></div><ProcessStatusBadge status={row.process_status} /></div>
+                        <div className="flex items-start justify-between gap-3"><div><Link href={`/clientes/${row.client_id}`} className="font-semibold text-slate-900">{row.client_name}</Link><p className="mt-1 text-xs text-slate-400">{row.client_cpf ? formatCPF(row.client_cpf) : 'CPF não informado'}{row.client_phone ? ` · ${formatPhone(row.client_phone)}` : ''}</p></div><ProcessPhaseBadge phase={getPhaseFromSituation(row.process_status, row.operational_situation, row.blocked_reason)} /></div>
                         <div className="grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-3 text-xs"><div><span className="text-slate-400">Etapa</span><p className="mt-1 font-semibold text-slate-700">{row.stage_label ?? 'Não iniciada'}</p></div><div><span className="text-slate-400">Situação</span><p className="mt-1 font-semibold text-slate-700">{OPERATIONAL_SITUATION_CATALOG[row.operational_situation as keyof typeof OPERATIONAL_SITUATION_CATALOG] ?? STAGE_STATUS_LABELS[row.stage_status ?? ''] ?? 'Aguardando'}</p></div></div>
                         <div><span className={cn('inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold', OPERATIONAL_PRIORITY_META[action.priority].className)}>{OPERATIONAL_PRIORITY_META[action.priority].label}</span><p className="mt-1.5 text-sm font-medium text-slate-800">{action.nextAction}</p></div>
                         {(row.stage_notes || row.blocked_reason || row.process_observations) && <p className="line-clamp-2 text-xs leading-relaxed text-slate-500">{row.stage_notes || row.blocked_reason || row.process_observations}</p>}
